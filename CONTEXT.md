@@ -37,7 +37,7 @@ The per-harness layer that maps the event model and rule enforcement onto one sp
 _Avoid_: driver, backend, integration
 
 **Advisor**:
-The intelligence that recommends the cheapest sufficient enforcement mechanism for a rule, for example a native permission entry instead of a hook.
+The CLI-resident intelligence that recommends promoting a rule to a harness-native mechanism (for example a Claude Code permission deny) when the matcher translates exactly. Recommend-only: accepted entries become the user's own harness config, and the rule stays active as the message-bearing layer.
 _Avoid_: suggestion engine, linter
 
 **Action**:
