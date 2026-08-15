@@ -32,4 +32,17 @@ The intelligence that recommends the cheapest sufficient enforcement mechanism f
 _Avoid_: suggestion engine, linter
 
 **Action**:
-What a matched rule does: warn or block (final set is an open decision).
+What a matched rule does: warn (proceed, but inject the rule's message into the agent's context) or block (deny, with the rule's message as the reason). Allow is the absence of a match, not an action.
+
+**Tool kind**:
+The canonical cross-harness classification of a tool, assigned by the Adapter: shell, file_edit, file_read, mcp, other.
+_Avoid_: tool type, tool category
+
+**Capability matrix**:
+What an Adapter declares its harness supports: which events exist, which can block, context injection, transcript access, and fail-open behavior. Drives degradation.
+
+**Degradation**:
+Substituting the strongest available action when a harness lacks a capability a rule needs (block, then warn, then skip), reported at sync time, never silently.
+
+**Sync**:
+Compiling rules into each harness's native configuration. The command's final name is an open decision.
