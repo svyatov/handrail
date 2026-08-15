@@ -58,4 +58,4 @@ handrail's own per-repo, path-once grant that lets a repo's Project-shared rules
 _Avoid_: conflating with harness workspace trust
 
 **Sync**:
-Compiling rules into each harness's native configuration. The command's final name is an open decision.
+Compiling rules into each harness's native configuration. Performed by the `sync` command.
