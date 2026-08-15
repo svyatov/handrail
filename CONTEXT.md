@@ -40,6 +40,10 @@ _Avoid_: driver, backend, integration
 The CLI-resident intelligence that recommends promoting a rule to a harness-native mechanism (for example a Claude Code permission deny) when the matcher translates exactly. Recommend-only: accepted entries become the user's own harness config, and the rule stays active as the message-bearing layer.
 _Avoid_: suggestion engine, linter
 
+**Analyzer**:
+The LLM-side agent, shipped in each harness plugin, that reads the current session's transcript on demand and proposes new rules for behaviors worth preventing. Proposal-only: every rule needs per-rule user approval and is verified via check and test before it lands.
+_Avoid_: conflating with the Advisor
+
 **Action**:
 What a matched rule does: warn (proceed, but inject the rule's message into the agent's context) or block (deny, with the rule's message as the reason). Allow is the absence of a match, not an action.
 
