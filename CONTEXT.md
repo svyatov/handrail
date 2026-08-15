@@ -17,8 +17,11 @@ handrail's unit of user intent: a declarative guardrail evaluated against events
 _Avoid_: hook, policy, check
 
 **Rule tier**:
-Where a rule lives and whom it applies to. Three tiers: Global (user-level, all projects), Project-shared (committed to the repo), Project-personal (local, gitignored).
+Where a rule lives and whom it applies to. Three tiers: Global (user-level, all projects), Project-shared (committed to the repo), Project-personal (local, gitignored). Precedence is most specific wins: Global < Project-shared < Project-personal. Tiers are convenience layering, not a security boundary.
 _Avoid_: scope, level
+
+**Shadowing**:
+A rule file in a higher-precedence tier replacing a same-named rule in a lower tier wholesale. There is no field-level merging; the shadowing file is the effective rule.
 
 **Matcher**:
 The selecting half of a rule: an event name, an optional tool kind, and a list of conditions.
@@ -49,6 +52,10 @@ What an Adapter declares its harness supports: which events exist, which can blo
 
 **Degradation**:
 Substituting the strongest available action when a harness lacks a capability a rule needs (block, then warn, then skip), reported at sync time, never silently.
+
+**Trust**:
+handrail's own per-repo, path-once grant that lets a repo's Project-shared rules take effect. Distinct from any harness's workspace trust. Global and Project-personal tiers never need it.
+_Avoid_: conflating with harness workspace trust
 
 **Sync**:
 Compiling rules into each harness's native configuration. The command's final name is an open decision.
