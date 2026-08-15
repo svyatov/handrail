@@ -63,3 +63,7 @@ _Avoid_: conflating with harness workspace trust
 
 **Sync**:
 Compiling rules into each harness's native configuration. Performed by the `sync` command.
+
+**Importer**:
+The one-shot `import hookify` command that converts upstream hookify rule files into Project-personal rules, skipping and reporting anything the rule format cannot express.
+_Avoid_: migrator, conflating with Sync
