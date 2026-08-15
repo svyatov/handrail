@@ -20,6 +20,12 @@ _Avoid_: hook, policy, check
 Where a rule lives and whom it applies to. Three tiers: Global (user-level, all projects), Project-shared (committed to the repo), Project-personal (local, gitignored).
 _Avoid_: scope, level
 
+**Matcher**:
+The selecting half of a rule: an event name, an optional tool kind, and a list of conditions.
+
+**Condition**:
+One field test inside a matcher: a single operator applied to one canonical payload field. Conditions AND together; a one-level any group expresses OR.
+
 **Event model**:
 The harness-neutral set of lifecycle events rules are written against.
 
