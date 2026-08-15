@@ -1,6 +1,6 @@
-# hookify
+# handrail
 
-A cross-harness guardrail manager: users declare rules once, and hookify enforces them through each harness's native hook or permission mechanisms, with a performance-critical Go CLI as the engine.
+A cross-harness guardrail manager: users declare rules once, and handrail enforces them through each harness's native hook or permission mechanisms, with a performance-critical Go CLI as the engine.
 
 ## Language
 
@@ -10,10 +10,10 @@ _Avoid_: agent, IDE, editor, platform
 
 **Hook**:
 A harness-native mechanism that runs an external command on a lifecycle event. One possible enforcement backend for a rule, never the rule itself.
-_Avoid_: using "hook" to mean a hookify rule
+_Avoid_: using "hook" to mean a handrail rule
 
 **Rule**:
-hookify's unit of user intent: a declarative guardrail evaluated against events, enforced via hooks or native mechanisms.
+handrail's unit of user intent: a declarative guardrail evaluated against events, enforced via hooks or native mechanisms.
 _Avoid_: hook, policy, check
 
 **Rule tier**:
