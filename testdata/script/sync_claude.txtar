@@ -1,0 +1,103 @@
+# sync is a per-machine act: one stable user-level hook entry per event, and
+# nothing written into the repo.
+exec handrail trust
+exec handrail sync
+stdout 'claude: wrote 6 hook entries'
+
+# One entry per canonical event, each invoking the binary by absolute path.
+grep '"command": "/[^"]* hook claude PreToolUse"' home/.claude/settings.json
+grep '"command": "/[^"]* hook claude PostToolUse"' home/.claude/settings.json
+grep '"command": "/[^"]* hook claude UserPromptSubmit"' home/.claude/settings.json
+grep '"command": "/[^"]* hook claude SessionStart"' home/.claude/settings.json
+grep '"command": "/[^"]* hook claude SessionEnd"' home/.claude/settings.json
+grep '"command": "/[^"]* hook claude Stop"' home/.claude/settings.json
+
+# Project config is never touched: the tiers merge in the engine at event time.
+! exists .claude
+! exists .handrail/settings.json
+
+# The user's own settings survive, hook entries included. Resembling handrail's
+# command line is not enough to get another tenant's entry deleted.
+grep '"model": "opus"' home/.claude/settings.json
+grep 'my-own.sh' home/.claude/settings.json
+grep 'my-runner.sh hook claude PostToolUse' home/.claude/settings.json
+
+# The local tier is kept out of version control, and stays a single line.
+grep -count=1 '^\.handrail/local/$' .git/info/exclude
+grep '^# my own patterns$' .git/info/exclude
+
+# Degradation is reported per harness, never applied in silence.
+stdout 'claude: block degraded to warn for late: Claude Code has no denial to give on PostToolUse'
+stdout 'claude: warn degraded to notice for farewell: Claude Code discards hook output on SessionEnd'
+stdout 'claude: hook errors and timeouts fail open'
+
+# A rule the harness enforces in full is not reported as degraded.
+! stdout 'for early'
+
+# The annotated effective ruleset is printed, same as check.
+stdout '^project-shared +late +PostToolUse'
+
+# Re-running changes nothing: the entries are stable, so Codex's hash-based
+# trust prompt (and Claude Code's own diffing) sees one shape forever.
+cp home/.claude/settings.json first.json
+exec handrail sync
+stdout 'claude: 6 hook entries already current'
+cmp home/.claude/settings.json first.json
+grep -count=1 '^\.handrail/local/$' .git/info/exclude
+
+# A moved binary replaces its old entry rather than stacking a second one.
+grep -count=1 'hook claude PreToolUse' home/.claude/settings.json
+
+# --harness scopes detection to one harness.
+exec handrail sync --harness claude
+stdout 'claude: 6 hook entries already current'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .git/info/exclude --
+# my own patterns
+*.tmp
+-- home/.claude/settings.json --
+{
+  "model": "opus",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "my-own.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "my-runner.sh hook claude PostToolUse"
+          }
+        ]
+      }
+    ]
+  }
+}
+-- .handrail/late.md --
+---
+event: PostToolUse
+action: block
+---
+Claude Code cannot undo a tool call that already ran.
+-- .handrail/early.md --
+---
+event: PreToolUse
+action: block
+---
+This one keeps its teeth.
+-- .handrail/farewell.md --
+---
+event: SessionEnd
+---
+Nobody is left to read this but the user.

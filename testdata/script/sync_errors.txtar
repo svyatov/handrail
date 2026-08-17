@@ -1,0 +1,43 @@
+# Everything sync can refuse, it refuses before touching a single config file.
+exec handrail trust
+
+# An invalid rule aborts, and nothing is written: a half-synced machine is worse
+# than an unsynced one.
+exec sh -c 'handrail sync; echo code=$?'
+stdout '^code=1$'
+stderr 'oops\.md: line 2: unknown event "Nope"'
+! exists home/.claude/settings.json
+! exists .git/info/exclude
+
+# With the rules fixed, sync lands.
+rm .handrail/oops.md
+exec handrail sync
+exists home/.claude/settings.json
+grep '^\.handrail/local/$' .git/info/exclude
+
+# A harness handrail cannot write for is named, not guessed at.
+exec sh -c 'handrail sync --harness gemini; echo code=$?'
+stdout '^code=1$'
+stderr 'unknown harness "gemini"'
+
+# A harness that is not installed is not synced, and the run says so rather
+# than reporting success over an empty machine.
+exec sh -c 'cd nohome && HOME=$WORK/nohome XDG_CONFIG_HOME=$WORK/nohome/.config handrail sync; echo code=$?'
+stdout '^code=1$'
+stderr 'no harness found'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- home/.claude/.keep --
+-- .handrail/fine.md --
+---
+event: Stop
+---
+A rule that parses.
+-- .handrail/oops.md --
+---
+event: Nope
+---
+A rule that does not.
+-- nohome/.git/HEAD --
+ref: refs/heads/main

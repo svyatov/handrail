@@ -1,0 +1,28 @@
+[!exec:git] skip
+
+# A git worktree keeps its .git as a pointer file and shares info/exclude with
+# the main checkout, which is where git reads it from. The Project-personal tier
+# must be excluded there too, or it leaks into a commit from the worktree.
+exec git init
+exec git -c user.email=t@example.com -c user.name=T commit --allow-empty -m init
+exec git worktree add wt
+
+exec sh -c 'cd $WORK/wt && handrail sync'
+stdout 'added \.handrail/local/'
+grep -count=1 '^\.handrail/local/$' .git/info/exclude
+! exists wt/.git/info
+
+# git agrees: from inside the worktree, the tier is ignored.
+exec sh -c 'cd $WORK/wt && mkdir -p .handrail/local && touch .handrail/local/mine.md && git status --porcelain'
+! stdout 'handrail'
+
+# The main checkout keeps the one line, not a second one.
+exec handrail sync
+grep -count=1 '^\.handrail/local/$' .git/info/exclude
+
+-- home/.claude/.keep --
+-- .handrail/fine.md --
+---
+event: Stop
+---
+A rule that parses.

@@ -38,6 +38,13 @@ type Term struct {
 	line  int
 }
 
+// Events lists the six core events, in the order sync writes hook entries for
+// them. Only sync needs the list; it is a function rather than a package
+// variable so the hook path pays no startup cost for a slice it never reads.
+func Events() []string {
+	return []string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop"}
+}
+
 // These four sets are switches rather than package-level maps so that nothing
 // runs before main: the hook path pays for every byte of startup work.
 

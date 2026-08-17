@@ -92,6 +92,11 @@ func canBlock(event string) bool {
 	return false
 }
 
+// canInject reports whether the harness puts a hook's output in front of the
+// agent on this event. SessionEnd is the one that does not: the session is over
+// and the JSON is discarded, so a warning there reaches the user or nobody.
+func canInject(event string) bool { return event != "SessionEnd" }
+
 type hookOutput struct {
 	HookSpecificOutput hookSpecific `json:"hookSpecificOutput"`
 }
@@ -112,7 +117,7 @@ func Deliver(event, message string, block bool, stdout, stderr io.Writer) int {
 	// denial; on SessionEnd, which has no decision control and whose JSON output
 	// the harness discards, it is the only way left to reach the user, which is
 	// what a warning degrades to where context injection does not exist.
-	if (block && canBlock(event)) || event == "SessionEnd" {
+	if (block && canBlock(event)) || !canInject(event) {
 		// A failed write leaves nobody to tell, but the outcome still stands: a
 		// block that cannot state its reason is still a block.
 		_, _ = io.WriteString(stderr, message+"\n")

@@ -25,6 +25,7 @@ var (
 const usage = `Usage: handrail <command> [arguments]
 
 Commands:
+  sync      Install handrail's hook entries into every detected harness
   hook      Evaluate one harness event (installed by sync; not for humans)
   check     Validate the rules and print the effective ruleset
   test      Dry-run a synthetic payload against the rules
@@ -52,6 +53,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	switch args[0] {
+	case "sync":
+		return cmdSync(args[1:], stdout, stderr)
 	case "hook":
 		return cmdHook(args[1:], stdin, stdout, stderr)
 	case "check":
@@ -104,6 +107,85 @@ func cmdTrust(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "trusted %s\n", root)
 	} else {
 		fmt.Fprintf(stdout, "already trusted %s\n", root)
+	}
+	return 0
+}
+
+// cmdSync installs handrail into the machine's harnesses. It is per-machine,
+// not per-project: the hook entries are user-level, so every repo holding rules
+// is enforced once this has run, and no harness config is written into any repo.
+func cmdSync(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("sync", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	harness := fs.String("harness", "", "sync only this harness")
+	if err := fs.Parse(args); err != nil {
+		return 1
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "handrail sync: unexpected argument %q\n", fs.Arg(0))
+		return 1
+	}
+	if *harness != "" && *harness != claude.Name {
+		fmt.Fprintf(stderr, "handrail sync: unknown harness %q\n", *harness)
+		return 1
+	}
+
+	// Validation first: a machine synced against half a ruleset is worse than an
+	// unsynced one, so nothing reaches disk until every tier parses.
+	rules, code := loadValidRules(stderr)
+	if code != 0 {
+		return code
+	}
+
+	if !claude.Installed() {
+		fmt.Fprintln(stderr, "handrail sync: no harness found; install Claude Code and run it once")
+		return 1
+	}
+	// The hook entry names the binary absolutely, so a harness with its own PATH
+	// still finds the one that wrote the entry. Whatever symlinks lie under that
+	// path stay unresolved on purpose: a package manager's stable shim is the
+	// path that survives the next upgrade, and the versioned file behind it is not.
+	bin, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(stderr, "handrail: %v\n", err)
+		return 1
+	}
+
+	entries, changed, err := claude.Install(bin)
+	if err != nil {
+		fmt.Fprintf(stderr, "handrail: %v\n", err)
+		return 1
+	}
+	if changed {
+		fmt.Fprintf(stdout, "%s: wrote %d hook entries to %s\n", claude.Name, entries, claude.SettingsPath())
+	} else {
+		fmt.Fprintf(stdout, "%s: %d hook entries already current in %s\n", claude.Name, entries, claude.SettingsPath())
+	}
+	for _, d := range claude.Degradations(rules) {
+		fmt.Fprintf(stdout, "%s: %s\n", claude.Name, d)
+	}
+	for _, q := range claude.Quirks() {
+		fmt.Fprintf(stdout, "%s: %s\n", claude.Name, q)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(stderr, "handrail: %v\n", err)
+		return 1
+	}
+	added, err := rule.ExcludeLocal(rule.RepoRoot(cwd))
+	if err != nil {
+		fmt.Fprintf(stderr, "handrail: %v\n", err)
+		return 1
+	}
+	if added {
+		fmt.Fprintln(stdout, "handrail: added .handrail/local/ to .git/info/exclude")
+	}
+
+	fmt.Fprintln(stdout)
+	if err := printRuleset(stdout, rules); err != nil {
+		fmt.Fprintf(stderr, "handrail: %v\n", err)
+		return 1
 	}
 	return 0
 }
@@ -192,6 +274,24 @@ func loadRules(stderr io.Writer) ([]*rule.Rule, []rule.Problem, error) {
 	return rules, problems, nil
 }
 
+// loadValidRules is the authoring-time contract sync and test share: every tier
+// parses, or the command stops without acting. Only check reports problems and
+// keeps going, because reporting them is the whole of its job.
+func loadValidRules(stderr io.Writer) ([]*rule.Rule, int) {
+	rules, problems, err := loadRules(stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "handrail: %v\n", err)
+		return nil, 1
+	}
+	if len(problems) > 0 {
+		for _, p := range problems {
+			fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
+		}
+		return nil, 1
+	}
+	return rules, 0
+}
+
 func trustNotice(root string) string {
 	return fmt.Sprintf("handrail: skipping the untrusted Project-shared rules in %s; run handrail trust to enable them", root)
 }
@@ -273,30 +373,9 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 			return code
 		}
 	} else {
-		if len(rules) > 0 {
-			// Rules arrive in tier order, so the last one under a name is the
-			// effective one: the tier that shadows every earlier namesake.
-			effective := make(map[string]string, len(rules))
-			for _, r := range rules {
-				effective[r.Name] = r.Tier
-			}
-			w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "TIER\tRULE\tEVENT\tKIND\tACTION\tSTATUS")
-			for _, r := range rules {
-				status := "enabled"
-				switch {
-				case r.ShadowedBy != "":
-					status = "shadowed by " + effective[r.Name]
-				case !r.Enabled:
-					status = "disabled"
-				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-					r.Tier, r.Name, orDefault(r.Event, "-"), orDefault(r.Kind, "*"), r.Action, status)
-			}
-			if err := w.Flush(); err != nil {
-				fmt.Fprintf(stderr, "handrail: %v\n", err)
-				return 1
-			}
+		if err := printRuleset(stdout, rules); err != nil {
+			fmt.Fprintf(stderr, "handrail: %v\n", err)
+			return 1
 		}
 		for _, p := range problems {
 			fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
@@ -403,18 +482,11 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		payload.Kind = *kind
 	}
 
-	rules, problems, err := loadRules(stderr)
-	if err != nil {
-		fmt.Fprintf(stderr, "handrail: %v\n", err)
-		return 1
-	}
 	// test is an authoring-time surface, so it is strict like check: the loud
 	// fail-open belongs to the event-time hook path, not here.
-	if len(problems) > 0 {
-		for _, p := range problems {
-			fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
-		}
-		return 1
+	rules, code := loadValidRules(stderr)
+	if code != 0 {
+		return code
 	}
 
 	out := testOutput{Outcome: "allow", Matched: []testMatch{}}
@@ -452,6 +524,34 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return 0
+}
+
+// printRuleset renders the effective ruleset annotated with tier, shadowing,
+// and disabling: what check reports, and what sync repeats once it has written.
+func printRuleset(w io.Writer, rules []*rule.Rule) error {
+	if len(rules) == 0 {
+		return nil
+	}
+	// Rules arrive in tier order, so the last one under a name is the effective
+	// one: the tier that shadows every earlier namesake.
+	effective := make(map[string]string, len(rules))
+	for _, r := range rules {
+		effective[r.Name] = r.Tier
+	}
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "TIER\tRULE\tEVENT\tKIND\tACTION\tSTATUS")
+	for _, r := range rules {
+		status := "enabled"
+		switch {
+		case r.ShadowedBy != "":
+			status = "shadowed by " + effective[r.Name]
+		case !r.Enabled:
+			status = "disabled"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			r.Tier, r.Name, orDefault(r.Event, "-"), orDefault(r.Kind, "*"), r.Action, status)
+	}
+	return tw.Flush()
 }
 
 func orDefault(s, fallback string) string {
