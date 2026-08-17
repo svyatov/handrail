@@ -3,5 +3,5 @@
 # Locally built binary
 /handrail
 
-# Coverage profile, written by make cover
+# Coverage profile, written by task cover
 /cover.out

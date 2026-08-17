@@ -1,0 +1,50 @@
+# https://taskfile.dev
+#
+# The same commands CI runs, so a local pass means what a green check means.
+# Nothing here installs a Go tool: golangci-lint stays out of go.mod, because a
+# tool directive would put ~200 modules in a go.sum whose first promise is zero
+# third-party dependencies, and upstream recommends against it for that linter.
+version: '3'
+
+vars:
+  # CI passes SHORT=-short on the macOS runner, where the cold-start test's 50ms
+  # median cannot hold on a shared machine. The test honours the flag, and it
+  # execs a separate binary, so skipping it costs no coverage.
+  SHORT: ''
+  # Below the measured number on purpose: what is left uncovered is OS failure
+  # paths whose reachability differs by platform (ADR 0009).
+  GATE: 95
+
+tasks:
+  default:
+    silent: true
+    cmds:
+      - task --list
+
+  build:
+    desc: The release build, so a broken one fails here rather than on a tag
+    env:
+      CGO_ENABLED: '0'
+    cmds:
+      - go build -ldflags "-s -w" -o handrail .
+
+  test:
+    desc: Race and shuffle, without the coverage instrumentation
+    cmds:
+      - go test -race -shuffle=on {{.SHORT}} ./...
+
+  cover:
+    desc: The full test run, failing under the coverage gate
+    cmds:
+      - go test -race -shuffle=on {{.SHORT}} -coverpkg=./... -coverprofile=cover.out ./...
+      - go tool cover -func=cover.out | tail -1
+      - >-
+        go tool cover -func=cover.out |
+        awk '/^total:/ { gsub(/%/, "", $3); if ($3 + 0 < {{.GATE}}) {
+        print "coverage " $3 "% is under the {{.GATE}}% gate"; exit 1 } }'
+
+  lint:
+    desc: golangci-lint, plus the formatter check CI runs separately
+    cmds:
+      - golangci-lint run
+      - golangci-lint fmt --diff

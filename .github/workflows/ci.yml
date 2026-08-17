@@ -8,6 +8,8 @@ on:
 permissions:
   contents: read
 
+# Every step runs a Taskfile task rather than spelling its command out, so a
+# local `task cover` is the same run as the one behind the green check.
 jobs:
   test:
     # Both, because handrail's failure paths are the operating system's: a
@@ -18,39 +20,24 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            short: ""
+            args: ""
           # The cold-start test asserts a 50ms median over 21 process spawns,
-          # which a shared macOS runner cannot hold. The test honours -short, and
-          # it execs a separate binary, so skipping it costs no coverage.
+          # which a shared macOS runner cannot hold.
           - os: macos-latest
-            short: "-short"
+            args: "SHORT=-short"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+      - uses: go-task/setup-task@v2
 
-      # The release build, run here so a broken one fails on the pull request
-      # rather than on the tag. CGO_ENABLED is scoped to this step: go test -race
-      # needs cgo.
       - name: Build
-        run: go build -ldflags "-s -w" -o /dev/null .
-        env:
-          CGO_ENABLED: 0
+        run: task build
 
-      - name: Test
-        run: go test -race -shuffle=on ${{ matrix.short }} -coverpkg=./... -coverprofile=cover.out ./...
-
-      # The gate sits below the real number on purpose: what is left uncovered
-      # is OS failure paths whose reachability differs by platform (ADR 0009).
-      - name: Coverage gate
-        run: |
-          go tool cover -func=cover.out | tail -1
-          go tool cover -func=cover.out | awk '/^total:/ {
-            gsub(/%/, "", $3)
-            if ($3 + 0 < 95) { print "coverage " $3 "% is under the 95% gate"; exit 1 }
-          }'
+      - name: Test and coverage gate
+        run: task cover ${{ matrix.args }}
 
   lint:
     runs-on: ubuntu-latest
@@ -59,6 +46,13 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+      # install-only, because the action's own run step would cover half of
+      # `task lint` and leave the formatter check to a second spelling of it.
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
+          install-only: true
+      - uses: go-task/setup-task@v2
+
+      - name: Lint and formatting
+        run: task lint
