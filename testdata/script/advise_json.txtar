@@ -1,0 +1,61 @@
+# --json emits the spec contract: an array of
+# {rule, tier, harness, mechanism, entry, location, scope_widening, caveats}.
+exec handrail trust
+exec sh -c 'handrail advise no-force-push --harness claude --json; echo code=$?'
+stdout '^code=0$'
+! stderr .
+stdout '"rule": "no-force-push"'
+stdout '"tier": "project-shared"'
+stdout '"harness": "claude"'
+stdout '"mechanism": "permissions\.deny"'
+stdout '"entry": "Bash\(git push --force\*\)"'
+stdout '"location": ".*/\.claude/settings\.json"'
+stdout '"scope_widening": "this rule applies only in .*'
+stdout '"caveats": \['
+
+# A Global rule already reaches every repo, so it widens nothing.
+exec handrail advise no-curl --json
+stdout '"rule": "no-curl"'
+stdout '"tier": "global"'
+stdout '"scope_widening": null'
+
+# Codex names its own mechanism, file, and bypass.
+exec handrail advise no-curl --harness codex --json
+stdout '"mechanism": "execpolicy prefix_rule"'
+stdout '"location": ".*/\.codex/rules/default\.rules"'
+stdout '"entry": "prefix_rule\(\\n    pattern = \[\\"curl\\"\],'
+stdout '"codex exec --ignore-rules bypasses execpolicy'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/no-force-push.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: git push --force
+---
+Never force-push.
+-- home/.config/handrail/no-curl.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: curl
+---
+Fetch through the approved proxy.
+-- ineligible/.git/HEAD --
+ref: refs/heads/main
+-- ineligible/.handrail/local/prefer-rg.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: grep
+---
+Use rg instead of grep.

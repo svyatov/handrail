@@ -1,0 +1,230 @@
+# A block rule whose whole matcher is a command prefix promotes to both
+# harnesses, each in its own native spelling.
+exec handrail trust
+exec handrail advise
+stdout 'no-force-push  project-shared  claude  permissions\.deny'
+stdout 'Bash\(git push --force\*\)'
+stdout 'no-force-push  project-shared  codex  execpolicy prefix_rule'
+stdout 'pattern = \["git", "push", "--force"\]'
+stdout 'decision = "forbidden"'
+stdout 'justification = "handrail rule: no-force-push"'
+
+# The target config file is named, per harness.
+stdout 'add to .*/\.claude/settings\.json:'
+stdout 'add to .*/\.codex/rules/default\.rules:'
+
+# A project-tier rule promoting to a user-level entry states the widening.
+stdout 'scope: this rule applies only in .*, and the entry applies in every repo on this machine'
+
+# Codex advice carries the bypass caveat.
+stdout 'caveat: codex exec --ignore-rules'
+
+# A path rule reaches Claude Code's file mechanisms and nothing on Codex, whose
+# execpolicy governs commands only.
+stdout 'no-secrets  project-shared  claude  permissions\.deny'
+stdout 'Read\(\*\*/\.env\)'
+! stdout 'no-secrets  project-shared  codex'
+
+# kind narrows which file mechanism the entry uses.
+stdout 'no-etc-edits  project-shared  claude  permissions\.deny'
+stdout 'Edit\(//etc/\*\*\)'
+! stdout 'Read\(//etc'
+
+# Every branch of an any group translates, so every branch earns an entry.
+stdout 'no-history-rewrite  project-shared  claude  permissions\.deny'
+stdout 'Bash\(git rebase\*\)'
+stdout 'Bash\(git commit --amend\*\)'
+
+# An exact command is an exact Bash pattern on Claude Code, and nothing on
+# Codex: an execpolicy prefix rule forbids every command extending the pattern,
+# which is more than the rule says.
+stdout 'no-vendor-install  project-shared  claude  permissions\.deny'
+stdout 'Bash\(npm install --force\)'
+! stdout 'no-vendor-install  project-shared  codex'
+
+# Claude Code reaches inside a compound command, and the advice says so.
+stdout 'caveat: Claude Code matches each subcommand'
+
+# An exact path is spelled absolute, which is what // means there.
+stdout 'no-ssh-key-reads  project-shared  claude  permissions\.deny'
+stdout 'Read\(//root/\.ssh/id_rsa\)'
+
+# Nothing ineligible appears: a warn rule, a matches condition, an any group
+# with one untranslatable branch, a rule ANDing two conditions, a non-PreToolUse
+# block, and a negated operator.
+! stdout prefer-rg
+! stdout no-rm-rf-regex
+! stdout half-translatable
+! stdout force-push-to-main
+! stdout no-quiet-stop
+! stdout not-npm
+
+# A rule name scopes the audit to one rule.
+exec handrail advise no-force-push
+stdout no-force-push
+! stdout no-secrets
+
+# --harness scopes it to one harness.
+exec handrail advise --harness claude
+stdout 'no-force-push  project-shared  claude'
+! stdout codex
+
+exec handrail advise no-force-push --harness codex
+stdout 'no-force-push  project-shared  codex'
+! stdout permission
+
+# An unknown harness is a usage error, with the known ones named.
+! exec handrail advise --harness gemini
+stderr 'unknown harness "gemini"; known: claude, codex'
+
+# So is a rule name nothing answers to.
+! exec handrail advise nonesuch
+stderr 'no enabled, unshadowed rule named "nonesuch"'
+
+# A ruleset with nothing eligible says so rather than printing nothing.
+exec sh -c 'cd ineligible && handrail advise; echo code=$?'
+stdout '^code=0$'
+stdout 'no rule translates to a native entry'
+
+# In JSON that is an empty array, not null.
+exec sh -c 'cd ineligible && handrail advise --json'
+stdout '^\[\]$'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/no-force-push.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: git push --force
+---
+Never force-push. Rebase and open a new pull request instead.
+-- .handrail/no-secrets.md --
+---
+event: PreToolUse
+action: block
+conditions:
+  - field: path
+    glob: "**/.env"
+---
+Environment files hold credentials.
+-- .handrail/no-etc-edits.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: path
+    glob: /etc/**
+---
+Nothing in this project belongs in /etc.
+-- .handrail/no-history-rewrite.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - any:
+      - field: command
+        starts_with: git rebase
+      - field: command
+        starts_with: git commit --amend
+---
+Rewriting history breaks everyone else's clone.
+-- .handrail/no-vendor-install.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    equals: npm install --force
+---
+Resolve the conflict instead of forcing the install.
+-- .handrail/no-ssh-key-reads.md --
+---
+event: PreToolUse
+kind: file_read
+action: block
+conditions:
+  - field: path
+    equals: /root/.ssh/id_rsa
+---
+Private keys stay out of the transcript.
+-- .handrail/prefer-rg.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: grep
+---
+Use rg instead of grep.
+-- .handrail/no-rm-rf-regex.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    matches: rm\s+-rf
+---
+Never delete recursively.
+-- .handrail/half-translatable.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - any:
+      - field: command
+        starts_with: git push --force
+      - field: command
+        matches: git\s+push\s+-f
+---
+Never force-push.
+-- .handrail/force-push-to-main.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: git push
+  - field: command
+    ends_with: main
+---
+Never push straight to main.
+-- .handrail/no-quiet-stop.md --
+---
+event: Stop
+action: block
+conditions:
+  - field: prompt
+    equals: done
+---
+Say what you did before stopping.
+-- .handrail/not-npm.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    not_starts_with: npm
+---
+This project is npm only.
+-- ineligible/.git/HEAD --
+ref: refs/heads/main
+-- ineligible/.handrail/local/prefer-rg.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: grep
+---
+Use rg instead of grep.
