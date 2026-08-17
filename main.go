@@ -11,7 +11,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/svyatov/handrail/internal/claude"
+	"github.com/svyatov/handrail/internal/harness"
 	"github.com/svyatov/handrail/internal/rule"
 )
 
@@ -117,7 +117,7 @@ func cmdTrust(args []string, stdout, stderr io.Writer) int {
 func cmdSync(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("sync", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	harness := fs.String("harness", "", "sync only this harness")
+	only := fs.String("harness", "", "sync only this harness")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
@@ -125,9 +125,12 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "handrail sync: unexpected argument %q\n", fs.Arg(0))
 		return 1
 	}
-	if *harness != "" && *harness != claude.Name {
-		fmt.Fprintf(stderr, "handrail sync: unknown harness %q\n", *harness)
-		return 1
+	if *only != "" {
+		if _, ok := harness.Lookup(*only); !ok {
+			fmt.Fprintf(stderr, "handrail sync: unknown harness %q; known: %s\n",
+				*only, strings.Join(harness.Names(), ", "))
+			return 1
+		}
 	}
 
 	// Validation first: a machine synced against half a ruleset is worse than an
@@ -137,8 +140,18 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 
-	if !claude.Installed() {
-		fmt.Fprintln(stderr, "handrail sync: no harness found; install Claude Code and run it once")
+	var targets []harness.Adapter
+	for _, a := range harness.Adapters() {
+		if (*only == "" || a.Name == *only) && a.Installed() {
+			targets = append(targets, a)
+		}
+	}
+	if len(targets) == 0 {
+		found := "no harness found; install Claude Code or Codex CLI and run it once"
+		if *only != "" {
+			found = fmt.Sprintf("%s not found; install it and run it once", *only)
+		}
+		fmt.Fprintf(stderr, "handrail sync: %s\n", found)
 		return 1
 	}
 	// The hook entry names the binary absolutely, so a harness with its own PATH
@@ -151,21 +164,27 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	entries, changed, err := claude.Install(bin)
-	if err != nil {
-		fmt.Fprintf(stderr, "handrail: %v\n", err)
-		return 1
-	}
-	if changed {
-		fmt.Fprintf(stdout, "%s: wrote %d hook entries to %s\n", claude.Name, entries, claude.SettingsPath())
-	} else {
-		fmt.Fprintf(stdout, "%s: %d hook entries already current in %s\n", claude.Name, entries, claude.SettingsPath())
-	}
-	for _, d := range claude.Degradations(rules) {
-		fmt.Fprintf(stdout, "%s: %s\n", claude.Name, d)
-	}
-	for _, q := range claude.Quirks() {
-		fmt.Fprintf(stdout, "%s: %s\n", claude.Name, q)
+	// One harness's broken config must not leave the others unsynced, so the
+	// loop reports the failure, names the harness, and carries on.
+	failed := false
+	for _, a := range targets {
+		entries, changed, err := a.Install(bin)
+		if err != nil {
+			fmt.Fprintf(stderr, "handrail: %s: %v\n", a.Name, err)
+			failed = true
+			continue
+		}
+		if changed {
+			fmt.Fprintf(stdout, "%s: wrote %d hook entries to %s\n", a.Name, entries, a.ConfigPath())
+		} else {
+			fmt.Fprintf(stdout, "%s: %d hook entries already current in %s\n", a.Name, entries, a.ConfigPath())
+		}
+		for _, d := range a.Degradations(rules) {
+			fmt.Fprintf(stdout, "%s: %s\n", a.Name, d)
+		}
+		for _, q := range a.Quirks {
+			fmt.Fprintf(stdout, "%s: %s\n", a.Name, q)
+		}
 	}
 
 	cwd, err := os.Getwd()
@@ -187,6 +206,9 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1
 	}
+	if failed {
+		return 1
+	}
 	return 0
 }
 
@@ -203,11 +225,12 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprint(stderr, hookUsage)
 		return 1
 	}
-	harness, event := fs.Arg(0), fs.Arg(1)
+	name, event := fs.Arg(0), fs.Arg(1)
 	// The hook entry is handrail's own writing, so a wrong harness or event is a
 	// bug in the installed config rather than something to soldier through.
-	if harness != claude.Name {
-		fmt.Fprintf(stderr, "handrail hook: unknown harness %q\n", harness)
+	a, ok := harness.Lookup(name)
+	if !ok {
+		fmt.Fprintf(stderr, "handrail hook: unknown harness %q\n", name)
 		return 1
 	}
 	if !rule.IsEvent(event) {
@@ -219,12 +242,12 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err == nil {
 		var payload rule.Payload
 		var cwd string
-		if payload, cwd, err = claude.Normalize(event, data); err == nil {
+		if payload, cwd, err = a.Normalize(event, data); err == nil {
 			message, block := evaluate(payload, cwd)
-			return claude.Deliver(event, message, block, stdout, stderr)
+			return a.Deliver(event, message, block, stdout, stderr)
 		}
 	}
-	return claude.Deliver(event,
+	return a.Deliver(event,
 		fmt.Sprintf("handrail: could not read the %s payload, so no rule was evaluated: %v", event, err),
 		false, stdout, stderr)
 }

@@ -89,7 +89,7 @@ ADR: [0004](adr/0004-rule-tiers-and-precedence.md).
 
 Decided in [the event-model ticket](https://github.com/svyatov/handrail/issues/7); ADR [0002](adr/0002-claude-code-event-vocabulary.md).
 
-One Go binary; each Adapter is an internal package. Sync writes each harness's native hook config: one entry per canonical event, invoking `handrail hook <harness> <event>` with the harness named explicitly. No runtime harness auto-detection. That single invocation evaluates all matching rules across all tiers.
+One Go binary; the Adapters live in one internal package, `harness`, one value per harness. Both v1 harnesses read the same Claude-shaped hook config and speak the same payload and decision protocol, since Codex's hooks engine is Claude-compatible by design, so they differ by a handful of facts (config path, blockable events, quirks) and a package apiece would be two copies of one Adapter. Sync writes each harness's native hook config: one entry per canonical event, invoking `handrail hook <harness> <event>` with the harness named explicitly. No runtime harness auto-detection. That single invocation evaluates all matching rules across all tiers.
 
 ### Capability matrix
 
@@ -104,8 +104,9 @@ Hardcoded in Go per Adapter, next to its translation knowledge. Per-event: exist
 | Context injection | Yes | Yes (`additionalContext`) |
 | Transcript access | Yes (`transcript_path`, written asynchronously, tail may lag) | Yes (`transcript_path`) |
 | Fail-open on hook error | Yes (documented) | Yes |
-| Config sync writes | `~/.claude/settings.json` | `~/.codex/hooks.json` |
-| Known bypasses | `disableAllHooks`, cloud sessions | `codex exec --ignore-rules`, `--dangerously-bypass-hook-trust` |
+| Tool names on the wire | `Bash`, `Edit`/`Write`, `Read`, `mcp__<server>__<tool>` | The same, plus `apply_patch` for every file edit, whose whole edit rides in `tool_input.command` |
+| Config sync writes | `~/.claude/settings.json` | `~/.codex/hooks.json`, or `$CODEX_HOME/hooks.json` where that is set |
+| Known bypasses | `disableAllHooks`, cloud sessions | an enterprise `allow_managed_hooks_only` requirement. `--dangerously-bypass-hook-trust` skips the trust review rather than the hooks, and `codex exec --ignore-rules` bypasses execpolicy, which costs a promoted rule (section 5) its backstop but leaves the hook path intact |
 
 Codex's hash-based hook trust prompts once per entry change; the stable one-entry-per-event shape (section 3) keeps that to a single approval.
 

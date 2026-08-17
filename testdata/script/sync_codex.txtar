@@ -1,0 +1,103 @@
+# One sync configures every harness on the machine: sync is per-machine, and a
+# rule declared once is meant to be enforced wherever the user works.
+exec handrail trust
+exec handrail sync
+stdout 'claude: wrote 6 hook entries'
+stdout 'codex: wrote 6 hook entries to .*/home/.codex/hooks.json'
+
+# Codex reads a Claude-shaped hooks file, so the entry shape is the same one:
+# one per canonical event, naming the binary by absolute path.
+grep '"command": "/[^"]* hook codex PreToolUse"' home/.codex/hooks.json
+grep '"command": "/[^"]* hook codex PostToolUse"' home/.codex/hooks.json
+grep '"command": "/[^"]* hook codex UserPromptSubmit"' home/.codex/hooks.json
+grep '"command": "/[^"]* hook codex SessionStart"' home/.codex/hooks.json
+grep '"command": "/[^"]* hook codex SessionEnd"' home/.codex/hooks.json
+grep '"command": "/[^"]* hook codex Stop"' home/.codex/hooks.json
+
+# The file's other keys and the user's own hooks survive.
+grep '"description": "my own hooks"' home/.codex/hooks.json
+grep 'my-own.sh' home/.codex/hooks.json
+
+# Nothing is written into the repo, on either harness.
+! exists .codex
+! exists .claude
+
+# The Codex caveats are reported where the degradations are: a prompt block
+# cannot fail closed there, so it degrades rather than pretending to have held.
+stdout 'codex: block degraded to warn for no-yolo: Codex CLI cannot fail closed on UserPromptSubmit before the model request \(upstream #33630\)'
+stdout 'codex: non-managed hooks need a one-time trust review, and --dangerously-bypass-hook-trust skips that review rather than the hooks'
+stdout 'codex: an enterprise allow_managed_hooks_only requirement ignores user-level hooks'
+stdout 'codex: codex exec --ignore-rules bypasses execpolicy'
+stdout 'codex: hook errors and timeouts fail open'
+
+# The same rule keeps its teeth on Claude Code, which can deny there.
+! stdout 'claude: block degraded to warn for no-yolo'
+
+# Each harness is reported under its own name, and only its own caveats.
+! stdout 'claude: codex exec'
+! stdout 'codex: disableAllHooks'
+
+# $CODEX_HOME moves the config Codex reads, so sync follows it: writing to
+# ~/.codex there would be a file the harness never opens.
+env CODEX_HOME=$WORK/elsewhere/codex
+mkdir $WORK/elsewhere/codex
+exec handrail sync --harness codex
+stdout 'codex: wrote 6 hook entries to .*/elsewhere/codex/hooks.json'
+exists elsewhere/codex/hooks.json
+env CODEX_HOME=
+
+# Re-running changes nothing: the entries are stable, so Codex's hash-based
+# trust prompt fires once and never again.
+cp home/.codex/hooks.json first.json
+exec handrail sync
+stdout 'codex: 6 hook entries already current'
+cmp home/.codex/hooks.json first.json
+grep -count=1 'hook codex PreToolUse' home/.codex/hooks.json
+
+# --harness scopes to either one.
+exec handrail sync --harness codex
+stdout 'codex: 6 hook entries already current'
+! stdout 'claude:'
+exec handrail sync --harness claude
+stdout 'claude: 6 hook entries already current'
+! stdout 'codex:'
+
+# An unknown harness is a usage error, and names the ones that exist.
+! exec handrail sync --harness cursor
+stderr 'unknown harness "cursor"; known: claude, codex'
+
+# With Codex uninstalled, sync scoped to it names the harness it wanted.
+mv home/.codex home/.codex-gone
+! exec handrail sync --harness codex
+stderr 'handrail sync: codex not found; install it and run it once'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- home/.claude/settings.json --
+{}
+-- home/.codex/hooks.json --
+{
+  "description": "my own hooks",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "my-own.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+-- .handrail/no-yolo.md --
+---
+event: UserPromptSubmit
+action: block
+conditions:
+  - field: prompt
+    contains: yolo
+---
+Say what you actually want done.

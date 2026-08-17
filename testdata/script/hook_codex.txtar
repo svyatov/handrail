@@ -1,0 +1,169 @@
+# The Codex hook path end to end. The payloads are Claude-shaped by design, so
+# what this proves is the places where Codex is not: apply_patch, and the prompt
+# event that cannot fail closed.
+exec handrail trust
+
+# A blocking shell rule: exit 2, message as the reason on stderr.
+stdin bash-rm.json
+exec sh -c 'handrail hook codex PreToolUse; echo code=$?'
+stdout '^code=2$'
+stderr '^handrail block: dangerous-rm \(project-shared\)$'
+stderr 'Never delete recursively from the filesystem root'
+
+# apply_patch is Codex's one file-editing tool, and it arrives shell-shaped:
+# the whole edit is a patch envelope under command. The path it names and the
+# lines it adds are what path and content conditions read.
+stdin apply-patch.json
+exec sh -c 'handrail hook codex PreToolUse; echo code=$?'
+stdout '^code=2$'
+stderr 'handrail block: no-secrets \(project-shared\)'
+stderr 'handrail warn: no-env-edits \(project-shared\)'
+
+# A shell rule does not reach it: apply_patch is a file edit, whatever it rides in.
+! stderr 'no-heredocs'
+
+# One patch can touch several files, and the payload has one path field: the
+# fields describe the first file only, so no rule blocks a benign edit for
+# what a later file in the same envelope did.
+stdin multi-patch.json
+exec sh -c 'handrail hook codex PreToolUse; echo code=$?'
+stdout '^code=0$'
+! stdout 'no-secrets'
+stdout 'handrail warn: no-env-edits'
+
+# Codex cannot fail closed on UserPromptSubmit before the model request, so a
+# block there degrades to the strongest thing left: the message, injected.
+stdin prompt.json
+exec sh -c 'handrail hook codex UserPromptSubmit; echo code=$?'
+stdout '^code=0$'
+stdout '"hookEventName": "UserPromptSubmit"'
+stdout 'handrail block: no-yolo \(project-shared\)'
+! stderr .
+
+# The same payload on Claude Code, which can deny there, is denied.
+stdin prompt.json
+exec sh -c 'handrail hook claude UserPromptSubmit; echo code=$?'
+stdout '^code=2$'
+stderr 'handrail block: no-yolo'
+
+# A warning proceeds and is injected, same protocol as Claude Code.
+stdin bash-curl.json
+exec handrail hook codex PreToolUse
+stdout 'handrail warn: prefer-fetch \(global\)'
+
+# An mcp call is classified by its tool name on either harness.
+stdin mcp.json
+exec sh -c 'handrail hook codex PreToolUse; echo code=$?'
+stdout '^code=2$'
+stderr 'handrail block: no-deploys'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- bash-rm.json --
+{
+  "session_id": "s1",
+  "hook_event_name": "PreToolUse",
+  "turn_id": "t1",
+  "tool_name": "Bash",
+  "tool_use_id": "call-1",
+  "tool_input": {"command": "rm -rf /tmp/build"},
+  "permission_mode": "on-request"
+}
+-- bash-curl.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {"command": "curl https://example.com"}
+}
+-- apply-patch.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_use_id": "call-2",
+  "tool_input": {"command": "apply_patch <<'EOF'\n*** Begin Patch\n*** Update File: config/.env\n@@\n-api_key: old\n+api_key: sk-live-1\n*** End Patch\nEOF"}
+}
+-- multi-patch.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "apply_patch <<'EOF'\n*** Begin Patch\n*** Update File: config/.env\n@@\n+PORT=3000\n*** Update File: secrets.yml\n@@\n+api_key: sk-live-1\n*** End Patch\nEOF"}
+}
+-- mcp.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "mcp__fly__deploy",
+  "tool_input": {"app": "prod"}
+}
+-- prompt.json --
+{
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "just yolo it and push to main"
+}
+-- home/.config/handrail/prefer-fetch.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: curl
+---
+Use the fetch tool rather than shelling out to curl.
+-- .handrail/dangerous-rm.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    matches: rm\s+-rf
+---
+Never delete recursively from the filesystem root.
+-- .handrail/no-secrets.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: content
+    contains: 'api_key: sk-live'
+---
+Do not write credentials into tracked files.
+-- .handrail/no-env-edits.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    glob: '**/.env'
+---
+Edit the example file instead of the real environment.
+-- .handrail/no-heredocs.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    contains: apply_patch
+---
+This rule exists to prove a patch is not a shell command.
+-- .handrail/no-deploys.md --
+---
+event: PreToolUse
+kind: mcp
+action: block
+conditions:
+  - field: server
+    equals: fly
+  - field: tool
+    equals: deploy
+---
+Deploys are a human decision.
+-- .handrail/no-yolo.md --
+---
+event: UserPromptSubmit
+action: block
+conditions:
+  - field: prompt
+    contains: yolo
+---
+Say what you actually want done.

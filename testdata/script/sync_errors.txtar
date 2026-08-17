@@ -26,8 +26,21 @@ exec sh -c 'cd nohome && HOME=$WORK/nohome XDG_CONFIG_HOME=$WORK/nohome/.config 
 stdout '^code=1$'
 stderr 'no harness found'
 
+# One harness's unreadable config is that harness's failure, named, and not the
+# other's: a machine with two harnesses does not lose the working one.
+mkdir home/.codex
+cp broken.json home/.codex/hooks.json
+rm home/.claude/settings.json
+exec sh -c 'handrail sync; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail: codex: .*hooks.json'
+stdout 'claude: wrote 6 hook entries'
+exists home/.claude/settings.json
+
 -- .git/HEAD --
 ref: refs/heads/main
+-- broken.json --
+{ not json
 -- home/.claude/.keep --
 -- .handrail/fine.md --
 ---
