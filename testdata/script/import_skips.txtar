@@ -1,0 +1,158 @@
+# Nothing broken is ever written: every construct the rule format cannot express
+# is skipped, naming the reason and the original file.
+exec sh -c 'handrail import hookify; echo code=$?'
+stdout '^code=0$'
+! stderr .
+stdout '^0 imported, 13 skipped$'
+
+stdout '^skipped +\.claude/hookify\.ambiguous\.local\.md: conditions span more than one event: "command" names PreToolUse shell and "file_path" names PreToolUse file_edit$'
+stdout 'hookify\.gizmo\.local\.md: unknown event "gizmo"'
+stdout 'hookify\.lookahead\.local\.md: pattern "\(\?!skip\)foo" is not an RE2 regexp'
+stdout 'hookify\.no-conditions\.local\.md: rule has no conditions, which upstream never matches'
+stdout 'hookify\.odd-operator\.local\.md: condition operator "fuzzy_match" is not one handrail expresses'
+stdout 'hookify\.old-text\.local\.md: condition field "old_text" has no canonical equivalent'
+stdout 'hookify\.prompt-matcher\.local\.md: tool_matcher "Bash" cannot apply to event "UserPromptSubmit"'
+stdout 'hookify\.stop-matcher\.local\.md: tool_matcher "Bash" cannot apply to event "Stop"'
+stdout 'hookify\.matcher-clash\.local\.md: tool_matcher "Bash" names shell, and the rest of the rule names file_edit'
+stdout 'hookify\.stop-reason\.local\.md: condition field "reason" has no canonical equivalent'
+stdout 'hookify\.task-tool\.local\.md: tool_matcher "Task" names a tool with no canonical kind'
+stdout 'hookify\.transcript\.local\.md: condition field "transcript" has no canonical equivalent'
+stdout 'hookify\.unnamed\.local\.md: rule has no name'
+
+# A skipped rule leaves nothing behind, so the tier is never even created.
+! exists .handrail/local
+
+# The originals are untouched, so a hand-port still has them.
+exists .claude/hookify.transcript.local.md
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .claude/hookify.old-text.local.md --
+---
+name: old-text
+event: file
+conditions:
+  - field: old_text
+    operator: contains
+    pattern: TODO
+---
+Replaced text is not in the canonical payload.
+-- .claude/hookify.transcript.local.md --
+---
+name: require-tests-run
+enabled: false
+event: stop
+action: block
+conditions:
+  - field: transcript
+    operator: not_contains
+    pattern: npm test|pytest|cargo test
+---
+Run the tests before stopping.
+-- .claude/hookify.stop-reason.local.md --
+---
+name: stop-reason
+event: stop
+conditions:
+  - field: reason
+    operator: contains
+    pattern: done
+---
+The stop reason is not in the canonical payload.
+-- .claude/hookify.lookahead.local.md --
+---
+name: lookahead
+event: bash
+pattern: (?!skip)foo
+---
+RE2 has no lookarounds.
+-- .claude/hookify.task-tool.local.md --
+---
+name: task-tool
+tool_matcher: Task
+conditions:
+  - field: command
+    operator: contains
+    pattern: deploy
+---
+No canonical kind covers the Task tool.
+-- .claude/hookify.ambiguous.local.md --
+---
+name: ambiguous
+conditions:
+  - field: command
+    operator: contains
+    pattern: rm
+  - field: file_path
+    operator: contains
+    pattern: .env
+---
+An all rule whose fields span two events.
+-- .claude/hookify.no-conditions.local.md --
+---
+name: no-conditions
+event: bash
+action: block
+---
+Upstream never matches a rule with no conditions.
+-- .claude/hookify.odd-operator.local.md --
+---
+name: odd-operator
+event: bash
+conditions:
+  - field: command
+    operator: fuzzy_match
+    pattern: rm
+---
+Upstream never matches an unknown operator either.
+-- .claude/hookify.unnamed.local.md --
+---
+event: bash
+conditions:
+  - field: command
+    operator: contains
+    pattern: rm
+---
+The converted filename comes from the name field.
+-- .claude/hookify.gizmo.local.md --
+---
+name: gizmo
+event: gizmo
+conditions:
+  - field: command
+    operator: contains
+    pattern: rm
+---
+No such upstream event.
+-- .claude/hookify.stop-matcher.local.md --
+---
+name: stop-matcher
+event: stop
+tool_matcher: Bash
+conditions:
+  - field: content
+    operator: contains
+    pattern: rm
+---
+A Stop event carries no tool.
+-- .claude/hookify.prompt-matcher.local.md --
+---
+name: prompt-matcher
+tool_matcher: Bash
+conditions:
+  - field: user_prompt
+    operator: contains
+    pattern: deploy
+---
+An all rule whose inferred event carries no tool either.
+-- .claude/hookify.matcher-clash.local.md --
+---
+name: matcher-clash
+event: file
+tool_matcher: Bash
+conditions:
+  - field: file_path
+    operator: contains
+    pattern: .env
+---
+The matcher and the fields select different tools.

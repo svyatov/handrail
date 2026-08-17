@@ -1,0 +1,36 @@
+# The importer is one-shot and named: only hookify converts.
+exec sh -c 'handrail import; echo code=$?'
+stdout '^code=1$'
+stderr 'Usage: handrail import hookify'
+
+exec sh -c 'handrail import cursor; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail import: unknown format "cursor"; known: hookify'
+
+exec sh -c 'handrail import hookify one two; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail import: unexpected argument "two"'
+
+# A source that is not there, or holds nothing to convert, is an error rather
+# than a silent success that wrote no rules.
+exec sh -c 'handrail import hookify; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail import: '
+
+exec sh -c 'handrail import hookify empty; echo code=$?'
+stdout '^code=1$'
+stderr 'no hookify\.\*\.local\.md rules in'
+
+# Files upstream itself would not read are reported, not converted.
+exec sh -c 'handrail import hookify broken; echo code=$?'
+stdout '^code=0$'
+stdout 'hookify\.no-frontmatter\.local\.md: line 1: missing YAML frontmatter'
+! exists .handrail/local
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- empty/keep.txt --
+Not a hookify rule.
+-- broken/hookify.no-frontmatter.local.md --
+name: no-frontmatter
+event: bash

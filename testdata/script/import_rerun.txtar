@@ -1,0 +1,66 @@
+# Re-running the import never overwrites what is already there, so an edited
+# rule survives a second pass and the command stays safe to repeat.
+exec handrail import hookify
+stdout '^1 imported, 0 skipped$'
+
+cp edited.md .handrail/local/no-force-push.md
+exec sh -c 'handrail import hookify; echo code=$?'
+stdout '^code=0$'
+stdout 'hookify\.no-force-push\.local\.md: the Project-personal tier already has no-force-push\.md'
+stdout '^0 imported, 1 skipped$'
+cmp .handrail/local/no-force-push.md edited.md
+
+# The originals are never touched, whatever the outcome.
+cmp .claude/hookify.no-force-push.local.md original.md
+
+# A path argument points the import somewhere else, and a single file works too.
+exec handrail import hookify elsewhere
+stdout 'imported elsewhere/hookify\.from-elsewhere\.local\.md -> \.handrail/local/from-elsewhere\.md'
+exists .handrail/local/from-elsewhere.md
+
+exec handrail import hookify single/hookify.one-file.local.md
+stdout '^1 imported, 0 skipped$'
+exists .handrail/local/one-file.md
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .claude/hookify.no-force-push.local.md --
+---
+name: no-force-push
+event: bash
+action: block
+pattern: push\s+--force
+---
+Never force-push a shared branch.
+-- original.md --
+---
+name: no-force-push
+event: bash
+action: block
+pattern: push\s+--force
+---
+Never force-push a shared branch.
+-- edited.md --
+---
+event: PreToolUse
+kind: shell
+action: warn
+conditions:
+  - field: command
+    matches: '(?i)push\s+--force'
+---
+Downgraded to a warning by hand, and left that way.
+-- elsewhere/hookify.from-elsewhere.local.md --
+---
+name: from-elsewhere
+event: bash
+pattern: curl
+---
+Rules can be imported from anywhere.
+-- single/hookify.one-file.local.md --
+---
+name: one-file
+event: bash
+pattern: wget
+---
+One file is a valid source too.

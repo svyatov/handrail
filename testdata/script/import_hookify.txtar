@@ -1,0 +1,207 @@
+# Upstream hookify rules convert mechanically into the Project-personal tier.
+exec sh -c 'handrail import hookify; echo code=$?'
+stdout '^code=0$'
+! stderr .
+stdout '^8 imported, 0 skipped$'
+
+# Every event maps: bash, file, prompt, stop, and all inferred from the fields.
+cmp .handrail/local/block-dangerous-rm.md want/block-dangerous-rm.md
+cmp .handrail/local/warn-console-log.md want/warn-console-log.md
+cmp .handrail/local/warn-sensitive-files.md want/warn-sensitive-files.md
+cmp .handrail/local/no-ship-it.md want/no-ship-it.md
+cmp .handrail/local/stop-todo.md want/stop-todo.md
+cmp .handrail/local/infer-shell.md want/infer-shell.md
+cmp .handrail/local/writes-only.md want/writes-only.md
+cmp .handrail/local/disabled-lockfile.md want/disabled-lockfile.md
+
+stdout 'imported \.claude/hookify\.block-dangerous-rm\.local\.md -> \.handrail/local/block-dangerous-rm\.md'
+
+# The converted tier is a valid ruleset, so the import needs no hand-fixing.
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=0$'
+! stderr .
+stdout '^project-personal +block-dangerous-rm +PreToolUse +shell +block +enabled$'
+# Upstream lowercases before comparing, so its enabled: False stays off here.
+stdout '^project-personal +disabled-lockfile +PreToolUse +file_edit +warn +disabled$'
+
+# A converted rule matches what the original was written to catch.
+exec sh -c 'handrail test PreToolUse --kind shell --field command="rm -rf build"; echo code=$?'
+stdout '^code=2$'
+stdout '^block  block-dangerous-rm  project-personal$'
+
+# Upstream compiles every regex with IGNORECASE, so the converted one does too.
+exec sh -c 'handrail test PreToolUse --kind file_edit --field content="Console.LOG(x)"; echo code=$?'
+stdout '^code=0$'
+stdout '^warn  warn-console-log  project-personal$'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .claude/hookify.block-dangerous-rm.local.md --
+---
+name: block-dangerous-rm
+enabled: true
+event: bash
+pattern: rm\s+-rf
+action: block
+---
+
+⚠️ **Dangerous rm command detected!**
+
+Verify the path before deleting anything recursively.
+-- want/block-dangerous-rm.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    matches: '(?i)rm\s+-rf'
+---
+⚠️ **Dangerous rm command detected!**
+
+Verify the path before deleting anything recursively.
+-- .claude/hookify.warn-console-log.local.md --
+---
+name: warn-console-log
+enabled: true
+event: file
+pattern: console\.log\(
+action: warn
+---
+
+Ship a logger, not a console.log.
+-- want/warn-console-log.md --
+---
+event: PreToolUse
+kind: file_edit
+action: warn
+conditions:
+  - field: content
+    matches: '(?i)console\.log\('
+---
+Ship a logger, not a console.log.
+-- .claude/hookify.warn-sensitive-files.local.md --
+---
+name: warn-sensitive-files
+event: file
+action: warn
+conditions:
+  - field: file_path
+    operator: regex_match
+    pattern: \.env$|\.env\.|credentials|secrets
+---
+
+Keep credentials out of the repo.
+-- want/warn-sensitive-files.md --
+---
+event: PreToolUse
+kind: file_edit
+action: warn
+conditions:
+  - field: path
+    matches: '(?i)\.env$|\.env\.|credentials|secrets'
+---
+Keep credentials out of the repo.
+-- .claude/hookify.no-ship-it.local.md --
+---
+name: no-ship-it
+event: prompt
+conditions:
+  - field: user_prompt
+    operator: contains
+    pattern: ship it
+---
+
+Say what to ship.
+-- want/no-ship-it.md --
+---
+event: UserPromptSubmit
+action: warn
+conditions:
+  - field: prompt
+    contains: 'ship it'
+---
+Say what to ship.
+-- .claude/hookify.stop-todo.local.md --
+---
+name: stop-todo
+event: stop
+pattern: TODO
+action: block
+---
+
+Finish the TODOs before stopping.
+-- want/stop-todo.md --
+---
+event: Stop
+action: block
+conditions:
+  - field: content
+    matches: '(?i)TODO'
+---
+Finish the TODOs before stopping.
+-- .claude/hookify.infer-shell.local.md --
+---
+name: infer-shell
+action: block
+conditions:
+  - field: command
+    operator: starts_with
+    pattern: git push --force
+---
+
+Never force-push.
+-- want/infer-shell.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: 'git push --force'
+---
+Never force-push.
+-- .claude/hookify.writes-only.local.md --
+---
+name: writes-only
+tool_matcher: Edit|Write
+conditions:
+  - field: file_path
+    operator: not_contains
+    pattern: /tmp/
+---
+
+Edits outside /tmp/ are the ones worth watching.
+-- want/writes-only.md --
+---
+event: PreToolUse
+kind: file_edit
+action: warn
+conditions:
+  - field: path
+    not_contains: '/tmp/'
+---
+Edits outside /tmp/ are the ones worth watching.
+-- .claude/hookify.disabled-lockfile.local.md --
+---
+name: disabled-lockfile
+enabled: False
+event: file
+conditions:
+  - field: file_path
+    operator: ends_with
+    pattern: .lock
+---
+
+Lockfiles are generated, and this rule is off until someone wants it.
+-- want/disabled-lockfile.md --
+---
+event: PreToolUse
+kind: file_edit
+action: warn
+enabled: false
+conditions:
+  - field: path
+    ends_with: '.lock'
+---
+Lockfiles are generated, and this rule is off until someone wants it.

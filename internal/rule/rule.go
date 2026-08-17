@@ -88,16 +88,9 @@ func isOperator(key string) bool {
 // Parse reads one rule file. name is the rule's identity, the file's basename
 // without its extension.
 func Parse(name string, data []byte) (*Rule, error) {
-	fm, body, err := splitFrontmatter(strings.ReplaceAll(string(data), "\r\n", "\n"))
+	doc, body, err := parseFrontmatter(data)
 	if err != nil {
 		return nil, err
-	}
-	doc, err := parseYAML(strings.Split(fm, "\n"))
-	if err != nil {
-		return nil, err
-	}
-	if doc.isScalar || doc.seq != nil {
-		return nil, fmt.Errorf("line 2: frontmatter must be a mapping")
 	}
 
 	r := &Rule{Name: name, Action: "warn", Enabled: true, Message: strings.TrimSpace(body)}
@@ -164,6 +157,24 @@ func Parse(name string, data []byte) (*Rule, error) {
 		}
 	}
 	return r, nil
+}
+
+// parseFrontmatter reads a markdown file's YAML frontmatter as a mapping, and
+// returns it with the body below. The Importer reads upstream files with it too:
+// their frontmatter is the same block-style subset.
+func parseFrontmatter(data []byte) (doc *node, body string, err error) {
+	fm, body, err := splitFrontmatter(strings.ReplaceAll(string(data), "\r\n", "\n"))
+	if err != nil {
+		return nil, "", err
+	}
+	doc, err = parseYAML(strings.Split(fm, "\n"))
+	if err != nil {
+		return nil, "", err
+	}
+	if doc.isScalar || doc.seq != nil {
+		return nil, "", fmt.Errorf("line 2: frontmatter must be a mapping")
+	}
+	return doc, body, nil
 }
 
 func splitFrontmatter(s string) (frontmatter, body string, err error) {
