@@ -1,0 +1,12 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # Every command writes its report to the stdout and stderr the CLI seam
+      # passes in. A write there failing is the shell's business, not a rule
+      # decision, and there is nowhere left to report it to anyway.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln

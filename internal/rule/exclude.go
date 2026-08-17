@@ -45,7 +45,7 @@ func ExcludeLocal(root string) (added bool, err error) {
 		prefix = "\n"
 	}
 	if _, err := fmt.Fprint(f, prefix+excludeLine+"\n"); err != nil {
-		f.Close()
+		_ = f.Close()
 		return false, err
 	}
 	return true, f.Close()

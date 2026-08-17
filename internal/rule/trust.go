@@ -61,7 +61,7 @@ func Trust(root string) (added bool, err error) {
 		return false, err
 	}
 	if _, err := fmt.Fprintln(f, root); err != nil {
-		f.Close()
+		_ = f.Close()
 		return false, err
 	}
 	return true, f.Close()
