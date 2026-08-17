@@ -1,0 +1,112 @@
+# Every state that keeps a rule from firing is named, and doctor exits nonzero
+# so a script can act on it. The template carries the sandbox's own path,
+# because an entry's binary is only stale relative to the one running.
+exec sh -c 'sed "s|WORKDIR|$WORK|" $WORK/home/.claude/settings.json > $WORK/next.json && mv $WORK/next.json $WORK/home/.claude/settings.json'
+chmod 0755 moved/handrail
+exec sh -c 'handrail doctor; echo code=$?'
+stdout '^code=1$'
+
+# An entry naming a binary that is not this one enforces the wrong handrail.
+stdout '^problem +claude: the PreToolUse entry names .*/moved/handrail, and this binary is /.*; run handrail sync$'
+
+# An entry naming a binary that is gone enforces nothing at all.
+stdout '^problem +claude: the PostToolUse entry names /nowhere/handrail, which is not a runnable file; run handrail sync$'
+
+# An event with no entry of handrail's is the plainest reason nothing fires,
+# and another tool's entry on that event is not one of handrail's.
+stdout '^problem +claude: no hook entry for UserPromptSubmit; run handrail sync$'
+stdout '^problem +claude: no hook entry for SessionStart; run handrail sync$'
+stdout '^problem +claude: no hook entry for SessionEnd; run handrail sync$'
+stdout '^problem +claude: no hook entry for Stop; run handrail sync$'
+! stdout 'hook entries current'
+
+# A harness with no install is reported, not diagnosed.
+stdout '^note +codex: not installed$'
+
+# Committed rules nobody granted are skipped, which reads as silence otherwise.
+stdout '^problem +project-shared: .*/\.handrail holds rules this machine has not trusted; run handrail trust$'
+
+# Keeping the Project-personal tier out of version control is sync's doing, so
+# its absence is sync's to fix.
+stdout '^problem +\.handrail/local/ is not excluded in \.git/info/exclude; run handrail sync$'
+
+# A rule that cannot be parsed guards nothing, and doctor names the file.
+stdout '^problem +.*/broken\.md: line 2: unknown event "Nope"$'
+stdout '^ok +1 rule valid$'
+
+# An entry whose exec bit an install lost fires nothing either, and it looks
+# exactly like a working entry from the settings file alone.
+chmod 0644 moved/handrail
+exec sh -c 'handrail doctor; echo code=$?'
+stdout '^code=1$'
+stdout '^problem +claude: the PreToolUse entry names .*/moved/handrail, which is not a runnable file; run handrail sync$'
+
+# Fixing what sync and trust own turns those checks green.
+rm .handrail/local/broken.md
+exec handrail trust
+exec handrail sync
+exec handrail doctor
+stdout '^ok +claude: 6 hook entries current$'
+stdout '^ok +project-shared: 1 rule in .*/\.handrail, trusted$'
+stdout '^ok +\.handrail/local/ is excluded in \.git/info/exclude$'
+! stdout 'problem'
+
+# An unreadable harness config is a diagnosis of its own, not a crash.
+exec sh -c 'echo not json > $WORK/home/.claude/settings.json'
+! exec handrail doctor
+stdout '^problem +claude: '
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- moved/handrail --
+a binary that is not the one running
+-- home/.claude/settings.json --
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "WORKDIR/moved/handrail hook claude PreToolUse"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/nowhere/handrail hook claude PostToolUse"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "my-own.sh hook claude SessionStart"
+          }
+        ]
+      }
+    ]
+  }
+}
+-- .handrail/shared.md --
+---
+event: PreToolUse
+---
+A committed rule nobody has granted yet.
+-- .handrail/local/broken.md --
+---
+event: Nope
+---
+A rule that cannot be parsed guards nothing.
+-- .handrail/local/mine.md --
+---
+event: PreToolUse
+---
+The user's own rule.

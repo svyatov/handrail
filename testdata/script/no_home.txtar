@@ -24,6 +24,13 @@ exec sh -c 'handrail sync; echo code=$?'
 stdout '^code=1$'
 stderr 'no harness found'
 
+# doctor answers the same way: nowhere to read a Global tier from is a fault it
+# names, not a directory it invents.
+exec sh -c 'handrail doctor; echo code=$?'
+stdout '^code=1$'
+stdout '^problem +global: no config directory: set HOME or XDG_CONFIG_HOME$'
+stdout '^note +claude: not installed$'
+
 # With home set and no XDG variable, the base is the spec's default under it.
 env HOME=$WORK/home
 mkdir $WORK/home/.config/handrail
