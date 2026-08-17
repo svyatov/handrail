@@ -5,3 +5,6 @@
 
 # Coverage profile, written by task cover
 /cover.out
+
+# Release artifacts, written by goreleaser
+/dist/

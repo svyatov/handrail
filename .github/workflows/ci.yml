@@ -56,3 +56,18 @@ jobs:
 
       - name: Lint and formatting
         run: task lint
+
+  release-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # install-only, so the check runs through the Taskfile like every other
+      # step, and `task release-check` locally is the same command.
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          install-only: true
+      - uses: go-task/setup-task@v2
+
+      - name: Validate the release config
+        run: task release-check
