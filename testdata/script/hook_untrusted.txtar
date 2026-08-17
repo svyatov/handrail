@@ -1,0 +1,49 @@
+# A clone's committed rules are inert until the repo is trusted, and the hook
+# path says so rather than enforcing nothing in silence.
+stdin rm.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=0$'
+stdout 'handrail: skipping the untrusted Project-shared rules in .*; run handrail trust to enable them'
+! stdout 'handrail block'
+
+# The notice rides along once, not once per skipped rule.
+stdout -count=1 'run handrail trust'
+
+# The user's own tiers are never gated, so a personal rule still fires.
+stdout 'handrail warn: personal \(project-personal\)'
+
+# Once trusted, the shared tier blocks and the notice is gone.
+exec handrail trust
+stdin rm.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=2$'
+stderr 'handrail block: blocker \(project-shared\)'
+! stderr 'run handrail trust'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- rm.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}
+-- .handrail/blocker.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf
+---
+Not from the filesystem root.
+-- .handrail/also-blocker.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+---
+A second shared rule shares the one notice.
+-- .handrail/local/personal.md --
+---
+event: PreToolUse
+kind: shell
+---
+A personal rule needs no grant.

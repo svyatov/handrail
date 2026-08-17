@@ -1,0 +1,81 @@
+# Nothing handrail gets wrong at event time may stop the harness, and nothing it
+# skips may be skipped quietly.
+exec handrail trust
+
+# A rule that cannot be parsed is skipped, named, and does not stop the rules
+# around it from being evaluated.
+stdin bash.json
+exec handrail hook claude PreToolUse
+! stderr .
+stdout 'handrail: skipped the broken rule .*/\.handrail/broken\.md: line 2: unknown event'
+stdout 'handrail warn: works \(project-shared\)'
+
+# A broken rule alongside a blocking one still blocks, and still says so.
+stdin rm.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=2$'
+stderr 'handrail block: blocker \(project-shared\)'
+stderr 'skipped the broken rule'
+
+# Malformed stdin never blocks the harness: fail open, loudly.
+stdin garbage
+exec handrail hook claude PreToolUse
+! stderr .
+stdout 'handrail: could not read the PreToolUse payload'
+
+# Neither does empty stdin.
+exec sh -c 'printf "" | handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=0$'
+stdout 'could not read the PreToolUse payload'
+
+# SessionEnd has no decision control and its JSON output is discarded, so its
+# one remaining channel is stderr, which the harness shows to the user.
+stdin session-end.json
+exec sh -c 'handrail hook claude SessionEnd; echo code=$?'
+stdout '^code=2$'
+! stdout 'hookSpecificOutput'
+stderr 'skipped the broken rule'
+
+# The harness and the event are named by sync, so getting them wrong is a bug in
+# handrail's own config rather than something to fail open on.
+stdin bash.json
+! exec handrail hook claude Nope
+stderr 'unknown event "Nope"'
+stdin bash.json
+! exec handrail hook nosuch PreToolUse
+stderr 'unknown harness "nosuch"'
+! exec handrail hook claude
+stderr 'Usage: handrail hook'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- garbage --
+not json at all
+-- bash.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- rm.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}
+-- session-end.json --
+{"hook_event_name": "SessionEnd", "end_reason": "clear"}
+-- .handrail/broken.md --
+---
+event: Nope
+---
+An event that does not exist is caught at authoring time, but a rule can also
+break under a binary that has moved on, so the hook path has to survive it.
+-- .handrail/works.md --
+---
+event: PreToolUse
+kind: shell
+---
+The rule next to a broken one is still evaluated.
+-- .handrail/blocker.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf
+---
+Not from the filesystem root.

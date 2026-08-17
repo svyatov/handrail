@@ -1,0 +1,219 @@
+# The Claude Code hook path end to end: block, warn, and allow across tool kinds.
+exec handrail trust
+
+# A blocking shell rule: exit 2, message as the reason on stderr, nothing on stdout.
+stdin bash-rm.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=2$'
+! stdout 'handrail block'
+stderr '^handrail block: dangerous-rm \(project-shared\)$'
+stderr 'Never delete recursively from the filesystem root'
+
+# A warning file_edit rule matching on content: the action proceeds, the message
+# is injected as context.
+stdin write-secret.json
+exec handrail hook claude PreToolUse
+! stderr .
+stdout '"hookEventName": "PreToolUse"'
+stdout 'handrail warn: no-secrets \(project-shared\)'
+stdout 'Do not write credentials into tracked files'
+
+# The same rule matches an Edit payload, whose new content is new_string.
+stdin edit-secret.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: no-secrets'
+
+# file_read is its own kind: the file_edit rule does not reach it, and nothing
+# matching means no output at all.
+stdin read-secret.json
+exec handrail hook claude PreToolUse
+! stdout .
+! stderr .
+
+# ...while a file_read rule does reach it.
+stdin read-env.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: no-env-reads'
+
+# An mcp call is classified by its tool name, and server and tool are addressable.
+stdin mcp.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=2$'
+stderr 'handrail block: no-deploys \(project-shared\)'
+
+# UserPromptSubmit carries the prompt, and blocks with exit 2.
+stdin prompt.json
+exec sh -c 'handrail hook claude UserPromptSubmit; echo code=$?'
+stdout '^code=2$'
+stderr 'handrail block: no-yolo'
+
+# PostToolUse cannot deny a call that has already run, so a block there degrades
+# to the strongest thing left: the message, with the turn proceeding.
+stdin post-rm.json
+exec sh -c 'handrail hook claude PostToolUse; echo code=$?'
+stdout '^code=0$'
+stdout '"hookEventName": "PostToolUse"'
+stdout 'handrail block: after-the-fact \(project-shared\)'
+! stderr .
+
+# Every matching message is delivered, labeled, in tier order.
+stdin bash-curl.json
+exec handrail hook claude PreToolUse
+cmp stdout expected-multi
+
+# Tier discovery follows the payload's cwd, not the process's: run from a
+# neighbouring repo that has no rules of its own.
+exec sh -c 'sed "s|CWD|$PWD|" bash-rm.json > cwd.json'
+cd elsewhere
+stdin ../bash-rm.json
+exec handrail hook claude PreToolUse
+! stdout .
+! stderr .
+stdin ../cwd.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=2$'
+
+-- expected-multi --
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "additionalContext": "handrail warn: prefer-fetch (global)\nUse the fetch tool rather than shelling out to curl.\n\nhandrail warn: slow-network (project-personal)\nNetwork calls make the session slow."
+  }
+}
+-- .git/HEAD --
+ref: refs/heads/main
+-- elsewhere/.git/HEAD --
+ref: refs/heads/main
+-- bash-rm.json --
+{
+  "session_id": "s1",
+  "cwd": "CWD",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {"command": "rm -rf /tmp/build", "description": "clean"}
+}
+-- bash-curl.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {"command": "curl https://example.com"}
+}
+-- post-rm.json --
+{
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Bash",
+  "tool_input": {"command": "rm -rf /tmp/build"},
+  "tool_output": {"stdout": ""}
+}
+-- write-secret.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Write",
+  "tool_input": {"file_path": "/repo/config.yml", "content": "api_key: sk-live-1"}
+}
+-- edit-secret.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Edit",
+  "tool_input": {"file_path": "/repo/config.yml", "old_string": "a", "new_string": "api_key: sk-live-1", "replace_all": false}
+}
+-- read-secret.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Read",
+  "tool_input": {"file_path": "/repo/config.yml"}
+}
+-- read-env.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Read",
+  "tool_input": {"file_path": "/repo/.env"}
+}
+-- mcp.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "mcp__fly__deploy",
+  "tool_input": {"app": "prod"}
+}
+-- prompt.json --
+{
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "just yolo it and push to main"
+}
+-- home/.config/handrail/prefer-fetch.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: curl
+---
+Use the fetch tool rather than shelling out to curl.
+-- .handrail/dangerous-rm.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    matches: rm\s+-rf
+---
+Never delete recursively from the filesystem root.
+-- .handrail/after-the-fact.md --
+---
+event: PostToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf
+---
+Say so even when the call is already done.
+-- .handrail/no-secrets.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: content
+    contains: 'api_key:'
+---
+Do not write credentials into tracked files.
+-- .handrail/no-env-reads.md --
+---
+event: PreToolUse
+kind: file_read
+conditions:
+  - field: path
+    glob: '**/.env'
+---
+Read the example file instead of the real environment.
+-- .handrail/no-deploys.md --
+---
+event: PreToolUse
+kind: mcp
+action: block
+conditions:
+  - field: server
+    equals: fly
+  - field: tool
+    equals: deploy
+---
+Deploys are a human decision.
+-- .handrail/no-yolo.md --
+---
+event: UserPromptSubmit
+action: block
+conditions:
+  - field: prompt
+    contains: yolo
+---
+Say what you actually want done.
+-- .handrail/local/slow-network.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    contains: curl
+---
+Network calls make the session slow.

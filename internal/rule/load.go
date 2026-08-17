@@ -170,9 +170,17 @@ func load(dir string, skipLocal bool) ([]*Rule, []Problem) {
 }
 
 // RepoRoot returns the git repository root containing dir, or dir itself when
-// there is none. It walks up for .git rather than shelling out to git: this
-// runs on the hook hot path, where a process spawn is most of the budget.
+// there is none, always as a symlink-free path. It walks up for .git rather
+// than shelling out to git: this runs on the hook hot path, where a process
+// spawn is most of the budget.
 func RepoRoot(dir string) string {
+	// Trust is keyed by path, and the cwd a harness reports need not be spelled
+	// the same way as the one handrail trust saw: /tmp and /private/tmp are one
+	// repo, and a grant given through one must not read as absent through the
+	// other. Resolving here settles it for every caller at once.
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
 	for d := dir; ; {
 		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil {
 			return d

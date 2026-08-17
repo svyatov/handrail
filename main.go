@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
+	"github.com/svyatov/handrail/internal/claude"
 	"github.com/svyatov/handrail/internal/rule"
 )
 
@@ -23,6 +25,7 @@ var (
 const usage = `Usage: handrail <command> [arguments]
 
 Commands:
+  hook      Evaluate one harness event (installed by sync; not for humans)
   check     Validate the rules and print the effective ruleset
   test      Dry-run a synthetic payload against the rules
   trust     Grant this repo's Project-shared rules
@@ -30,6 +33,11 @@ Commands:
 `
 
 const testUsage = `Usage: handrail test <event> [--kind kind] [--field key=value]... [--stdin] [--json]
+`
+
+const hookUsage = `Usage: handrail hook <harness> <event>
+
+Reads the harness's payload on stdin. Sync installs this; humans want test.
 `
 
 func main() {
@@ -44,6 +52,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	switch args[0] {
+	case "hook":
+		return cmdHook(args[1:], stdin, stdout, stderr)
 	case "check":
 		return cmdCheck(args[1:], stdout, stderr)
 	case "test":
@@ -98,6 +108,76 @@ func cmdTrust(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// cmdHook is the entrypoint sync installs into each harness. Everything it can
+// get wrong past argument parsing fails open and says so: a guardrail manager
+// that wedges the harness is worse than the harness without it.
+func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("hook", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		return 1
+	}
+	if fs.NArg() != 2 {
+		fmt.Fprint(stderr, hookUsage)
+		return 1
+	}
+	harness, event := fs.Arg(0), fs.Arg(1)
+	// The hook entry is handrail's own writing, so a wrong harness or event is a
+	// bug in the installed config rather than something to soldier through.
+	if harness != claude.Name {
+		fmt.Fprintf(stderr, "handrail hook: unknown harness %q\n", harness)
+		return 1
+	}
+	if !rule.IsEvent(event) {
+		fmt.Fprintf(stderr, "handrail hook: unknown event %q\n", event)
+		return 1
+	}
+
+	data, err := io.ReadAll(stdin)
+	if err == nil {
+		var payload rule.Payload
+		var cwd string
+		if payload, cwd, err = claude.Normalize(event, data); err == nil {
+			message, block := evaluate(payload, cwd)
+			return claude.Deliver(event, message, block, stdout, stderr)
+		}
+	}
+	return claude.Deliver(event,
+		fmt.Sprintf("handrail: could not read the %s payload, so no rule was evaluated: %v", event, err),
+		false, stdout, stderr)
+}
+
+// evaluate merges the tiers and collects everything the agent should hear: the
+// matched messages, then whatever handrail had to skip to get there.
+func evaluate(payload rule.Payload, cwd string) (message string, block bool) {
+	// The payload names the directory the event happened in; the process's own
+	// is the fallback for a harness that leaves it out.
+	if !filepath.IsAbs(cwd) {
+		var err error
+		if cwd, err = os.Getwd(); err != nil {
+			return fmt.Sprintf("handrail: no working directory, so no rule was evaluated: %v", err), false
+		}
+	}
+	rules, problems, d := rule.LoadTiers(cwd)
+
+	var sections []string
+	for _, r := range rule.Effective(rules, payload) {
+		if r.Action == "block" {
+			block = true
+		}
+		sections = append(sections, fmt.Sprintf("handrail %s: %s (%s)\n%s", r.Action, r.Name, r.Tier, r.Message))
+	}
+	// Loud fail-open: a rule that cannot be parsed is skipped, and the skipping
+	// is named. A guardrail that guards nothing must never look like one that did.
+	for _, p := range problems {
+		sections = append(sections, fmt.Sprintf("handrail: skipped the broken rule %s: %s", p.Path, p.Message))
+	}
+	if d.Skipped {
+		sections = append(sections, trustNotice(d.Root))
+	}
+	return strings.Join(sections, "\n\n"), block
+}
+
 // loadRules reads the tiers that apply to the working directory and reports an
 // untrusted shared tier, which is skipped rather than silently missing.
 func loadRules(stderr io.Writer) ([]*rule.Rule, []rule.Problem, error) {
@@ -107,9 +187,13 @@ func loadRules(stderr io.Writer) ([]*rule.Rule, []rule.Problem, error) {
 	}
 	rules, problems, d := rule.LoadTiers(cwd)
 	if d.Skipped {
-		fmt.Fprintf(stderr, "handrail: skipping the untrusted Project-shared rules in %s; run handrail trust to enable them\n", d.Root)
+		fmt.Fprintln(stderr, trustNotice(d.Root))
 	}
 	return rules, problems, nil
+}
+
+func trustNotice(root string) string {
+	return fmt.Sprintf("handrail: skipping the untrusted Project-shared rules in %s; run handrail trust to enable them", root)
 }
 
 func writeJSON(stdout, stderr io.Writer, v any) int {
@@ -334,11 +418,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	out := testOutput{Outcome: "allow", Matched: []testMatch{}}
-	for _, r := range rules {
-		// A shadowed rule is not the effective rule; its namesake is.
-		if r.ShadowedBy != "" || !r.Matches(payload) {
-			continue
-		}
+	for _, r := range rule.Effective(rules, payload) {
 		out.Matched = append(out.Matched, testMatch{
 			Rule: r.Name, Tier: r.Tier, Action: r.Action, Message: r.Message,
 		})
