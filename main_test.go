@@ -13,10 +13,11 @@ import (
 	"github.com/rogpeppe/go-internal/testscript"
 )
 
+// main itself, not a closure around run: testscript hands the command its own
+// os.Args, so main reads exactly what a real invocation reads, and the entry
+// point gets covered by every script rather than by nothing.
 func TestMain(m *testing.M) {
-	testscript.Main(m, map[string]func(){
-		"handrail": func() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) },
-	})
+	testscript.Main(m, map[string]func(){"handrail": main})
 }
 
 func TestScripts(t *testing.T) {
@@ -24,7 +25,17 @@ func TestScripts(t *testing.T) {
 		Dir:                 "testdata/script",
 		RequireExplicitExec: true,
 		Setup:               sandbox,
+		Condition:           condition,
 	})
+}
+
+// condition adds [root], which several scripts negate: chmod cannot deny root
+// anything, so a permission-failure case has to skip when the tests run as one.
+func condition(cond string) (bool, error) {
+	if cond == "root" {
+		return os.Geteuid() == 0, nil
+	}
+	return false, fmt.Errorf("unknown condition %q", cond)
 }
 
 // hookBudget is docs/spec.md section 10's acceptance bar. Cold means no daemon:
@@ -113,10 +124,12 @@ func TestHookColdStart(t *testing.T) {
 	}
 }
 
-func mkdirs(t *testing.T, dir string) {
+func mkdirs(t *testing.T, dirs ...string) {
 	t.Helper()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

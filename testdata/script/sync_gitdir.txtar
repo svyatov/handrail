@@ -1,0 +1,94 @@
+# Excluding the Project-personal tier means finding the git directory first. A
+# working tree keeps it inline; a worktree or submodule leaves a pointer file
+# behind, and a worktree then shares info/exclude with the main checkout. None of
+# these shapes needs git installed to read.
+
+# No .git at all is not a repo, so there is nothing to exclude and nothing to
+# say about it.
+exec sh -c 'cd plain && handrail sync'
+! stdout 'added \.handrail/local/'
+
+# A pointer file that names nothing is a broken repo, not an absent one.
+exec sh -c 'cd empty-pointer && handrail sync; echo code=$?'
+stdout '^code=1$'
+stderr 'names no git directory'
+
+# A relative pointer resolves against the working tree, and its commondir hop
+# lands the line in the main checkout's exclude file.
+exec sh -c 'cd worktree && handrail sync'
+stdout 'added \.handrail/local/'
+grep -count=1 '^\.handrail/local/$' main-git/info/exclude
+! exists worktree/wt-git/info/exclude
+
+# A submodule has no commondir, so its own git directory is the whole story.
+exec sh -c 'cd submodule && handrail sync'
+stdout 'added \.handrail/local/'
+grep -count=1 '^\.handrail/local/$' submodule/sub-git/info/exclude
+
+# A commondir that cannot be read is reported rather than guessed past.
+exec sh -c 'cd bad-commondir && handrail sync; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail: read .*commondir'
+
+# So is an exclude file that is not a file.
+exec sh -c 'cd exclude-is-a-dir && handrail sync; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail: read .*exclude'
+
+# An exclude file whose last line has no newline gets one, so handrail's pattern
+# cannot be glued onto the end of the user's.
+exec sh -c 'printf %s "*.log" > no-newline/.git/info/exclude'
+exec sh -c 'cd no-newline && handrail sync'
+stdout 'added \.handrail/local/'
+cmp no-newline/.git/info/exclude want/no-newline
+
+# Root can write anything, so the permission cases only mean something as
+# somebody else.
+[root] stop 'these cases turn on a permission denial'
+
+# A pointer file nobody may read.
+chmod 0000 unreadable-pointer/.git
+exec sh -c 'cd unreadable-pointer && handrail sync; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail: open .*\.git: permission denied'
+
+# A git directory nobody may add info/ to.
+chmod 0500 no-mkdir/ro-git
+exec sh -c 'cd no-mkdir && handrail sync; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail: mkdir .*info'
+
+# An exclude file that reads but does not write.
+chmod 0400 readonly-exclude/.git/info/exclude
+exec sh -c 'cd readonly-exclude && handrail sync; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail: open .*exclude'
+
+-- home/.claude/.keep --
+-- want/no-newline --
+*.log
+.handrail/local/
+-- plain/.keep --
+-- empty-pointer/.git --
+gitdir:
+-- worktree/.git --
+gitdir: ../worktree/wt-git
+-- worktree/wt-git/commondir --
+../../main-git
+-- main-git/info/exclude --
+*.tmp
+-- submodule/.git --
+gitdir: ./sub-git
+-- submodule/sub-git/.keep --
+-- bad-commondir/.git --
+gitdir: ./bad-git
+-- bad-commondir/bad-git/commondir/.keep --
+-- exclude-is-a-dir/.git/info/exclude/.keep --
+-- no-newline/.git/info/.keep --
+-- unreadable-pointer/.git --
+gitdir: ./somewhere
+-- no-mkdir/.git --
+gitdir: ./ro-git
+-- no-mkdir/ro-git/.keep --
+-- readonly-exclude/.git/info/exclude --
+*.tmp

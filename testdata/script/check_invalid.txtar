@@ -32,6 +32,38 @@ stderr 'top-level-list\.md: line 2: frontmatter must be a mapping'
 stderr 'list-at-the-top\.md: line 3: unexpected list item'
 stderr 'trailing-content\.md: line 3: unexpected content'
 
+# A frontmatter field takes one value, so a block where a scalar belongs is
+# named rather than flattened.
+stderr 'event-not-scalar\.md: line 2: event must be a single value'
+stderr 'kind-not-scalar\.md: line 3: kind must be a single value'
+stderr 'action-not-scalar\.md: line 3: action must be a single value'
+stderr 'enabled-not-scalar\.md: line 3: enabled must be a single value'
+stderr 'operator-not-scalar\.md: line 5: contains must be a single value'
+stderr 'key-with-no-value\.md: line 3: unknown kind ""'
+
+# Conditions and any groups are lists of mappings, checked at both levels.
+stderr 'condition-not-a-mapping\.md: line 5: condition must be a mapping'
+stderr 'any-item-not-a-mapping\.md: line 6: condition must be a mapping'
+stderr 'any-bad-field\.md: line 5: unknown condition field "cmd"'
+stderr 'duplicate-condition-key\.md: line 5: duplicate field "field"'
+
+# Every way a glob can fail to compile.
+stderr 'glob-trailing-backslash\.md: line 5: invalid glob: trailing backslash'
+stderr 'glob-empty-class\.md: line 5: invalid glob: empty character class'
+stderr 'glob-class-trailing-backslash\.md: line 5: invalid glob: trailing backslash'
+
+# The YAML subset's own errors: indentation is the whole structure, so getting
+# it wrong is reported rather than guessed at.
+stderr 'empty-frontmatter\.md: line 1: missing required field "event"'
+stderr 'dangling-item\.md: line 5: expected an indented block'
+stderr 'outdented-item-block\.md: line 5: expected an indented block'
+stderr 'tab-first-line\.md: line 2: tabs cannot be used for indentation'
+stderr 'tab-second-key\.md: line 3: tabs cannot be used for indentation'
+stderr 'over-indented-key\.md: line 3: unexpected indentation'
+stderr 'over-indented-item\.md: line 5: unexpected indentation'
+stderr 'empty-key\.md: line 3: empty key'
+stderr 'bad-escape\.md: line 5: invalid quoted value'
+
 # Nothing valid means nothing to print, so the table never appears.
 ! stdout TIER
 
@@ -239,3 +271,165 @@ A list item where a key belongs.
 event: PreToolUse
 ---
 A key after a top-level list.
+-- .handrail/event-not-scalar.md --
+---
+event:
+  a: b
+---
+An event is one value.
+-- .handrail/kind-not-scalar.md --
+---
+event: PreToolUse
+kind:
+  a: b
+---
+A kind is one value.
+-- .handrail/action-not-scalar.md --
+---
+event: PreToolUse
+action:
+  a: b
+---
+An action is one value.
+-- .handrail/enabled-not-scalar.md --
+---
+event: PreToolUse
+enabled:
+  a: b
+---
+Enabled is one value.
+-- .handrail/operator-not-scalar.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    contains:
+      a: b
+---
+An operator takes one value.
+-- .handrail/key-with-no-value.md --
+---
+event: PreToolUse
+kind:
+---
+A key with nothing after it is an empty value, not a missing key.
+-- .handrail/condition-not-a-mapping.md --
+---
+event: PreToolUse
+conditions:
+  -
+    - field: command
+      contains: rm
+---
+A condition is a mapping, not a nested list.
+-- .handrail/any-item-not-a-mapping.md --
+---
+event: PreToolUse
+conditions:
+  - any:
+      -
+        - field: command
+          contains: rm
+---
+An any group's items are mappings too.
+-- .handrail/any-bad-field.md --
+---
+event: PreToolUse
+conditions:
+  - any:
+      - field: cmd
+        contains: rm
+---
+An any group's terms are validated like any other.
+-- .handrail/duplicate-condition-key.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    field: path
+    contains: rm
+---
+The field is named twice.
+-- .handrail/glob-trailing-backslash.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: src/\
+---
+A trailing backslash escapes nothing.
+-- .handrail/glob-empty-class.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: src/[]
+---
+A class with no members matches nothing.
+-- .handrail/glob-class-trailing-backslash.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: src/[a\
+---
+A backslash at the end of a class escapes nothing.
+-- .handrail/empty-frontmatter.md --
+---
+# nothing but a comment
+---
+Frontmatter that says nothing still has to say when the rule fires.
+-- .handrail/dangling-item.md --
+---
+event: PreToolUse
+conditions:
+  -
+---
+A list item with nothing under it.
+-- .handrail/outdented-item-block.md --
+---
+event: PreToolUse
+conditions:
+  -
+kind: shell
+---
+An item's block has to be indented under the item.
+-- .handrail/tab-first-line.md --
+---
+	event: PreToolUse
+---
+A tab where the frontmatter opens.
+-- .handrail/tab-second-key.md --
+---
+event: PreToolUse
+	kind: shell
+---
+A tab on the second key.
+-- .handrail/over-indented-key.md --
+---
+event: PreToolUse
+  kind: shell
+---
+A key indented under a scalar.
+-- .handrail/over-indented-item.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+   contains: rm
+---
+An item's own keys have to line up with each other.
+-- .handrail/empty-key.md --
+---
+event: PreToolUse
+: nothing
+---
+A key has to be something.
+-- .handrail/bad-escape.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    contains: "\q"
+---
+No such escape sequence.

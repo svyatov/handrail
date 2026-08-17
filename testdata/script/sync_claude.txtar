@@ -22,6 +22,11 @@ grep '"model": "opus"' home/.claude/settings.json
 grep 'my-own.sh' home/.claude/settings.json
 grep 'my-runner.sh hook claude PostToolUse' home/.claude/settings.json
 
+# Including entries in shapes handrail does not recognise. An entry it cannot
+# read is an entry it has no business deleting.
+grep 'a bare string another tool wrote' home/.claude/settings.json
+grep '"hooks": "not a list"' home/.claude/settings.json
+
 # The local tier is kept out of version control, and stays a single line.
 grep -count=1 '^\.handrail/local/$' .git/info/exclude
 grep '^# my own patterns$' .git/info/exclude
@@ -31,8 +36,10 @@ stdout 'claude: block degraded to warn for late: Claude Code has no denial to gi
 stdout 'claude: warn degraded to notice for farewell: Claude Code discards hook output on SessionEnd'
 stdout 'claude: hook errors and timeouts fail open'
 
-# A rule the harness enforces in full is not reported as degraded.
+# A rule the harness enforces in full is not reported as degraded. Neither is a
+# rule that enforces nothing: a disabled one degrades from nothing to nothing.
 ! stdout 'for early'
+! stdout 'for switched-off'
 
 # The annotated effective ruleset is printed, same as check.
 stdout '^project-shared +late +PostToolUse'
@@ -81,6 +88,12 @@ ref: refs/heads/main
           }
         ]
       }
+    ],
+    "SessionStart": [
+      "a bare string another tool wrote",
+      {
+        "hooks": "not a list"
+      }
     ]
   }
 }
@@ -101,3 +114,10 @@ This one keeps its teeth.
 event: SessionEnd
 ---
 Nobody is left to read this but the user.
+-- .handrail/switched-off.md --
+---
+event: PostToolUse
+action: block
+enabled: false
+---
+A rule that enforces nothing degrades to nothing.

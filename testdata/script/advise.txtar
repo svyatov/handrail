@@ -59,6 +59,25 @@ stdout 'Read\(//root/\.ssh/id_rsa\)'
 ! stdout no-quiet-stop
 ! stdout not-npm
 
+# Neither harness has a mechanism for a field that is not a command or a path:
+# content and prompt are read after the call is already selected.
+! stdout no-secret-writes
+
+# A command condition on a rule whose kind is not shell selects nothing a Bash
+# entry would, so the entry would be about a different set of calls.
+! stdout command-on-edits
+
+# Claude Code's path rules are gitignore patterns, which say nothing about
+# containment, and whose character classes are not the rule dialect's.
+! stdout path-contains
+! stdout path-class
+
+# An execpolicy pattern is a list of argv tokens, and a value that is only
+# whitespace has none: Claude Code still globs it, so only Codex refuses.
+stdout 'blank-command  project-shared  claude'
+stdout 'Bash\( \*\)'
+! stdout 'blank-command  project-shared  codex'
+
 # A rule name scopes the audit to one rule.
 exec handrail advise no-force-push
 stdout no-force-push
@@ -217,6 +236,56 @@ conditions:
     not_starts_with: npm
 ---
 This project is npm only.
+-- .handrail/no-secret-writes.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: content
+    contains: BEGIN PRIVATE KEY
+---
+Keys belong in the secret store, not in a file.
+-- .handrail/command-on-edits.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: command
+    starts_with: git push
+---
+A kind that carries no command field never matches this anyway.
+-- .handrail/path-contains.md --
+---
+event: PreToolUse
+kind: file_read
+action: block
+conditions:
+  - field: path
+    contains: /.ssh/
+---
+Containment is not a gitignore pattern.
+-- .handrail/path-class.md --
+---
+event: PreToolUse
+kind: file_read
+action: block
+conditions:
+  - field: path
+    glob: '/etc/[ps]*'
+---
+The two dialects disagree about character classes.
+-- .handrail/blank-command.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: ' '
+---
+A leading space is not an argv token.
 -- ineligible/.git/HEAD --
 ref: refs/heads/main
 -- ineligible/.handrail/local/prefer-rg.md --

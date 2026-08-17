@@ -26,6 +26,15 @@ stdout '^warn  either-and  project-shared$'
 exec sh -c 'handrail test PreToolUse --field path=docs/.env; echo code=$?'
 ! stdout 'either-and'
 
+# A bare "-" with the condition's keys indented below it is the same condition
+# as the "- key: value" form.
+exec sh -c 'handrail test PreToolUse --field command="chmod 777 /"; echo code=$?'
+stdout '^warn  bare-item  project-shared$'
+
+# In a single-quoted value, '' is one quote, so a pattern can carry one.
+exec sh -c 'handrail test PreToolUse --field command="it''s fine"; echo code=$?'
+stdout '^warn  quoted  project-shared$'
+
 -- .git/HEAD --
 ref: refs/heads/main
 -- .handrail/and.md --
@@ -62,3 +71,20 @@ conditions:
         ends_with: .pem
 ---
 A group is one entry of the AND list.
+-- .handrail/bare-item.md --
+---
+event: PreToolUse
+conditions:
+  -
+    field: command
+    contains: chmod 777
+---
+The item's keys sit under the dash rather than beside it.
+-- .handrail/quoted.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    contains: 'it''s'
+---
+A doubled single quote is one quote.

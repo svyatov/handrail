@@ -61,7 +61,7 @@ func gitDir(root string) (string, error) {
 	git := filepath.Join(root, ".git")
 	fi, err := os.Stat(git)
 	if err != nil {
-		return "", nil
+		return "", nil //nolint:nilerr // no .git is not a failure, it is "not a working tree"
 	}
 	if fi.IsDir() {
 		return git, nil

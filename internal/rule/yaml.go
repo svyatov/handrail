@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -233,22 +234,22 @@ func parseScalar(s string) (value string, present bool, err error) {
 		return "", false, nil
 	}
 	if s[0] == '[' || s[0] == '{' {
-		return "", false, fmt.Errorf("flow style is not supported, use an indented block")
+		return "", false, errors.New("flow style is not supported, use an indented block")
 	}
 	if s[0] != '\'' && s[0] != '"' {
 		// YAML ends a plain scalar at " #", so a value needing those two
 		// characters has to be quoted anyway.
-		if i := strings.Index(s, " #"); i >= 0 {
-			return strings.TrimRight(s[:i], " "), true, nil
+		if before, _, ok := strings.Cut(s, " #"); ok {
+			return strings.TrimRight(before, " "), true, nil
 		}
 		return s, true, nil
 	}
 	end := closingQuote(s)
 	if end < 0 {
-		return "", false, fmt.Errorf("unterminated quoted value")
+		return "", false, errors.New("unterminated quoted value")
 	}
 	if rest := strings.TrimSpace(s[end+1:]); rest != "" && rest[0] != '#' {
-		return "", false, fmt.Errorf("unexpected text after a quoted value")
+		return "", false, errors.New("unexpected text after a quoted value")
 	}
 	value, err = unquote(s[:end+1])
 	return value, true, err
@@ -281,7 +282,7 @@ func unquote(s string) (string, error) {
 	case '"':
 		v, err := strconv.Unquote(s)
 		if err != nil {
-			return "", fmt.Errorf("invalid quoted value")
+			return "", errors.New("invalid quoted value")
 		}
 		return v, nil
 	}
