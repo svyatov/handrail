@@ -182,7 +182,7 @@ Inexpressible constructs are skipped with a per-rule report naming the reason an
 
 Decided in [the Go stack research](https://github.com/svyatov/handrail/issues/5); findings on `research/go-cli-stack`.
 
-- Go 1.25; module `github.com/svyatov/handrail`; root `main.go` + `internal/` packages; zero third-party runtime dependencies.
+- Go 1.26; module `github.com/svyatov/handrail`; root `main.go` + `internal/` packages; zero third-party runtime dependencies.
 - CLI parsing: stdlib `flag`, one `FlagSet` per subcommand, manual dispatch.
 - Cold start: minimal import graph, no work in `init()`, `CGO_ENABLED=0`, `-ldflags "-s -w"`.
 - Lint: golangci-lint v2. Tests: table-driven subtests, `testdata/`, `go test -race`; testscript for end-to-end.
