@@ -1,6 +1,6 @@
 module github.com/svyatov/handrail
 
-go 1.26.5
+go 1.26.6
 
 require github.com/rogpeppe/go-internal v1.16.0
 
