@@ -1,5 +1,6 @@
 # kind narrows a rule to one tool kind; an omitted kind matches every kind.
 
+exec handrail trust
 exec sh -c 'handrail test PreToolUse --kind shell; echo code=$?'
 stdout '^code=0$'
 stdout '^warn  any-kind  project-shared$'

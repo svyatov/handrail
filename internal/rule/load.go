@@ -16,11 +16,99 @@ type Problem struct {
 	Message string
 }
 
-// Load parses every rule file under dir, recursively, skipping dir/local (the
-// Project-personal tier is its own scan). Rules come back sorted by name; every
-// file that cannot be used comes back as a Problem instead. A missing dir is
-// not a problem: a repo without rules is a valid repo.
-func Load(dir string) ([]*Rule, []Problem) {
+// The three tiers, in precedence order: most specific wins. Tiers are
+// convenience layering, not a security boundary.
+const (
+	TierGlobal          = "global"
+	TierProjectShared   = "project-shared"
+	TierProjectPersonal = "project-personal"
+)
+
+// Discovery is what tier discovery found for one working directory.
+type Discovery struct {
+	Root    string // the project root: the repo root, or the cwd outside a repo
+	Skipped bool   // whether a Project-shared tier held rules and was skipped for want of trust
+}
+
+// LoadTiers parses every tier that applies to cwd: Global from the XDG config
+// dir, Project-shared at the project root, Project-personal under it. Rules
+// come back in delivery order, tier by tier and alphabetical within a tier,
+// each tagged with its tier and with the higher-tier file that shadows it.
+func LoadTiers(cwd string) ([]*Rule, []Problem, Discovery) {
+	root := RepoRoot(cwd)
+	d := Discovery{Root: root}
+	shared := filepath.Join(root, ".handrail")
+
+	var rules []*Rule
+	var problems []Problem
+	add := func(tier, dir string, skipLocal bool) {
+		if dir == "" {
+			return
+		}
+		rs, ps := load(dir, skipLocal)
+		for _, r := range rs {
+			r.Tier = tier
+		}
+		rules = append(rules, rs...)
+		problems = append(problems, ps...)
+	}
+
+	add(TierGlobal, ConfigDir(), false)
+	// A user-level hook entry means any repo on the machine is enforced, so a
+	// clone's committed rules wait for an explicit grant. The user's own two
+	// tiers are never gated.
+	if IsTrusted(root) {
+		add(TierProjectShared, shared, true)
+	} else if sharedRules, ps := load(shared, true); len(sharedRules)+len(ps) > 0 {
+		// The tier is skipped, not unread: strict validation is what check
+		// promises for every tier, and .handrail/ existing says nothing on its
+		// own, since the Project-personal tier lives inside it.
+		d.Skipped = true
+		problems = append(problems, ps...)
+	}
+	add(TierProjectPersonal, filepath.Join(shared, "local"), false)
+
+	// Identity is the basename, so the highest tier holding a name carries the
+	// effective rule and every lower one is shadowed by it, wholesale.
+	byName := make(map[string]*Rule, len(rules))
+	for _, r := range rules {
+		byName[r.Name] = r
+	}
+	for _, r := range rules {
+		if effective := byName[r.Name]; effective != r {
+			r.ShadowedBy = effective.Path
+		}
+	}
+	return rules, problems, d
+}
+
+// ConfigDir is the Global tier's directory: XDG on every Unix platform,
+// including macOS, following the git and gh dotfiles precedent rather than
+// os.UserConfigDir's ~/Library/Application Support.
+func ConfigDir() string {
+	return xdgSubdir("XDG_CONFIG_HOME", ".config")
+}
+
+// xdgSubdir returns handrail's directory under an XDG base, or "" when neither
+// the variable nor a home directory says where that is. A relative value is
+// ignored, as the XDG basedir spec requires.
+func xdgSubdir(env, fallback string) string {
+	base := os.Getenv(env)
+	if !filepath.IsAbs(base) {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		base = filepath.Join(home, fallback)
+	}
+	return filepath.Join(base, "handrail")
+}
+
+// load parses every rule file under dir, recursively. Rules come back sorted by
+// name; every file that cannot be used comes back as a Problem instead. A
+// missing dir is not a problem: a repo without rules is a valid repo. skipLocal
+// holds back dir/local, which is the Project-personal tier's own scan.
+func load(dir string, skipLocal bool) ([]*Rule, []Problem) {
 	var rules []*Rule
 	var problems []Problem
 
@@ -33,7 +121,7 @@ func Load(dir string) ([]*Rule, []Problem) {
 			return nil
 		}
 		if d.IsDir() {
-			if d.Name() == "local" && filepath.Dir(p) == dir {
+			if skipLocal && d.Name() == "local" && filepath.Dir(p) == dir {
 				return fs.SkipDir
 			}
 			return nil

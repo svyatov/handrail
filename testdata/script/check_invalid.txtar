@@ -1,4 +1,5 @@
 # Every invalid rule is reported with its file and reason, and check exits 1.
+exec handrail trust
 exec sh -c 'handrail check; echo code=$?'
 stdout '^code=1$'
 stderr 'bad-yaml\.md: line 3: expected "key: value"'

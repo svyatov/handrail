@@ -1,0 +1,93 @@
+# A cloned repo's Project-shared rules stay inert until the path is trusted.
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=0$'
+stderr 'run handrail trust'
+stdout '^global +global-rule'
+stdout '^project-personal +personal-rule'
+! stdout 'shared-rule'
+
+# The gate is the tier, not the printout: an untrusted shared rule never fires.
+exec handrail test Stop
+stdout 'the global message'
+stdout 'the personal message'
+! stdout 'the shared message'
+
+exec handrail trust
+stdout 'trusted'
+exists home/.local/state/handrail/trusted
+
+exec handrail check
+! stderr .
+stdout '^project-shared +shared-rule +Stop'
+
+exec handrail test Stop
+stdout 'the shared message'
+
+# Trusting an already-trusted path is a no-op, not an error.
+exec handrail trust
+exec handrail check
+stdout '^project-shared +shared-rule +Stop'
+
+# Trust is path-once: another repo is untrusted on its own path.
+exec sh -c 'cd other && handrail check; echo code=$?'
+stdout '^code=0$'
+stderr 'run handrail trust'
+! stdout 'other-shared'
+
+# A repo with no shared tier at all has nothing to trust and says nothing.
+exec sh -c 'cd bare && handrail check'
+! stderr .
+
+# The Project-personal tier lives inside .handrail/, so a personal-only repo has
+# nothing shared to skip and is never nagged about trust.
+exec sh -c 'cd personal && handrail check'
+! stderr .
+stdout '^project-personal +mine +Stop'
+
+# Skipped is not unread: an untrusted tier's rules still validate, so a broken
+# guardrail surfaces while authoring rather than at event time.
+exec sh -c 'cd broken && handrail check; echo code=$?'
+stdout '^code=1$'
+stderr 'oops\.md: line 2: unknown event "Nope"'
+stderr 'run handrail trust'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- home/.config/handrail/global-rule.md --
+---
+event: Stop
+---
+the global message
+-- .handrail/shared-rule.md --
+---
+event: Stop
+---
+the shared message
+-- .handrail/local/personal-rule.md --
+---
+event: Stop
+---
+the personal message
+-- other/.git/HEAD --
+ref: refs/heads/main
+-- other/.handrail/other-shared.md --
+---
+event: Stop
+---
+Another repo, another grant.
+-- bare/.git/HEAD --
+ref: refs/heads/main
+-- personal/.git/HEAD --
+ref: refs/heads/main
+-- personal/.handrail/local/mine.md --
+---
+event: Stop
+---
+My own file, never gated.
+-- broken/.git/HEAD --
+ref: refs/heads/main
+-- broken/.handrail/oops.md --
+---
+event: Nope
+---
+Untrusted, and broken too.

@@ -2,6 +2,7 @@
 # against an absent field stays unmatched in either polarity.
 
 # A command that hits no sentinel satisfies all five command negations.
+exec handrail trust
 exec sh -c 'handrail test PreToolUse --field command=plain; echo code=$?'
 stdout '^code=0$'
 stdout '^warn  not-matches  project-shared$'

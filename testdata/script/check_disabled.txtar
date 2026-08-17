@@ -1,4 +1,5 @@
 # A disabled rule needs no matcher: enabled: false alone is a valid stub.
+exec handrail trust
 exec sh -c 'handrail check; echo code=$?'
 stdout '^code=0$'
 ! stderr .
@@ -11,6 +12,7 @@ stdout '"enabled": false'
 stdout '"event": ""'
 
 # Being disabled exempts the matcher, not the fields that are present.
+exec sh -c 'cd broken && handrail trust'
 exec sh -c 'cd broken && handrail check; echo code=$?'
 stdout '^code=1$'
 stderr 'bad-stub\.md: line 3: unknown event "Nope"'

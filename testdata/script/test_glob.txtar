@@ -2,6 +2,7 @@
 # one --field selects exactly one rule.
 
 # ? is exactly one character, and never a separator.
+exec handrail trust
 exec sh -c 'handrail test PreToolUse --field path=qa.txt; echo code=$?'
 stdout '^warn  qmark  project-shared$'
 exec sh -c 'handrail test PreToolUse --field path=qab.txt; echo code=$?'

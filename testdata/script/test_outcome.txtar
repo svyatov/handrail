@@ -1,6 +1,7 @@
 # Every matched message is delivered labeled with its rule; one block makes the
 # outcome block, and block exits 2.
 
+exec handrail trust
 exec sh -c 'handrail test PreToolUse --kind shell --field command="rm -rf /"; echo code=$?'
 stdout '^code=2$'
 ! stderr .

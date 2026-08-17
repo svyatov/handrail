@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -26,6 +25,7 @@ const usage = `Usage: handrail <command> [arguments]
 Commands:
   check     Validate the rules and print the effective ruleset
   test      Dry-run a synthetic payload against the rules
+  trust     Grant this repo's Project-shared rules
   version   Print version, commit, and build date
 `
 
@@ -48,6 +48,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdCheck(args[1:], stdout, stderr)
 	case "test":
 		return cmdTest(args[1:], stdin, stdout, stderr)
+	case "trust":
+		return cmdTrust(args[1:], stdout, stderr)
 	case "version":
 		return cmdVersion(args[1:], stdout, stderr)
 	default:
@@ -67,17 +69,46 @@ func cmdVersion(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// tierProjectShared is the only tier any command reads today; the Global and
-// Project-personal tiers land with tier discovery.
-const tierProjectShared = "project-shared"
+func cmdTrust(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("trust", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		return 1
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "handrail trust: unexpected argument %q\n", fs.Arg(0))
+		return 1
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(stderr, "handrail: %v\n", err)
+		return 1
+	}
+	root := rule.RepoRoot(cwd)
+	added, err := rule.Trust(root)
+	if err != nil {
+		fmt.Fprintf(stderr, "handrail: %v\n", err)
+		return 1
+	}
+	if added {
+		fmt.Fprintf(stdout, "trusted %s\n", root)
+	} else {
+		fmt.Fprintf(stdout, "already trusted %s\n", root)
+	}
+	return 0
+}
 
-// loadRules reads the tiers that apply to the working directory.
-func loadRules() ([]*rule.Rule, []rule.Problem, error) {
+// loadRules reads the tiers that apply to the working directory and reports an
+// untrusted shared tier, which is skipped rather than silently missing.
+func loadRules(stderr io.Writer) ([]*rule.Rule, []rule.Problem, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, nil, err
 	}
-	rules, problems := rule.Load(filepath.Join(rule.RepoRoot(cwd), ".handrail"))
+	rules, problems, d := rule.LoadTiers(cwd)
+	if d.Skipped {
+		fmt.Fprintf(stderr, "handrail: skipping the untrusted Project-shared rules in %s; run handrail trust to enable them\n", d.Root)
+	}
 	return rules, problems, nil
 }
 
@@ -124,7 +155,7 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	rules, problems, err := loadRules()
+	rules, problems, err := loadRules(stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1
@@ -136,14 +167,19 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 			Errors: make([]checkError, 0, len(problems)),
 		}
 		for _, r := range rules {
+			var shadowedBy *string
+			if r.ShadowedBy != "" {
+				shadowedBy = &r.ShadowedBy
+			}
 			out.Rules = append(out.Rules, checkRule{
-				Rule:    r.Name,
-				Tier:    tierProjectShared,
-				Event:   r.Event,
-				Kind:    r.Kind,
-				Action:  r.Action,
-				Enabled: r.Enabled,
-				Path:    r.Path,
+				Rule:       r.Name,
+				Tier:       r.Tier,
+				Event:      r.Event,
+				Kind:       r.Kind,
+				Action:     r.Action,
+				Enabled:    r.Enabled,
+				ShadowedBy: shadowedBy,
+				Path:       r.Path,
 			})
 		}
 		for _, p := range problems {
@@ -154,15 +190,24 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 		}
 	} else {
 		if len(rules) > 0 {
+			// Rules arrive in tier order, so the last one under a name is the
+			// effective one: the tier that shadows every earlier namesake.
+			effective := make(map[string]string, len(rules))
+			for _, r := range rules {
+				effective[r.Name] = r.Tier
+			}
 			w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "TIER\tRULE\tEVENT\tKIND\tACTION\tSTATUS")
 			for _, r := range rules {
 				status := "enabled"
-				if !r.Enabled {
+				switch {
+				case r.ShadowedBy != "":
+					status = "shadowed by " + effective[r.Name]
+				case !r.Enabled:
 					status = "disabled"
 				}
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-					tierProjectShared, r.Name, orDefault(r.Event, "-"), orDefault(r.Kind, "*"), r.Action, status)
+					r.Tier, r.Name, orDefault(r.Event, "-"), orDefault(r.Kind, "*"), r.Action, status)
 			}
 			if err := w.Flush(); err != nil {
 				fmt.Fprintf(stderr, "handrail: %v\n", err)
@@ -274,7 +319,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		payload.Kind = *kind
 	}
 
-	rules, problems, err := loadRules()
+	rules, problems, err := loadRules(stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1
@@ -290,11 +335,12 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	out := testOutput{Outcome: "allow", Matched: []testMatch{}}
 	for _, r := range rules {
-		if !r.Matches(payload) {
+		// A shadowed rule is not the effective rule; its namesake is.
+		if r.ShadowedBy != "" || !r.Matches(payload) {
 			continue
 		}
 		out.Matched = append(out.Matched, testMatch{
-			Rule: r.Name, Tier: tierProjectShared, Action: r.Action, Message: r.Message,
+			Rule: r.Name, Tier: r.Tier, Action: r.Action, Message: r.Message,
 		})
 		if r.Action == "block" {
 			out.Outcome = "block"

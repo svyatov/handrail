@@ -1,4 +1,5 @@
 # A valid Project-shared ruleset prints one annotated row per rule.
+exec handrail trust
 exec sh -c 'handrail check; echo code=$?'
 stdout '^code=0$'
 ! stderr .
@@ -6,9 +7,10 @@ stdout '^TIER +RULE +EVENT +KIND +ACTION +STATUS$'
 stdout '^project-shared +no-rm-rf-root +PreToolUse +shell +block +enabled$'
 stdout '^project-shared +prefer-rg +PreToolUse +\* +warn +enabled$'
 
-# Nested directories are scanned, local/ is not.
+# Nested directories are scanned; local/ is the Project-personal tier, not part
+# of the shared scan.
 stdout '^project-shared +nested-rule +PostToolUse'
-! stdout 'personal-only'
+stdout '^project-personal +personal-only +Stop'
 
 # Non-markdown files in the tier are ignored.
 ! stdout 'notes'
@@ -55,7 +57,7 @@ Sequences at the parent's own indentation are valid YAML too.
 ---
 event: Stop
 ---
-The local tier belongs to #21, not to the shared scan.
+The local tier is its own scan.
 -- .handrail/commented.md --
 ---
 # which event, and why

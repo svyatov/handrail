@@ -1,6 +1,7 @@
 # Every operator, exercised through a synthetic payload at the CLI seam.
 # Each rule keys on its own sentinel, so one --field selects exactly one rule.
 
+exec handrail trust
 exec sh -c 'handrail test PreToolUse --field command=a123z; echo code=$?'
 stdout '^code=0$'
 stdout '^warn  re  project-shared$'

@@ -1,6 +1,7 @@
 # Conditions AND implicitly; a one-level any group is the only OR.
 
 # Both halves present: the AND rule fires.
+exec handrail trust
 exec sh -c 'handrail test PreToolUse --field command="git push --force origin"; echo code=$?'
 stdout '^code=0$'
 stdout '^warn  and  project-shared$'

@@ -1,4 +1,5 @@
 # --json emits the spec contract: {rules: [...], errors: [...]}.
+exec handrail trust
 exec sh -c 'handrail check --json; echo code=$?'
 stdout '^code=0$'
 ! stderr .

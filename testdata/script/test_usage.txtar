@@ -1,5 +1,6 @@
 # Anything the synthetic payload cannot be built from is a usage error.
 
+exec handrail trust
 exec sh -c 'handrail test; echo code=$?'
 stdout '^code=1$'
 stderr 'handrail test: missing event'
@@ -26,6 +27,7 @@ stderr 'handrail test: unexpected argument "Stop"'
 
 # Rules that do not parse fail the dry-run rather than being silently skipped:
 # test is an authoring-time surface, so it is strict like check.
+exec sh -c 'cd broken && handrail trust'
 exec sh -c 'cd broken && handrail test PreToolUse; echo code=$?'
 stdout '^code=1$'
 stderr 'bad\.md: line 2: unknown event "Nope"'

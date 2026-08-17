@@ -1,0 +1,99 @@
+# All three tiers merge, most specific wins, and shadowing is whole-file.
+exec handrail trust
+exec handrail check
+! stderr .
+
+# Tier order first, then alphabetical within a tier.
+stdout '(?s)global +everywhere.*global +noisy.*global +only-global.*project-shared +everywhere.*project-shared +only-shared.*project-personal +everywhere.*project-personal +noisy.*project-personal +only-personal'
+
+# A shadowed rule stays visible, annotated with the tier that replaced it.
+stdout '^global +everywhere +PreToolUse +shell +block +shadowed by project-personal$'
+stdout '^project-shared +everywhere +PreToolUse +\* +warn +shadowed by project-personal$'
+stdout '^project-personal +everywhere +PreToolUse +\* +warn +enabled$'
+stdout '^project-personal +noisy +- +\* +warn +disabled$'
+
+# Shadowing is whole-file: the personal rule replaces the global one outright,
+# so the block action and the shell kind do not survive.
+exec sh -c 'handrail test PreToolUse --kind shell --field command=ls; echo code=$?'
+stdout '^code=0$'
+stdout 'the personal everywhere'
+! stdout 'the global everywhere'
+! stdout 'the shared everywhere'
+
+# An enabled: false stub in a higher tier disables the inherited rule without
+# touching the file it shadows.
+exec handrail test Stop
+! stdout 'the global noisy'
+
+# Messages are delivered in tier order, then alphabetically within a tier.
+cmp stdout expected-test
+
+# --json carries the tier and the file that shadows the rule.
+exec handrail check --json
+stdout '"tier": "global"'
+stdout '"tier": "project-shared"'
+stdout '"tier": "project-personal"'
+stdout '"shadowed_by": ".*/\.handrail/local/everywhere\.md"'
+stdout '"shadowed_by": null'
+
+# Down a three-tier chain every shadowed rule names the effective file, not the
+# middle one, which is shadowed itself.
+! stdout '"shadowed_by": ".*/\.handrail/everywhere\.md"'
+stdout '"path": ".*/\.config/handrail/only-global\.md"'
+stdout '"errors": \[\]'
+
+-- expected-test --
+warn  only-global  global
+  the global only-global message
+
+warn  only-shared  project-shared
+  the shared only-shared message
+
+warn  only-personal  project-personal
+  the personal only-personal message
+
+outcome: warn
+-- .git/HEAD --
+ref: refs/heads/main
+-- home/.config/handrail/everywhere.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+---
+the global everywhere message
+-- home/.config/handrail/noisy.md --
+---
+event: Stop
+---
+the global noisy message
+-- home/.config/handrail/only-global.md --
+---
+event: Stop
+---
+the global only-global message
+-- .handrail/everywhere.md --
+---
+event: PreToolUse
+---
+the shared everywhere message
+-- .handrail/only-shared.md --
+---
+event: Stop
+---
+the shared only-shared message
+-- .handrail/local/everywhere.md --
+---
+event: PreToolUse
+---
+the personal everywhere message
+-- .handrail/local/noisy.md --
+---
+enabled: false
+---
+Turns off an inherited rule without editing the file it shadows.
+-- .handrail/local/only-personal.md --
+---
+event: Stop
+---
+the personal only-personal message

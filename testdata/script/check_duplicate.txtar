@@ -1,4 +1,5 @@
 # Identity is the basename, so two files with one name inside a tier is an error.
+exec handrail trust
 exec sh -c 'handrail check; echo code=$?'
 stdout '^code=1$'
 stderr 'nested/duplicate\.md: duplicate rule name "duplicate" \(also at .*/\.handrail/duplicate\.md\)'
