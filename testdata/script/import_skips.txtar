@@ -3,7 +3,7 @@
 exec sh -c 'handrail import hookify; echo code=$?'
 stdout '^code=0$'
 ! stderr .
-stdout '^0 imported, 13 skipped$'
+stdout '^0 imported, 22 skipped$'
 
 stdout '^skipped +\.claude/hookify\.ambiguous\.local\.md: conditions span more than one event: "command" names PreToolUse shell and "file_path" names PreToolUse file_edit$'
 stdout 'hookify\.gizmo\.local\.md: unknown event "gizmo"'
@@ -18,6 +18,30 @@ stdout 'hookify\.stop-reason\.local\.md: condition field "reason" has no canonic
 stdout 'hookify\.task-tool\.local\.md: tool_matcher "Task" names a tool with no canonical kind'
 stdout 'hookify\.transcript\.local\.md: condition field "transcript" has no canonical equivalent'
 stdout 'hookify\.unnamed\.local\.md: rule has no name'
+
+# The name is the converted file's basename, so a name that is not a basename is
+# a rule handrail has nowhere to put.
+stdout 'hookify\.dotted\.local\.md: name "\.hidden" is not a usable filename'
+stdout 'hookify\.slashed\.local\.md: name "nested/rule" is not a usable filename'
+
+# Upstream's own shapes for a condition list, each rejected where upstream would
+# have read nothing from it either.
+stdout 'hookify\.flat-conditions\.local\.md: line 4: conditions must be a list'
+stdout 'hookify\.list-item\.local\.md: line 6: condition must be a mapping'
+stdout 'hookify\.nested-field\.local\.md: line 5: field must be a single value'
+
+# An all rule whose fields name a tool event and a prompt event names neither.
+stdout 'hookify\.prompt-and-command\.local\.md: conditions span more than one event: "command" names PreToolUse shell and "user_prompt" names UserPromptSubmit$'
+
+# A matcher listing tools of two kinds is two rules, not one.
+stdout 'hookify\.read-or-bash\.local\.md: tool_matcher "Bash\|Read" spans more than one tool kind'
+
+# The converted rule is parsed back before it is written, so an upstream rule
+# whose body is empty is caught here rather than by the next handrail check.
+stdout 'hookify\.mute\.local\.md: converted rule is invalid: line 1: rule has no message'
+
+# Upstream's glob matches a directory as readily as a file.
+stdout 'hookify\.folder\.local\.md: read .*hookify\.folder\.local\.md: is a directory'
 
 # A skipped rule leaves nothing behind, so the tier is never even created.
 ! exists .handrail/local
@@ -145,6 +169,78 @@ conditions:
     pattern: deploy
 ---
 An all rule whose inferred event carries no tool either.
+-- .claude/hookify.dotted.local.md --
+---
+name: .hidden
+event: bash
+pattern: rm
+---
+A leading dot names a file nobody asked for.
+-- .claude/hookify.slashed.local.md --
+---
+name: nested/rule
+event: bash
+pattern: rm
+---
+A separator names a file in a directory nobody asked for.
+-- .claude/hookify.flat-conditions.local.md --
+---
+name: flat-conditions
+event: bash
+conditions: rm -rf
+---
+Upstream reads conditions as a list or not at all.
+-- .claude/hookify.list-item.local.md --
+---
+name: list-item
+event: bash
+conditions:
+  -
+    - field: command
+      operator: contains
+      pattern: rm
+---
+Each condition is a field, an operator, and a pattern, not a list of them.
+-- .claude/hookify.nested-field.local.md --
+---
+name: nested-field
+event: bash
+conditions:
+  - field:
+      name: command
+    operator: contains
+    pattern: rm
+---
+The field names one canonical field, not a mapping.
+-- .claude/hookify.prompt-and-command.local.md --
+---
+name: prompt-and-command
+conditions:
+  - field: command
+    operator: contains
+    pattern: deploy
+  - field: user_prompt
+    operator: contains
+    pattern: deploy
+---
+An all rule whose fields span a tool call and a prompt.
+-- .claude/hookify.read-or-bash.local.md --
+---
+name: read-or-bash
+tool_matcher: Bash|Read
+conditions:
+  - field: command
+    operator: contains
+    pattern: cat
+---
+Running a command and reading a file are two rules.
+-- .claude/hookify.mute.local.md --
+---
+name: mute
+event: bash
+pattern: rm
+---
+-- .claude/hookify.folder.local.md/.keep --
 -- .claude/hookify.matcher-clash.local.md --
 ---
 name: matcher-clash

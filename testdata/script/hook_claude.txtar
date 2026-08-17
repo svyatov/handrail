@@ -41,6 +41,12 @@ exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
 stdout '^code=2$'
 stderr 'handrail block: no-deploys \(project-shared\)'
 
+# A tool no canonical kind names is classified as other rather than dropped, so
+# a rule can still reach it.
+stdin webfetch.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: no-fetch \(project-shared\)'
+
 # UserPromptSubmit carries the prompt, and blocks with exit 2.
 stdin prompt.json
 exec sh -c 'handrail hook claude UserPromptSubmit; echo code=$?'
@@ -135,6 +141,12 @@ ref: refs/heads/main
   "tool_name": "mcp__fly__deploy",
   "tool_input": {"app": "prod"}
 }
+-- webfetch.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "WebFetch",
+  "tool_input": {"url": "https://example.com"}
+}
 -- prompt.json --
 {
   "hook_event_name": "UserPromptSubmit",
@@ -199,6 +211,12 @@ conditions:
     equals: deploy
 ---
 Deploys are a human decision.
+-- .handrail/no-fetch.md --
+---
+event: PreToolUse
+kind: other
+---
+Tools handrail classifies as nothing more specific still reach the ruleset.
 -- .handrail/no-yolo.md --
 ---
 event: UserPromptSubmit

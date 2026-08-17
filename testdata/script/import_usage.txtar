@@ -27,10 +27,82 @@ stdout '^code=0$'
 stdout 'hookify\.no-frontmatter\.local\.md: line 1: missing YAML frontmatter'
 ! exists .handrail/local
 
+# The source is globbed with upstream's own pattern, so a directory whose name
+# is glob syntax is a bad pattern rather than an empty result.
+exec sh -c 'handrail import hookify "weird["; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail import: syntax error in pattern'
+
+# A single file is imported directly, without the glob.
+exec sh -c 'handrail import hookify one/hookify.solo.local.md'
+stdout '^1 imported, 0 skipped$'
+exists .handrail/local/solo.md
+
+# A source outside the project is reported by its full path: shortening it
+# against a root it does not live under would name a file that is not there.
+exec sh -c 'cd inner && handrail import hookify ../outside'
+stdout '^imported /.*/outside/hookify\.away\.local\.md -> \.handrail/local/away\.md$'
+exists inner/.handrail/local/away.md
+
+# A tier handrail cannot create is one file's skip, not the run's failure: the
+# originals are still there and the reason names the path.
+exec sh -c 'cd blocked && handrail import hookify; echo code=$?'
+stdout '^code=0$'
+stdout '^0 imported, 1 skipped$'
+stdout 'not a directory'
+
+# Root can write anything, so a permission case only means something as
+# somebody else.
+[root] stop 'this case turns on a permission denial'
+chmod 0500 readonly/.handrail/local
+exec sh -c 'cd readonly && handrail import hookify; echo code=$?'
+stdout '^code=0$'
+stdout '^0 imported, 1 skipped$'
+stdout 'permission denied'
+
 -- .git/HEAD --
 ref: refs/heads/main
 -- empty/keep.txt --
 Not a hookify rule.
+-- weird[/keep.txt --
+Not a hookify rule either.
 -- broken/hookify.no-frontmatter.local.md --
 name: no-frontmatter
 event: bash
+-- one/hookify.solo.local.md --
+---
+name: solo
+event: bash
+pattern: rm -rf
+---
+Named directly, not found by the glob.
+-- inner/.git/HEAD --
+ref: refs/heads/main
+-- outside/hookify.away.local.md --
+---
+name: away
+event: bash
+pattern: rm -rf
+---
+Imported from outside the project.
+-- blocked/.git/HEAD --
+ref: refs/heads/main
+-- blocked/.handrail/local --
+The tier is a file, so there is nowhere to write a rule.
+-- blocked/.claude/hookify.doomed.local.md --
+---
+name: doomed
+event: bash
+pattern: rm -rf
+---
+Nowhere to land.
+-- readonly/.git/HEAD --
+ref: refs/heads/main
+-- readonly/.handrail/local/.keep --
+-- readonly/.claude/hookify.doomed.local.md --
+---
+name: doomed
+event: bash
+pattern: rm -rf
+---
+Nowhere to land either.

@@ -49,6 +49,19 @@ exec sh -c 'handrail test PreToolUse --stdin; echo code=$?'
 stdout '^code=1$'
 stderr 'handrail test: reading payload'
 
+# A kind the payload names is checked like one the flag names: a capture with a
+# harness-specific tool kind in it is a payload handrail cannot evaluate.
+stdin bad-kind.json
+exec sh -c 'handrail test PreToolUse --stdin; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail test: unknown kind "bash"'
+
+-- bad-kind.json --
+{
+  "event": "PreToolUse",
+  "tool_kind": "bash",
+  "command": "rm -rf /"
+}
 -- .git/HEAD --
 ref: refs/heads/main
 -- payload.json --
