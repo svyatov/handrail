@@ -48,3 +48,8 @@ tasks:
     cmds:
       - golangci-lint run
       - golangci-lint fmt --diff
+
+  release-check:
+    desc: Validate .goreleaser.yml, so a bad config fails here rather than on a tag
+    cmds:
+      - goreleaser check
