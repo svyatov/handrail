@@ -85,7 +85,7 @@ ADR: [0004](adr/0004-rule-tiers-and-precedence.md).
 
 ## 4. Architecture
 
-Decided in [the event-model ticket](https://github.com/svyatov/hookify/issues/7); ADR [0002](adr/0002-claude-code-event-vocabulary.md).
+Decided in [the event-model ticket](https://github.com/svyatov/handrail/issues/7); ADR [0002](adr/0002-claude-code-event-vocabulary.md).
 
 One Go binary; each Adapter is an internal package. Sync writes each harness's native hook config: one entry per canonical event, invoking `handrail hook <harness> <event>` with the harness named explicitly. No runtime harness auto-detection. That single invocation evaluates all matching rules across all tiers.
 
@@ -180,7 +180,7 @@ Inexpressible constructs are skipped with a per-rule report naming the reason an
 
 ## 9. Repo layout, toolchain, distribution
 
-Decided in [the Go stack research](https://github.com/svyatov/hookify/issues/5); findings on `research/go-cli-stack`.
+Decided in [the Go stack research](https://github.com/svyatov/handrail/issues/5); findings on `research/go-cli-stack`.
 
 - Go 1.25; module `github.com/svyatov/handrail`; root `main.go` + `internal/` packages; zero third-party runtime dependencies.
 - CLI parsing: stdlib `flag`, one `FlagSet` per subcommand, manual dispatch.

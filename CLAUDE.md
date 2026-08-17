@@ -1,10 +1,10 @@
-# hookify
+# handrail
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues live as GitHub issues in `svyatov/hookify`, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues live as GitHub issues in `svyatov/handrail`, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
