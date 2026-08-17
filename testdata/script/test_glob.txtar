@@ -38,6 +38,15 @@ stdout '^warn  escape  project-shared$'
 exec sh -c 'handrail test PreToolUse --field path=eabc.txt; echo code=$?'
 stdout '^outcome: allow$'
 
+# Escaping an alphanumeric inside a class keeps it a member: \b is the letter,
+# never RE2's word boundary.
+exec sh -c 'handrail test PreToolUse --field path=fbz.txt; echo code=$?'
+stdout '^warn  class-escape  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=faz.txt; echo code=$?'
+stdout '^warn  class-escape  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=fcz.txt; echo code=$?'
+stdout '^outcome: allow$'
+
 # ** only skips directories on its own segment: in m**/ the stars belong to m.
 exec sh -c 'handrail test PreToolUse --field path=mfoo/t.txt; echo code=$?'
 stdout '^warn  mid-star  project-shared$'
@@ -92,6 +101,14 @@ conditions:
     glob: e\*.txt
 ---
 An escaped star is a literal star.
+-- .handrail/class-escape.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: f[a\b]z.txt
+---
+An escaped letter is a member of the class, not an escape sequence.
 -- .handrail/mid-star.md --
 ---
 event: PreToolUse

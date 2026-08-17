@@ -1,0 +1,75 @@
+# Every subcommand parses its own FlagSet and rejects its own leftovers. One
+# fixture covers all of them: the point is the argument handling, not the work
+# behind it.
+
+# An undefined flag stops the command before it does anything.
+
+exec sh -c 'handrail trust -nope; echo code=$?'
+stdout '^code=1$'
+stderr 'flag provided but not defined: -nope'
+
+exec sh -c 'handrail check -nope; echo code=$?'
+stdout '^code=1$'
+stderr 'flag provided but not defined: -nope'
+
+exec sh -c 'handrail sync -nope; echo code=$?'
+stdout '^code=1$'
+stderr 'flag provided but not defined: -nope'
+
+exec sh -c 'handrail advise -nope; echo code=$?'
+stdout '^code=1$'
+stderr 'flag provided but not defined: -nope'
+
+exec sh -c 'handrail hook -nope; echo code=$?'
+stdout '^code=1$'
+stderr 'flag provided but not defined: -nope'
+
+# import's format leads, so the flag is parsed after it.
+exec sh -c 'handrail import hookify -nope; echo code=$?'
+stdout '^code=1$'
+stderr 'flag provided but not defined: -nope'
+
+# A leftover positional is a typo, not something to guess at.
+
+exec sh -c 'handrail trust /some/repo; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail trust: unexpected argument "/some/repo"'
+
+exec sh -c 'handrail check extra; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail check: unexpected argument "extra"'
+
+exec sh -c 'handrail sync extra; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail sync: unexpected argument "extra"'
+
+# advise takes one positional, the rule name, so the second one is the leftover.
+exec sh -c 'handrail advise some-rule extra; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail advise: unexpected argument "extra"'
+
+# hook wants exactly a harness and an event, and its usage says who installs it.
+exec sh -c 'handrail hook claude; echo code=$?'
+stdout '^code=1$'
+stderr 'Usage: handrail hook <harness> <event>'
+
+exec sh -c 'handrail hook claude PreToolUse extra; echo code=$?'
+stdout '^code=1$'
+stderr 'Usage: handrail hook <harness> <event>'
+
+# advise is an authoring-time surface, so a tier that does not parse stops it
+# rather than being advised around.
+exec sh -c 'cd broken && handrail trust'
+exec sh -c 'cd broken && handrail advise; echo code=$?'
+stdout '^code=1$'
+stderr 'bad\.md: line 2: unknown event "Nope"'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- broken/.git/HEAD --
+ref: refs/heads/main
+-- broken/.handrail/bad.md --
+---
+event: Nope
+---
+No such event.
