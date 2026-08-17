@@ -1,0 +1,49 @@
+# A disabled rule needs no matcher: enabled: false alone is a valid stub.
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=0$'
+! stderr .
+stdout '^project-shared +stub +- +\* +warn +disabled$'
+stdout '^project-shared +still-strict +Stop +\* +block +disabled$'
+
+exec sh -c 'handrail check --json; echo code=$?'
+stdout '^code=0$'
+stdout '"enabled": false'
+stdout '"event": ""'
+
+# Being disabled exempts the matcher, not the fields that are present.
+exec sh -c 'cd broken && handrail check; echo code=$?'
+stdout '^code=1$'
+stderr 'bad-stub\.md: line 3: unknown event "Nope"'
+stderr 'bad-stub-regexp\.md: line 6: invalid regexp'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/stub.md --
+---
+enabled: false
+---
+Disables an inherited rule of the same name once #21 lands.
+-- .handrail/still-strict.md --
+---
+enabled: false
+event: Stop
+action: block
+---
+Present fields are validated even when the rule is off.
+-- broken/.git/HEAD --
+ref: refs/heads/main
+-- broken/.handrail/bad-stub.md --
+---
+enabled: false
+event: Nope
+---
+An invalid event is an error even in a disabled rule.
+-- broken/.handrail/bad-stub-regexp.md --
+---
+enabled: false
+event: Stop
+conditions:
+  - field: prompt
+    matches: (
+---
+An invalid pattern is an error even in a disabled rule.

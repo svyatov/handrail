@@ -1,0 +1,23 @@
+[!exec:git] skip
+
+# Project tiers are discovered at the repo root, from anywhere inside the repo.
+# (The fallback to the working directory when there is no repo at all is what
+# every other check script exercises: none of them has a .git.)
+exec git init
+exec sh -c 'cd sub/deeper && handrail check; echo code=$?'
+stdout '^code=0$'
+stdout '^project-shared +root-rule +Stop'
+
+# A .handrail directory below the root is not a tier.
+! stdout 'not-a-tier'
+
+-- .handrail/root-rule.md --
+---
+event: Stop
+---
+Discovered from the repo root.
+-- sub/deeper/.handrail/not-a-tier.md --
+---
+event: Stop
+---
+No walk-up, no monorepo nesting in v1.

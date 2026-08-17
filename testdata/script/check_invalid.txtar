@@ -1,0 +1,240 @@
+# Every invalid rule is reported with its file and reason, and check exits 1.
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=1$'
+stderr 'bad-yaml\.md: line 3: expected "key: value"'
+stderr 'no-frontmatter\.md: line 1: missing YAML frontmatter'
+stderr 'unterminated\.md: line 1: unterminated YAML frontmatter'
+stderr 'unknown-field\.md: line 3: unknown frontmatter field "actoin"'
+stderr 'duplicate-field\.md: line 3: duplicate field "event"'
+stderr 'no-operator\.md: line 4: condition has no operator'
+stderr 'two-operators\.md: line 4: condition has 2 operators: contains, matches'
+stderr 'no-field\.md: line 4: condition has no field'
+stderr 'unknown-operator\.md: line 5: unknown condition key "hasnt"'
+stderr 'unknown-condition-field\.md: line 4: unknown condition field "cmd"'
+stderr 'bad-regexp\.md: line 5: invalid regexp'
+stderr 'unknown-event\.md: line 2: unknown event "PreTool"'
+stderr 'missing-event\.md: line 1: missing required field "event"'
+stderr 'unknown-kind\.md: line 3: unknown kind "bash"'
+stderr 'unknown-action\.md: line 4: unknown action "ask"'
+stderr 'bad-enabled\.md: line 3: enabled must be true or false'
+stderr 'nested-any\.md: line 7: any groups cannot nest'
+stderr 'conditions-not-a-list\.md: line 3: conditions must be a list'
+stderr 'any-not-a-list\.md: line 4: any must be a list'
+stderr 'any-with-a-sibling\.md: line 4: any must be a condition''s only key'
+stderr 'bad-glob\.md: line 5: invalid glob: unterminated character class'
+stderr 'no-message\.md: line 1: rule has no message'
+stderr 'tabs\.md: line 4: tabs cannot be used for indentation'
+stderr 'unterminated-quote\.md: line 5: unterminated quoted value'
+stderr 'after-quote\.md: line 5: unexpected text after a quoted value'
+stderr 'flow-style\.md: line 3: flow style is not supported, use an indented block'
+stderr 'top-level-list\.md: line 2: frontmatter must be a mapping'
+stderr 'list-at-the-top\.md: line 3: unexpected list item'
+stderr 'trailing-content\.md: line 3: unexpected content'
+
+# Nothing valid means nothing to print, so the table never appears.
+! stdout TIER
+
+# --json carries the same failures in the errors array.
+exec sh -c 'handrail check --json; echo code=$?'
+stdout '^code=1$'
+stdout '"rules": \[\]'
+stdout '"path": ".*/\.handrail/unknown-event\.md"'
+stdout 'unknown event'
+! stderr .
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/bad-yaml.md --
+---
+event: PreToolUse
+this line has no colon
+---
+Bad YAML.
+-- .handrail/no-frontmatter.md --
+Just prose, no matcher at all.
+-- .handrail/unterminated.md --
+---
+event: PreToolUse
+Never closed.
+-- .handrail/unknown-field.md --
+---
+event: PreToolUse
+actoin: block
+---
+Typo in a frontmatter key.
+-- .handrail/duplicate-field.md --
+---
+event: PreToolUse
+event: Stop
+---
+Said twice.
+-- .handrail/no-operator.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+---
+A field with nothing to test.
+-- .handrail/two-operators.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    contains: rm
+    matches: rm
+---
+Two operators in one condition.
+-- .handrail/no-field.md --
+---
+event: PreToolUse
+conditions:
+  - contains: rm
+---
+An operator with no field.
+-- .handrail/unknown-operator.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    hasnt: rm
+---
+No such operator.
+-- .handrail/unknown-condition-field.md --
+---
+event: PreToolUse
+conditions:
+  - field: cmd
+    contains: rm
+---
+No such payload field.
+-- .handrail/bad-regexp.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    matches: rm(
+---
+Not a valid RE2 pattern.
+-- .handrail/unknown-event.md --
+---
+event: PreTool
+---
+No such event.
+-- .handrail/missing-event.md --
+---
+action: block
+---
+An enabled rule must say when it fires.
+-- .handrail/unknown-kind.md --
+---
+event: PreToolUse
+kind: bash
+---
+No such tool kind.
+-- .handrail/unknown-action.md --
+---
+event: PreToolUse
+kind: shell
+action: ask
+---
+No ask action in v1.
+-- .handrail/bad-enabled.md --
+---
+event: PreToolUse
+enabled: yes
+---
+Only true or false.
+-- .handrail/nested-any.md --
+---
+event: PreToolUse
+conditions:
+  - any:
+      - field: command
+        contains: rm
+      - any:
+          - field: command
+            contains: mv
+---
+One level of any, no deeper.
+-- .handrail/conditions-not-a-list.md --
+---
+event: PreToolUse
+conditions: command
+---
+Conditions is a list.
+-- .handrail/any-not-a-list.md --
+---
+event: PreToolUse
+conditions:
+  - any: command
+---
+An any group is a list of conditions.
+-- .handrail/any-with-a-sibling.md --
+---
+event: PreToolUse
+conditions:
+  - any:
+      - field: command
+        contains: rm
+    field: path
+---
+An any group cannot share its condition with a field test.
+-- .handrail/bad-glob.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: src/[unclosed
+---
+A glob that cannot compile would never match.
+-- .handrail/no-message.md --
+---
+event: PreToolUse
+---
+-- .handrail/tabs.md --
+---
+event: PreToolUse
+conditions:
+	- field: command
+	  contains: rm
+---
+Tabs are not indentation in YAML.
+-- .handrail/unterminated-quote.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    contains: "rm
+---
+The quote never closes.
+-- .handrail/after-quote.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    contains: "rm" oops
+---
+Something follows the closing quote.
+-- .handrail/flow-style.md --
+---
+event: PreToolUse
+conditions: [{field: command, contains: rm}]
+---
+Flow style is out of the supported subset.
+-- .handrail/top-level-list.md --
+---
+- event: PreToolUse
+---
+Frontmatter is a mapping, not a list.
+-- .handrail/list-at-the-top.md --
+---
+event: PreToolUse
+- field: command
+---
+A list item where a key belongs.
+-- .handrail/trailing-content.md --
+---
+- field: command
+event: PreToolUse
+---
+A key after a top-level list.

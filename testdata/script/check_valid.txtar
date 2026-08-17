@@ -1,0 +1,94 @@
+# A valid Project-shared ruleset prints one annotated row per rule.
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=0$'
+! stderr .
+stdout '^TIER +RULE +EVENT +KIND +ACTION +STATUS$'
+stdout '^project-shared +no-rm-rf-root +PreToolUse +shell +block +enabled$'
+stdout '^project-shared +prefer-rg +PreToolUse +\* +warn +enabled$'
+
+# Nested directories are scanned, local/ is not.
+stdout '^project-shared +nested-rule +PostToolUse'
+! stdout 'personal-only'
+
+# Non-markdown files in the tier are ignored.
+! stdout 'notes'
+
+# Comments and blank lines in frontmatter are comments and blank lines.
+stdout '^project-shared +commented +SessionStart +mcp +block +enabled$'
+
+# Every operator negates with not_, and glob understands **.
+stdout '^project-shared +negations +PostToolUse +file_edit +warn +enabled$'
+
+-- .handrail/no-rm-rf-root.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    matches: rm\s+-rf
+  - any:
+      - field: command
+        contains: " /"
+      - field: command
+        starts_with: rm -rf /
+---
+Never delete recursively from the filesystem root. If you need to clean a
+build directory, name it explicitly and stay inside the repo.
+-- .handrail/prefer-rg.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    starts_with: grep
+---
+Use rg instead of grep.
+-- .handrail/nested/nested-rule.md --
+---
+event: PostToolUse
+conditions:
+- field: path
+  glob: "**/*.env"
+---
+Sequences at the parent's own indentation are valid YAML too.
+-- .handrail/local/personal-only.md --
+---
+event: Stop
+---
+The local tier belongs to #21, not to the shared scan.
+-- .handrail/commented.md --
+---
+# which event, and why
+event: SessionStart  # trailing comments are comments
+
+kind: mcp
+action: block
+conditions:
+  - field: server
+    equals: some-server   # so is this
+  - field: command
+    contains: "# not a comment"
+---
+A hash inside a quoted value stays part of the value.
+-- .handrail/negations.md --
+---
+event: PostToolUse
+kind: file_edit
+conditions:
+  - field: path
+    not_glob: "**/*_test.go"
+  - field: content
+    not_contains: "// nolint"  # a quoted value may still carry a comment
+  - field: content
+    not_matches: (?i)^generated
+  - field: path
+    not_equals: go.sum
+  - any:
+      - field: path
+        not_starts_with: vendor/
+      - field: path
+        not_ends_with: .pb.go
+---
+Every operator negates with not_.
+-- .handrail/notes.txt --
+Not a rule.

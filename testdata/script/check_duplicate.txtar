@@ -1,0 +1,21 @@
+# Identity is the basename, so two files with one name inside a tier is an error.
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=1$'
+stderr 'nested/duplicate\.md: duplicate rule name "duplicate" \(also at .*/\.handrail/duplicate\.md\)'
+
+# One of them is still the effective rule: the tie breaks on the whole path,
+# lexicographically, so .handrail/duplicate.md beats .handrail/nested/.
+stdout '^project-shared +duplicate +PreToolUse'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/duplicate.md --
+---
+event: PreToolUse
+---
+The lexicographically first path wins the tie.
+-- .handrail/nested/duplicate.md --
+---
+event: Stop
+---
+Same basename, different directory.

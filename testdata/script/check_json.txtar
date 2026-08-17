@@ -1,0 +1,49 @@
+# --json emits the spec contract: {rules: [...], errors: [...]}.
+exec sh -c 'handrail check --json; echo code=$?'
+stdout '^code=0$'
+! stderr .
+stdout '"rules": \['
+stdout '"rule": "no-rm-rf-root"'
+stdout '"tier": "project-shared"'
+stdout '"event": "PreToolUse"'
+stdout '"kind": "shell"'
+stdout '"action": "block"'
+stdout '"enabled": true'
+stdout '"shadowed_by": null'
+stdout '"path": ".*/\.handrail/no-rm-rf-root\.md"'
+stdout '"errors": \[\]'
+
+# An omitted kind is an empty string, not a missing key.
+stdout '"rule": "prefer-rg"'
+stdout '"kind": ""'
+stdout '"action": "warn"'
+
+# No rules at all is still valid JSON with both keys present.
+exec sh -c 'cd empty && handrail check --json; echo code=$?'
+stdout '^code=0$'
+stdout '"rules": \[\]'
+stdout '"errors": \[\]'
+
+# The human output of an empty tier is silence.
+exec sh -c 'cd empty && handrail check; echo code=$?'
+stdout '^code=0$'
+! stderr .
+! stdout TIER
+
+-- .handrail/no-rm-rf-root.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf /
+---
+Never delete recursively from the filesystem root.
+-- .handrail/prefer-rg.md --
+---
+event: PreToolUse
+---
+Use rg instead of grep.
+-- empty/.git/HEAD --
+ref: refs/heads/main
