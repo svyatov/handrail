@@ -138,7 +138,7 @@ ADR: [0006](adr/0006-cli-and-plugin-surface.md). Nine commands; harness identifi
 | `trust` | Grant the current repo's Project-shared tier (path-once registry). |
 | `advise [rule-name] [--harness]` | The Advisor. No argument audits every rule in every tier; a rule name scopes to one. |
 | `import hookify [path]` | One-shot upstream-hookify converter (section 9). |
-| `doctor` | Offline-only: binary location and version; per harness, hook entries present, current, pointing at an existing executable; the current repo's tier discovery, trust state, `local/` exclusion line; rule validity summary. |
+| `doctor` | Offline-only: binary location and version; per harness, hook entries present, current, pointing at an existing executable; the current repo's tier discovery, trust state, `local/` exclusion line; rule validity summary. Exit 1 when any check fails. |
 | `version` | Version, commit, date (GoReleaser-injected). |
 
 - **`--json`** on `advise`, `check`, `test`:

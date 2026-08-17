@@ -1,0 +1,74 @@
+# doctor is the first command for "why is nothing firing". Every answer it gives
+# is already on this machine: it reads files and never a network.
+cd repo
+exec handrail trust
+exec handrail sync
+exec handrail doctor
+! stdout 'problem'
+
+# The binary answering, and the version it is.
+stdout '^ok +handrail dev at /'
+
+# Both harnesses are covered when both are installed, each under its own name.
+stdout '^ok +claude: config at .*/home/\.claude/settings\.json$'
+stdout '^ok +claude: 6 hook entries current$'
+stdout '^ok +codex: config at .*/home/\.codex/hooks\.json$'
+stdout '^ok +codex: 6 hook entries current$'
+
+# Degradations and fail-open quirks are reprintable here, not only at sync time.
+stdout '^note +claude: block degraded to warn for late: Claude Code has no denial to give on PostToolUse$'
+stdout '^note +claude: hook errors and timeouts fail open'
+stdout '^note +codex: codex exec --ignore-rules bypasses execpolicy'
+! stdout 'claude: codex exec'
+
+# Tier discovery for the current repo, with the directory each tier was read
+# from: a wrong root is the other half of "why is nothing firing".
+stdout '^ok +project root .*/repo$'
+stdout '^ok +global: 1 rule in .*/home/\.config/handrail$'
+stdout '^ok +project-shared: 2 rules in .*/repo/\.handrail, trusted$'
+stdout '^ok +project-personal: 1 rule in .*/repo/\.handrail/local$'
+
+# The exclusion line sync writes, and the ruleset's validity.
+stdout '^ok +\.handrail/local/ is excluded in \.git/info/exclude$'
+stdout '^ok +4 rules valid$'
+
+# A harness that has never run on this machine is a fact, not a fault.
+mv $WORK/home/.codex $WORK/home/.codex-gone
+exec handrail doctor
+stdout '^note +codex: not installed$'
+! stdout 'problem'
+! stdout 'codex: 6 hook entries'
+
+# Outside a git working tree there is nothing to exclude, so nothing is wrong.
+cd $WORK
+exec handrail doctor
+! stdout 'problem'
+stdout 'is not a git working tree, so nothing needs excluding'
+
+-- home/.claude/settings.json --
+{}
+-- home/.codex/hooks.json --
+{}
+-- home/.config/handrail/global.md --
+---
+event: PreToolUse
+---
+A rule every repo on this machine carries.
+-- repo/.git/HEAD --
+ref: refs/heads/main
+-- repo/.handrail/late.md --
+---
+event: PostToolUse
+action: block
+---
+Claude Code cannot undo a tool call that already ran.
+-- repo/.handrail/shared.md --
+---
+event: PreToolUse
+---
+A committed rule, granted by trust.
+-- repo/.handrail/local/mine.md --
+---
+event: PreToolUse
+---
+The user's own rule.

@@ -12,23 +12,50 @@ import (
 // excludeLine keeps the Project-personal tier out of version control.
 const excludeLine = ".handrail/local/"
 
+// readExclude reads root's exclude file and names it. Outside a git working
+// tree there is no such file, and the empty path says so: that is not the same
+// as a file whose line went missing, which is the distinction doctor reports on.
+func readExclude(root string) (path string, data []byte, err error) {
+	git, err := gitDir(root)
+	if err != nil || git == "" {
+		return "", nil, err
+	}
+	path = filepath.Join(git, "info", "exclude")
+	data, err = os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", nil, err
+	}
+	return path, data, nil
+}
+
+// hasExcludeLine reports whether an exclude file's contents already hold it.
+func hasExcludeLine(data []byte) bool {
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if strings.TrimSpace(line) == excludeLine {
+			return true
+		}
+	}
+	return false
+}
+
+// LocalExcluded reports whether root's exclude file holds the line, and names
+// the file it read. An empty path means root is not a git working tree, where
+// there is nothing to exclude and therefore nothing missing.
+func LocalExcluded(root string) (excluded bool, path string, err error) {
+	path, data, err := readExclude(root)
+	if err != nil || path == "" {
+		return false, "", err
+	}
+	return hasExcludeLine(data), path, nil
+}
+
 // ExcludeLocal adds the Project-personal tier to root's own exclude file,
 // reporting whether that was new. info/exclude rather than .gitignore: the tier
 // is one user's, and the ignore rule for it is nobody else's business.
 func ExcludeLocal(root string) (added bool, err error) {
-	git, err := gitDir(root)
-	if err != nil || git == "" {
+	path, data, err := readExclude(root)
+	if err != nil || path == "" || hasExcludeLine(data) {
 		return false, err
-	}
-	path := filepath.Join(git, "info", "exclude")
-	data, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return false, err
-	}
-	for line := range strings.SplitSeq(string(data), "\n") {
-		if strings.TrimSpace(line) == excludeLine {
-			return false, nil
-		}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

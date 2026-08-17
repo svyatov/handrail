@@ -37,7 +37,7 @@ type Discovery struct {
 func LoadTiers(cwd string) ([]*Rule, []Problem, Discovery) {
 	root := RepoRoot(cwd)
 	d := Discovery{Root: root}
-	shared := filepath.Join(root, ".handrail")
+	shared := SharedDir(root)
 
 	var rules []*Rule
 	var problems []Problem
@@ -66,7 +66,7 @@ func LoadTiers(cwd string) ([]*Rule, []Problem, Discovery) {
 		d.Skipped = true
 		problems = append(problems, ps...)
 	}
-	add(TierProjectPersonal, filepath.Join(shared, "local"), false)
+	add(TierProjectPersonal, LocalDir(root), false)
 
 	// Identity is the basename, so the highest tier holding a name carries the
 	// effective rule and every lower one is shadowed by it, wholesale.
@@ -81,6 +81,13 @@ func LoadTiers(cwd string) ([]*Rule, []Problem, Discovery) {
 	}
 	return rules, problems, d
 }
+
+// SharedDir is the Project-shared tier's directory, at the project root.
+func SharedDir(root string) string { return filepath.Join(root, ".handrail") }
+
+// LocalDir is the Project-personal tier's directory, inside the shared one so a
+// single exclude line keeps it out of version control.
+func LocalDir(root string) string { return filepath.Join(SharedDir(root), "local") }
 
 // ConfigDir is the Global tier's directory: XDG on every Unix platform,
 // including macOS, following the git and gh dotfiles precedent rather than

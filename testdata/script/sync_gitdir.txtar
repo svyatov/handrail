@@ -13,6 +13,16 @@ exec sh -c 'cd empty-pointer && handrail sync; echo code=$?'
 stdout '^code=1$'
 stderr 'names no git directory'
 
+# doctor reads the same shapes, and says what it could not read rather than
+# calling the exclusion missing.
+exec sh -c 'cd empty-pointer && handrail doctor; echo code=$?'
+stdout '^code=1$'
+stdout '^problem +cannot read the exclude file of .*: .* names no git directory$'
+
+exec sh -c 'cd exclude-is-a-dir && handrail doctor; echo code=$?'
+stdout '^code=1$'
+stdout '^problem +cannot read the exclude file of .*: '
+
 # A relative pointer resolves against the working tree, and its commondir hop
 # lands the line in the main checkout's exclude file.
 exec sh -c 'cd worktree && handrail sync'

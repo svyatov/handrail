@@ -56,18 +56,9 @@ func (a Adapter) ConfigPath() string {
 // several.
 func (a Adapter) Install(bin string) (entries int, changed bool, err error) {
 	path := a.ConfigPath()
-	if path == "" {
-		return 0, false, errors.New("no home directory: set HOME")
-	}
-	old, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	old, settings, err := a.read()
+	if err != nil {
 		return 0, false, err
-	}
-	settings := map[string]any{}
-	if len(old) > 0 {
-		if err := json.Unmarshal(old, &settings); err != nil {
-			return 0, false, fmt.Errorf("%s: %w", path, err)
-		}
 	}
 
 	hooks, _ := settings["hooks"].(map[string]any)
@@ -82,7 +73,7 @@ func (a Adapter) Install(bin string) (entries int, changed bool, err error) {
 		hooks[event] = append(groups, map[string]any{
 			"hooks": []any{map[string]any{
 				"type":    "command",
-				"command": shellQuote(bin) + " hook " + a.Name + " " + event,
+				"command": a.command(bin, event),
 			}},
 		})
 	}
@@ -101,16 +92,84 @@ func (a Adapter) Install(bin string) (entries int, changed bool, err error) {
 	return len(events), true, write(path, next)
 }
 
-// ours reports whether command is an entry a previous sync wrote for event. The
-// binary's directory is not part of the test, so a moved binary replaces its old
-// entry instead of stacking a second one; its name is, so nothing of the user's
-// own can be deleted from their settings by resembling handrail's command line.
-func (a Adapter) ours(command, event string) bool {
+// read parses the harness's config, returning the bytes it came from so Install
+// can tell an unchanged file from a rewritten one. A file that is not there yet
+// is an empty config, not a failure.
+func (a Adapter) read() (raw []byte, settings map[string]any, err error) {
+	path := a.ConfigPath()
+	if path == "" {
+		return nil, nil, errors.New("no home directory: set HOME")
+	}
+	raw, err = os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, nil, err
+	}
+	settings = map[string]any{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &settings); err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	return raw, settings, nil
+}
+
+// command is the hook entry sync writes for one event, and therefore the one
+// doctor compares against what it finds installed.
+func (a Adapter) command(bin, event string) string {
+	return shellQuote(bin) + " hook " + a.Name + " " + event
+}
+
+// entryBinary reads the binary invoked by a command line, when that command
+// line is one a previous sync wrote for event. The binary's directory is not
+// part of the test, so a moved binary replaces its old entry instead of stacking
+// a second one; its name is, so nothing of the user's own can be deleted from
+// their settings by resembling handrail's command line.
+func (a Adapter) entryBinary(command, event string) (string, bool) {
 	tail, found := strings.CutSuffix(command, " hook "+a.Name+" "+event)
 	if !found {
-		return false
+		return "", false
 	}
-	return strings.HasPrefix(filepath.Base(strings.Trim(tail, "'")), "handrail")
+	bin := shellUnquote(tail)
+	if !strings.HasPrefix(filepath.Base(bin), "handrail") {
+		return "", false
+	}
+	return bin, true
+}
+
+// Entries reports the binary each canonical event's installed hook entry
+// invokes, in the order sync wrote them. An event handrail has no entry for
+// comes back empty, which is what doctor calls a missing entry.
+func (a Adapter) Entries() ([]Entry, error) {
+	_, settings, err := a.read()
+	if err != nil {
+		return nil, err
+	}
+	hooks, _ := settings["hooks"].(map[string]any)
+	events := rule.Events()
+	out := make([]Entry, 0, len(events))
+	for _, event := range events {
+		e := Entry{Event: event}
+		groups, _ := hooks[event].([]any)
+		for _, g := range groups {
+			group, _ := g.(map[string]any)
+			inner, _ := group["hooks"].([]any)
+			for _, h := range inner {
+				hook, _ := h.(map[string]any)
+				cmd, _ := hook["command"].(string)
+				if bin, ok := a.entryBinary(cmd, event); ok {
+					e.Binary = bin
+				}
+			}
+		}
+		out = append(out, e)
+	}
+	return out, nil
+}
+
+// Entry is one event's installed hook entry, as doctor found it.
+type Entry struct {
+	Event  string
+	Binary string // the binary the entry invokes, empty when there is no entry
 }
 
 // prune drops the entries a previous sync wrote for event. An entry pointing at
@@ -131,9 +190,9 @@ func (a Adapter) prune(groups any, event string) []any {
 		}
 		keptInner := make([]any, 0, len(inner))
 		for _, h := range inner {
-			hook, ok := h.(map[string]any)
-			if ok {
-				if cmd, _ := hook["command"].(string); a.ours(cmd, event) {
+			if hook, ok := h.(map[string]any); ok {
+				cmd, _ := hook["command"].(string)
+				if _, ours := a.entryBinary(cmd, event); ours {
 					continue
 				}
 			}
@@ -188,6 +247,14 @@ func shellQuote(s string) string {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// shellUnquote undoes shellQuote, so doctor can stat the binary an entry names.
+func shellUnquote(s string) string {
+	if len(s) < 2 || !strings.HasPrefix(s, "'") || !strings.HasSuffix(s, "'") {
+		return s
+	}
+	return strings.ReplaceAll(s[1:len(s)-1], `'\''`, "'")
 }
 
 // Degradation is one rule this harness cannot enforce at full strength.

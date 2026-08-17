@@ -24,6 +24,10 @@ exec sh -c 'handrail hook -nope; echo code=$?'
 stdout '^code=1$'
 stderr 'flag provided but not defined: -nope'
 
+exec sh -c 'handrail doctor -nope; echo code=$?'
+stdout '^code=1$'
+stderr 'flag provided but not defined: -nope'
+
 # import's format leads, so the flag is parsed after it.
 exec sh -c 'handrail import hookify -nope; echo code=$?'
 stdout '^code=1$'
@@ -42,6 +46,10 @@ stderr 'handrail check: unexpected argument "extra"'
 exec sh -c 'handrail sync extra; echo code=$?'
 stdout '^code=1$'
 stderr 'handrail sync: unexpected argument "extra"'
+
+exec sh -c 'handrail doctor extra; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail doctor: unexpected argument "extra"'
 
 # advise takes one positional, the rule name, so the second one is the leftover.
 exec sh -c 'handrail advise some-rule extra; echo code=$?'
