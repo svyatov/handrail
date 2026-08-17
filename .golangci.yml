@@ -1,7 +1,55 @@
 version: "2"
 
+# A curated set, not `default: all`. Every linter here is one whose findings a
+# reviewer would have raised by hand; the ones left out are the ones that fire
+# on this codebase's deliberate choices rather than on mistakes.
+
 linters:
+  enable:
+    - copyloopvar
+    - depguard
+    - errname
+    - errorlint
+    - forbidigo
+    - gocritic
+    - godot
+    - gosec
+    - misspell
+    - modernize
+    - nilerr
+    - perfsprint
+    - predeclared
+    - revive
+    - thelper
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wastedassign
+    - whitespace
+
   settings:
+    depguard:
+      # "Zero third-party runtime dependencies" is a promise the spec makes and
+      # nothing else enforced. An allow list rather than a deny list, so a new
+      # import fails without anyone remembering to forbid it first.
+      rules:
+        runtime:
+          files:
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/svyatov/handrail
+          deny:
+            - pkg: "!$gostd"
+              desc: the binary depends on the standard library only
+        test:
+          files:
+            - $test
+          allow:
+            - $gostd
+            - github.com/svyatov/handrail
+            - github.com/rogpeppe/go-internal
+
     errcheck:
       # Every command writes its report to the stdout and stderr the CLI seam
       # passes in. A write there failing is the shell's business, not a rule
@@ -10,3 +58,106 @@ linters:
         - fmt.Fprint
         - fmt.Fprintf
         - fmt.Fprintln
+
+    forbidigo:
+      # The CLI seam: run() returns an exit code so every command is callable
+      # from a test, and printing goes to the writers it was handed. os.Exit is
+      # waived for main.go alone, in the exclusions below.
+      forbid:
+        - pattern: ^os\.Exit$
+          msg: return an exit code from run() instead; os.Exit belongs in main only
+        - pattern: ^fmt\.Print(f|ln)?$
+          msg: write to the stdout/stderr the CLI seam passes in
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - opinionated
+      disabled-checks:
+        # Named results document what a two-value return means; this wants them
+        # gone or all named, and several signatures read better half-named.
+        - unnamedResult
+
+    gosec:
+      excludes:
+        # handrail's whole job is reading and writing config files at paths the
+        # user names, so the taint and permission rules fire on the design.
+        - G122 # WalkDir callback stats the path it was handed; that is the walk
+        - G301 # directory permissions: 0755 on .git/info is git's own mode
+        - G302 # file permissions: an existing file's mode is the user's choice
+        - G304 # file path from a variable: that variable is the rule path
+        - G306 # WriteFile permissions, same reason as G302
+        - G703 # path traversal: the path is the repo the user is standing in
+
+    revive:
+      # An explicit list. `enable-all-rules` yields 475 findings here, 351 of
+      # them add-constant and line-length-limit, which is noise, not review.
+      rules:
+        - name: blank-imports
+        - name: bool-literal-in-expr
+        - name: confusing-results
+        - name: constant-logical-expr
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: datarace
+        - name: defer
+        - name: dot-imports
+        - name: duplicated-imports
+        - name: early-return
+        - name: empty-block
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported
+        - name: identical-branches
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: modifies-parameter
+        - name: modifies-value-receiver
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: redundant-import-alias
+        - name: string-of-int
+        - name: struct-tag
+        - name: superfluous-else
+        - name: time-equal
+        - name: time-naming
+        - name: unexported-naming
+        - name: unexported-return
+        - name: unnecessary-stmt
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: use-any
+        - name: var-declaration
+        - name: var-naming
+        - name: waitgroup-by-value
+
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      # os.Exit is what main is for. Scoped by text so main.go keeps the
+      # fmt.Print rule.
+      - path: ^main\.go$
+        linters:
+          - forbidigo
+        text: os\.Exit
+      # testscript.Main runs the command in-process and needs the real exit.
+      - path: _test\.go$
+        linters:
+          - forbidigo
+        text: os\.Exit
+      # The cold-start test execs the binary it just built at a temp path.
+      - path: _test\.go$
+        linters:
+          - gosec
+        text: G204
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports

@@ -151,7 +151,7 @@ func classify(tool string) string {
 func unwrapPatch(fields map[string]string, patch string) {
 	var added []string
 	var found bool
-	for _, line := range strings.Split(patch, "\n") {
+	for line := range strings.SplitSeq(patch, "\n") {
 		if path, ok := patchPath(line); ok {
 			if found {
 				break

@@ -158,7 +158,7 @@ func convertHookify(path string) (name, file string, err error) {
 	}
 
 	if name == "" {
-		return "", "", fmt.Errorf("rule has no name")
+		return "", "", errors.New("rule has no name")
 	}
 	if !isRuleName(name) {
 		return "", "", fmt.Errorf("name %q is not a usable filename", name)
@@ -186,7 +186,7 @@ func convertHookify(path string) (name, file string, err error) {
 	// The converted file is parsed back before it is written: an import that
 	// needs hand-fixing before handrail check passes is not an import.
 	if _, err := Parse(name, []byte(file)); err != nil {
-		return "", "", fmt.Errorf("converted rule is invalid: %v", err)
+		return "", "", fmt.Errorf("converted rule is invalid: %w", err)
 	}
 	return name, file, nil
 }
@@ -213,7 +213,7 @@ func isRuleName(name string) bool {
 func hookifyConditions(list *node, event, pattern string) ([]term, error) {
 	if list == nil || len(list.seq) == 0 {
 		if pattern == "" {
-			return nil, fmt.Errorf("rule has no conditions, which upstream never matches")
+			return nil, errors.New("rule has no conditions, which upstream never matches")
 		}
 		// Upstream's own inference, verbatim, which docs/spec.md section 8 asks
 		// for. On a prompt or stop rule it names content, a field neither event
@@ -277,7 +277,7 @@ func convertCondition(field, op, value string) (term, error) {
 		// default here would quietly narrow what the rule catches. The reported
 		// pattern stays the one the author wrote.
 		if _, err := regexp.Compile("(?i)" + value); err != nil {
-			return term{}, fmt.Errorf("pattern %q is not an RE2 regexp: %v", value, err)
+			return term{}, fmt.Errorf("pattern %q is not an RE2 regexp: %w", value, err)
 		}
 		value = "(?i)" + value
 	}
@@ -368,7 +368,7 @@ func hookifyToolMatcher(matcher, event, kind string) (string, error) {
 		return "", fmt.Errorf("tool_matcher %q cannot apply to event %q", matcher, event)
 	}
 	matched := ""
-	for _, tool := range strings.Split(matcher, "|") {
+	for tool := range strings.SplitSeq(matcher, "|") {
 		k := toolKind(tool)
 		if k == "" {
 			return "", fmt.Errorf("tool_matcher %q names a tool with no canonical kind: %s", matcher, tool)

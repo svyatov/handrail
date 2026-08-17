@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -31,12 +32,7 @@ func IsTrusted(root string) bool {
 	if err != nil {
 		return false
 	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if line == root {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(strings.Split(string(data), "\n"), root)
 }
 
 // Trust records root as trusted, reporting whether that was new.

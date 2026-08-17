@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -220,7 +221,7 @@ func cmdAdvise(args []string, stdout, stderr io.Writer) int {
 	for _, adv := range out {
 		fmt.Fprintf(stdout, "%s  %s  %s  %s\n", adv.Rule, adv.Tier, adv.Harness, adv.Mechanism)
 		fmt.Fprintf(stdout, "  add to %s:\n", adv.Location)
-		for _, line := range strings.Split(adv.Entry, "\n") {
+		for line := range strings.SplitSeq(adv.Entry, "\n") {
 			fmt.Fprintf(stdout, "    %s\n", line)
 		}
 		if adv.ScopeWidening != nil {
@@ -352,7 +353,7 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 	if len(targets) == 0 {
 		found := "no harness found; install Claude Code or Codex CLI and run it once"
 		if *only != "" {
-			found = fmt.Sprintf("%s not found; install it and run it once", *only)
+			found = *only + " not found; install it and run it once"
 		}
 		fmt.Fprintf(stderr, "handrail sync: %s\n", found)
 		return 1
@@ -701,9 +702,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 	// Flags win over the payload, so one field can be varied against a capture.
-	for k, v := range fields {
-		payload.Fields[k] = v
-	}
+	maps.Copy(payload.Fields, fields)
 	if *kind != "" {
 		payload.Kind = *kind
 	}
@@ -734,7 +733,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	} else {
 		for _, m := range out.Matched {
 			fmt.Fprintf(stdout, "%s  %s  %s\n", m.Action, m.Rule, m.Tier)
-			for _, line := range strings.Split(m.Message, "\n") {
+			for line := range strings.SplitSeq(m.Message, "\n") {
 				if line == "" {
 					fmt.Fprintln(stdout)
 					continue

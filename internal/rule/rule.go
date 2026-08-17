@@ -2,6 +2,7 @@
 package rule
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -148,12 +149,12 @@ func Parse(name string, data []byte) (*Rule, error) {
 	// does carry have already been validated above.
 	if r.Enabled {
 		if r.Event == "" {
-			return nil, fmt.Errorf(`line 1: missing required field "event"`)
+			return nil, errors.New(`line 1: missing required field "event"`)
 		}
 		// The message is the product: a rule that matches and says nothing
 		// blocks or warns with an empty reason.
 		if r.Message == "" {
-			return nil, fmt.Errorf("line 1: rule has no message")
+			return nil, errors.New("line 1: rule has no message")
 		}
 	}
 	return r, nil
@@ -172,7 +173,7 @@ func parseFrontmatter(data []byte) (doc *node, body string, err error) {
 		return nil, "", err
 	}
 	if doc.isScalar || doc.seq != nil {
-		return nil, "", fmt.Errorf("line 2: frontmatter must be a mapping")
+		return nil, "", errors.New("line 2: frontmatter must be a mapping")
 	}
 	return doc, body, nil
 }
@@ -180,14 +181,14 @@ func parseFrontmatter(data []byte) (doc *node, body string, err error) {
 func splitFrontmatter(s string) (frontmatter, body string, err error) {
 	lines := strings.Split(strings.TrimPrefix(s, "\ufeff"), "\n")
 	if strings.TrimRight(lines[0], " ") != "---" {
-		return "", "", fmt.Errorf("line 1: missing YAML frontmatter")
+		return "", "", errors.New("line 1: missing YAML frontmatter")
 	}
 	for i := 1; i < len(lines); i++ {
 		if strings.TrimRight(lines[i], " ") == "---" {
 			return strings.Join(lines[1:i], "\n"), strings.Join(lines[i+1:], "\n"), nil
 		}
 	}
-	return "", "", fmt.Errorf("line 1: unterminated YAML frontmatter")
+	return "", "", errors.New("line 1: unterminated YAML frontmatter")
 }
 
 func scalarInto(kv pair, dst *string) error {
@@ -279,13 +280,13 @@ func parseTerm(n *node) (*Term, error) {
 	case "matches":
 		re, err := regexp.Compile(t.Value)
 		if err != nil {
-			return nil, fmt.Errorf("line %d: invalid regexp: %v", t.line, err)
+			return nil, fmt.Errorf("line %d: invalid regexp: %w", t.line, err)
 		}
 		t.Re = re
 	case "glob":
 		re, err := globToRegexp(t.Value)
 		if err != nil {
-			return nil, fmt.Errorf("line %d: invalid glob: %v", t.line, err)
+			return nil, fmt.Errorf("line %d: invalid glob: %w", t.line, err)
 		}
 		t.Re = re
 	}
@@ -302,7 +303,7 @@ func globToRegexp(pattern string) (*regexp.Regexp, error) {
 		switch pattern[i] {
 		case '\\':
 			if i == len(pattern)-1 {
-				return nil, fmt.Errorf("trailing backslash")
+				return nil, errors.New("trailing backslash")
 			}
 			i++
 			b.WriteString(regexp.QuoteMeta(pattern[i : i+1]))
@@ -351,7 +352,7 @@ func globClass(pattern string, start int) (class string, end int, err error) {
 		i++
 	}
 	if i >= len(pattern) || pattern[i] == ']' {
-		return "", 0, fmt.Errorf("empty character class")
+		return "", 0, errors.New("empty character class")
 	}
 	for ; i < len(pattern) && pattern[i] != ']'; i++ {
 		if pattern[i] != '\\' {
@@ -359,7 +360,7 @@ func globClass(pattern string, start int) (class string, end int, err error) {
 			continue
 		}
 		if i == len(pattern)-1 {
-			return "", 0, fmt.Errorf("trailing backslash")
+			return "", 0, errors.New("trailing backslash")
 		}
 		i++
 		// QuoteMeta leaves - alone, which inside a class turns an escaped
@@ -372,7 +373,7 @@ func globClass(pattern string, start int) (class string, end int, err error) {
 		}
 	}
 	if i >= len(pattern) {
-		return "", 0, fmt.Errorf("unterminated character class")
+		return "", 0, errors.New("unterminated character class")
 	}
 	b.WriteByte(']')
 	return b.String(), i, nil

@@ -132,12 +132,12 @@ func load(dir string, skipLocal bool) ([]*Rule, []Problem) {
 		data, err := os.ReadFile(p)
 		if err != nil {
 			problems = append(problems, Problem{Path: p, Message: err.Error()})
-			return nil
+			return nil //nolint:nilerr // the walk reports bad rules, it does not abort on them
 		}
 		r, err := Parse(strings.TrimSuffix(d.Name(), ".md"), data)
 		if err != nil {
 			problems = append(problems, Problem{Path: p, Message: err.Error()})
-			return nil
+			return nil //nolint:nilerr // the walk reports bad rules, it does not abort on them
 		}
 		r.Path = p
 		rules = append(rules, r)
