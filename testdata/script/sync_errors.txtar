@@ -37,6 +37,22 @@ stderr 'handrail: codex: .*hooks.json'
 stdout 'claude: wrote 6 hook entries'
 exists home/.claude/settings.json
 
+# A config file that is not a file is reported like any other unreadable one.
+rm home/.claude/settings.json
+mkdir home/.claude/settings.json
+exec sh -c 'handrail sync --harness claude; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail: claude: read .*settings.json'
+
+# Root can write anything, so a permission case only means something as
+# somebody else.
+[root] stop 'this case turns on a permission denial'
+rm home/.claude/settings.json
+chmod 0500 home/.claude
+exec sh -c 'handrail sync --harness claude; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail: claude: .*permission denied'
+
 -- .git/HEAD --
 ref: refs/heads/main
 -- broken.json --

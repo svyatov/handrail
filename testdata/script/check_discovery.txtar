@@ -12,11 +12,33 @@ stdout '^project-shared +root-rule +Stop'
 # A .handrail directory below the root is not a tier.
 ! stdout 'not-a-tier'
 
+# A rule handrail cannot read is a Problem, not an abort: the rest of the tier
+# still loads, and the one that did not is named. Root can read anything, so
+# this only means something as somebody else.
+[root] stop 'these cases turn on a permission denial'
+chmod 0000 .handrail/locked.md
+chmod 0000 .handrail/vault
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=1$'
+stdout '^project-shared +root-rule +Stop'
+stderr 'locked\.md: .*permission denied'
+stderr 'vault: .*permission denied'
+
 -- .handrail/root-rule.md --
 ---
 event: Stop
 ---
 Discovered from the repo root.
+-- .handrail/locked.md --
+---
+event: Stop
+---
+A rule nobody may read.
+-- .handrail/vault/hidden.md --
+---
+event: Stop
+---
+A rule in a directory nobody may open.
 -- sub/deeper/.handrail/not-a-tier.md --
 ---
 event: Stop

@@ -1,0 +1,71 @@
+# handrail reads two environment-derived directories: the XDG config dir for the
+# Global tier and the XDG state dir for the trust registry. Neither variable is
+# guaranteed to be set, and the home directory both fall back to is not
+# guaranteed to exist either.
+
+# With nothing set, there is nowhere to record a grant.
+env HOME=
+env XDG_CONFIG_HOME=
+env XDG_STATE_HOME=
+exec sh -c 'handrail trust; echo code=$?'
+stdout '^code=1$'
+stderr 'no state directory: set HOME or XDG_STATE_HOME'
+
+# Nowhere to read one from either, so the Project-shared tier stays gated and
+# says so. The user's own Project-personal tier is never gated.
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=0$'
+stdout '^project-personal +personal '
+stderr 'skipping the untrusted Project-shared rules'
+
+# No Global tier to load, and no harness directory to detect, which is a
+# machine with nothing installed rather than a failure to report.
+exec sh -c 'handrail sync; echo code=$?'
+stdout '^code=1$'
+stderr 'no harness found'
+
+# With home set and no XDG variable, the base is the spec's default under it.
+env HOME=$WORK/home
+mkdir $WORK/home/.config/handrail
+cp global.md $WORK/home/.config/handrail/from-home.md
+exec handrail check
+stdout '^global +from-home '
+
+# A relative XDG value is ignored, as the basedir spec requires, so the same
+# default applies.
+env XDG_CONFIG_HOME=relative/path
+exec handrail check
+stdout '^global +from-home '
+
+# The registry's own directory has to be a directory.
+env XDG_STATE_HOME=$WORK/state-file
+mkdir $WORK/state-file
+cp global.md $WORK/state-file/handrail
+exec sh -c 'handrail trust; echo code=$?'
+stdout '^code=1$'
+stderr 'not a directory'
+
+# And the registry itself has to be a file.
+env XDG_STATE_HOME=$WORK/state-dir
+mkdir $WORK/state-dir/handrail/trusted
+exec sh -c 'handrail trust; echo code=$?'
+stdout '^code=1$'
+stderr 'is a directory'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- global.md --
+---
+event: PreToolUse
+---
+A rule the Global tier carries.
+-- .handrail/shared.md --
+---
+event: PreToolUse
+---
+A committed rule, which waits for a grant.
+-- .handrail/local/personal.md --
+---
+event: PreToolUse
+---
+The user's own rule, which never waits for anything.
