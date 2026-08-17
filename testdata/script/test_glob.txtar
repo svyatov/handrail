@@ -1,0 +1,109 @@
+# The glob dialect is path.Match plus **. Each rule keys on its own prefix, so
+# one --field selects exactly one rule.
+
+# ? is exactly one character, and never a separator.
+exec sh -c 'handrail test PreToolUse --field path=qa.txt; echo code=$?'
+stdout '^warn  qmark  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=qab.txt; echo code=$?'
+stdout '^outcome: allow$'
+
+# An escaped - inside a class is a member, not a range: c[a\-z] is a, -, z.
+exec sh -c 'handrail test PreToolUse --field path=ca.txt; echo code=$?'
+stdout '^warn  class  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=c-.txt; echo code=$?'
+stdout '^warn  class  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=cz.txt; echo code=$?'
+stdout '^warn  class  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=cm.txt; echo code=$?'
+stdout '^outcome: allow$'
+
+# ^ negates a class...
+exec sh -c 'handrail test PreToolUse --field path=nat.txt; echo code=$?'
+stdout '^warn  neg-class  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=nrt.txt; echo code=$?'
+stdout '^outcome: allow$'
+
+# ...and ! does not: it is an ordinary member.
+exec sh -c 'handrail test PreToolUse --field path=b!t.txt; echo code=$?'
+stdout '^warn  bang-class  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=brt.txt; echo code=$?'
+stdout '^warn  bang-class  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=bat.txt; echo code=$?'
+stdout '^outcome: allow$'
+
+# A backslash makes the next character literal.
+exec sh -c 'handrail test PreToolUse --field path=e*.txt; echo code=$?'
+stdout '^warn  escape  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=eabc.txt; echo code=$?'
+stdout '^outcome: allow$'
+
+# ** only skips directories on its own segment: in m**/ the stars belong to m.
+exec sh -c 'handrail test PreToolUse --field path=mfoo/t.txt; echo code=$?'
+stdout '^warn  mid-star  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=mt.txt; echo code=$?'
+stdout '^outcome: allow$'
+
+# A trailing ** takes everything below.
+exec sh -c 'handrail test PreToolUse --field path=d/a; echo code=$?'
+stdout '^warn  deep  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=d/a/b/c; echo code=$?'
+stdout '^warn  deep  project-shared$'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/qmark.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: q?.txt
+---
+One character, never a separator.
+-- .handrail/class.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: c[a\-z].txt
+---
+An escaped dash is a member of the class.
+-- .handrail/neg-class.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: n[^r]t.txt
+---
+A leading caret negates the class.
+-- .handrail/bang-class.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: b[!r]t.txt
+---
+A leading bang is just a member.
+-- .handrail/escape.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: e\*.txt
+---
+An escaped star is a literal star.
+-- .handrail/mid-star.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: m**/t.txt
+---
+Stars that are not their own segment stay inside one segment.
+-- .handrail/deep.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: d/**
+---
+A trailing double star takes every depth below.

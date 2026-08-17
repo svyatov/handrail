@@ -1,0 +1,63 @@
+# Conditions AND implicitly; a one-level any group is the only OR.
+
+# Both halves present: the AND rule fires.
+exec sh -c 'handrail test PreToolUse --field command="git push --force origin"; echo code=$?'
+stdout '^code=0$'
+stdout '^warn  and  project-shared$'
+
+# Either half alone is not enough.
+exec sh -c 'handrail test PreToolUse --field command="git status"; echo code=$?'
+! stdout '^warn  and'
+exec sh -c 'handrail test PreToolUse --field command="hg push --force"; echo code=$?'
+! stdout '^warn  and'
+
+# One branch of the any group is enough, and neither is not.
+exec sh -c 'handrail test PreToolUse --field path=.env; echo code=$?'
+stdout '^warn  either  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=id_rsa; echo code=$?'
+stdout '^warn  either  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=README.md; echo code=$?'
+stdout '^outcome: allow$'
+
+# An any group ANDs with its siblings like any other condition.
+exec sh -c 'handrail test PreToolUse --field path=secrets/.env; echo code=$?'
+stdout '^warn  either-and  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=docs/.env; echo code=$?'
+! stdout 'either-and'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/and.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    starts_with: git
+  - field: command
+    contains: --force
+---
+Every condition in the list must hold.
+-- .handrail/either.md --
+---
+event: PreToolUse
+conditions:
+  - any:
+      - field: path
+        ends_with: .env
+      - field: path
+        equals: id_rsa
+---
+One branch of the group is enough.
+-- .handrail/either-and.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    starts_with: secrets/
+  - any:
+      - field: path
+        ends_with: .env
+      - field: path
+        ends_with: .pem
+---
+A group is one entry of the AND list.

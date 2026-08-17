@@ -1,0 +1,83 @@
+# Every matched message is delivered labeled with its rule; one block makes the
+# outcome block, and block exits 2.
+
+exec sh -c 'handrail test PreToolUse --kind shell --field command="rm -rf /"; echo code=$?'
+stdout '^code=2$'
+! stderr .
+stdout '^block  danger  project-shared$'
+stdout '^  Never delete recursively from the filesystem root\.$'
+stdout '^warn  a-soft  project-shared$'
+stdout '^  Prefer a named build directory\.$'
+stdout '^warn  z-soft  project-shared$'
+stdout '^  Say what you are cleaning\.$'
+stdout '^outcome: block$'
+
+# Messages come out alphabetically within the tier.
+stdout '(?s)a-soft.*danger.*z-soft'
+
+# Multi-line prose keeps its shape, blank line and all.
+stdout '^  Second paragraph of the same message\.$'
+
+# Warn alone proceeds.
+exec sh -c 'handrail test PreToolUse --kind shell --field command="rm -rf build"; echo code=$?'
+stdout '^code=0$'
+stdout '^warn  a-soft  project-shared$'
+! stdout 'danger'
+stdout '^outcome: warn$'
+
+# No match is allow, with no messages at all.
+exec sh -c 'handrail test Stop; echo code=$?'
+stdout '^code=0$'
+stdout '^outcome: allow$'
+
+# The --json contract.
+exec sh -c 'handrail test PreToolUse --kind shell --field command="rm -rf /" --json; echo code=$?'
+stdout '^code=2$'
+! stderr .
+stdout '"outcome": "block"'
+stdout '"rule": "danger"'
+stdout '"tier": "project-shared"'
+stdout '"action": "block"'
+stdout '"message": "Never delete recursively from the filesystem root."'
+
+# Every match is in the array, in the same order, and prose keeps its newlines.
+stdout '(?s)"rule": "a-soft".*"rule": "danger".*"rule": "z-soft"'
+stdout '"message": "Prefer a named build directory.\\n\\nSecond paragraph of the same message."'
+
+exec sh -c 'handrail test Stop --json; echo code=$?'
+stdout '^code=0$'
+stdout '"outcome": "allow"'
+stdout '"matched": \[\]'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/danger.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf /
+---
+Never delete recursively from the filesystem root.
+-- .handrail/a-soft.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    contains: rm -rf
+---
+Prefer a named build directory.
+
+Second paragraph of the same message.
+-- .handrail/z-soft.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: rm
+---
+Say what you are cleaning.

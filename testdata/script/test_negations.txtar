@@ -1,0 +1,93 @@
+# The not_ prefix negates every operator, and only the operator: a condition
+# against an absent field stays unmatched in either polarity.
+
+# A command that hits no sentinel satisfies all five command negations.
+exec sh -c 'handrail test PreToolUse --field command=plain; echo code=$?'
+stdout '^code=0$'
+stdout '^warn  not-matches  project-shared$'
+stdout '^warn  not-contains  project-shared$'
+stdout '^warn  not-equals  project-shared$'
+stdout '^warn  not-starts-with  project-shared$'
+stdout '^warn  not-ends-with  project-shared$'
+stdout '^outcome: warn$'
+
+# The path negation stays out: the payload carries no path.
+! stdout 'not-glob'
+
+exec sh -c 'handrail test PreToolUse --field command=a123z; echo code=$?'
+! stdout 'not-matches'
+stdout '^warn  not-contains  project-shared$'
+
+exec sh -c 'handrail test PreToolUse --field command=c0ntains; echo code=$?'
+! stdout 'not-contains'
+stdout '^warn  not-matches  project-shared$'
+
+exec sh -c 'handrail test PreToolUse --field command=e0quals; echo code=$?'
+! stdout 'not-equals'
+stdout '^warn  not-contains  project-shared$'
+
+exec sh -c 'handrail test PreToolUse --field command=s0tartsfoo; echo code=$?'
+! stdout 'not-starts-with'
+stdout '^warn  not-ends-with  project-shared$'
+
+exec sh -c 'handrail test PreToolUse --field command=fooe0nds; echo code=$?'
+! stdout 'not-ends-with'
+stdout '^warn  not-starts-with  project-shared$'
+
+exec sh -c 'handrail test PreToolUse --field path=src/a.go; echo code=$?'
+stdout '^warn  not-glob  project-shared$'
+
+exec sh -c 'handrail test PreToolUse --field path=a/b/.env; echo code=$?'
+! stdout 'not-glob'
+stdout '^outcome: allow$'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/not-matches.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    not_matches: ^a[0-9]+z$
+---
+Negated regexp.
+-- .handrail/not-contains.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    not_contains: c0ntains
+---
+Negated substring.
+-- .handrail/not-equals.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    not_equals: e0quals
+---
+Negated equality.
+-- .handrail/not-starts-with.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    not_starts_with: s0tarts
+---
+Negated prefix.
+-- .handrail/not-ends-with.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    not_ends_with: e0nds
+---
+Negated suffix.
+-- .handrail/not-glob.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    not_glob: "**/*.env"
+---
+Negated glob.

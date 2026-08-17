@@ -1,0 +1,81 @@
+# Anything the synthetic payload cannot be built from is a usage error.
+
+exec sh -c 'handrail test; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail test: missing event'
+
+exec sh -c 'handrail test Nope; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail test: unknown event "Nope"'
+
+exec sh -c 'handrail test PreToolUse --field cmd=x; echo code=$?'
+stdout '^code=1$'
+stderr 'unknown canonical field "cmd"'
+
+exec sh -c 'handrail test PreToolUse --field command; echo code=$?'
+stdout '^code=1$'
+stderr 'expected key=value'
+
+exec sh -c 'handrail test PreToolUse --kind bash; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail test: unknown kind "bash"'
+
+exec sh -c 'handrail test PreToolUse Stop; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail test: unexpected argument "Stop"'
+
+# Rules that do not parse fail the dry-run rather than being silently skipped:
+# test is an authoring-time surface, so it is strict like check.
+exec sh -c 'cd broken && handrail test PreToolUse; echo code=$?'
+stdout '^code=1$'
+stderr 'bad\.md: line 2: unknown event "Nope"'
+
+# --stdin builds the payload from a canonical payload JSON.
+stdin payload.json
+exec sh -c 'handrail test PreToolUse --stdin; echo code=$?'
+stdout '^code=2$'
+stdout '^block  danger  project-shared$'
+
+# Flags override the payload, so one field can be varied against a real capture.
+stdin payload.json
+exec sh -c 'handrail test PreToolUse --stdin --field command="rm -rf build"; echo code=$?'
+stdout '^code=0$'
+stdout '^outcome: allow$'
+
+stdin not-json.txt
+exec sh -c 'handrail test PreToolUse --stdin; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail test: reading payload'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- payload.json --
+{
+  "event": "PreToolUse",
+  "harness": "claude",
+  "session_id": "abc",
+  "cwd": "/repo",
+  "tool_kind": "shell",
+  "tool_name": "Bash",
+  "command": "rm -rf /",
+  "raw": {"anything": "rides along untouched"}
+}
+-- not-json.txt --
+not json at all
+-- .handrail/danger.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf /
+---
+Never delete recursively from the filesystem root.
+-- broken/.git/HEAD --
+ref: refs/heads/main
+-- broken/.handrail/bad.md --
+---
+event: Nope
+---
+No such event.

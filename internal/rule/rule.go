@@ -39,8 +39,8 @@ type Term struct {
 // These four sets are switches rather than package-level maps so that nothing
 // runs before main: the hook path pays for every byte of startup work.
 
-// isEvent reports whether name is one of the six core events.
-func isEvent(name string) bool {
+// IsEvent reports whether name is one of the six core events.
+func IsEvent(name string) bool {
 	switch name {
 	case "PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop":
 		return true
@@ -48,8 +48,8 @@ func isEvent(name string) bool {
 	return false
 }
 
-// isKind reports whether name is a canonical tool kind.
-func isKind(name string) bool {
+// IsKind reports whether name is a canonical tool kind.
+func IsKind(name string) bool {
 	switch name {
 	case "shell", "file_edit", "file_read", "mcp", "other":
 		return true
@@ -57,9 +57,9 @@ func isKind(name string) bool {
 	return false
 }
 
-// isField reports whether name is a canonical payload field a condition may
+// IsField reports whether name is a canonical payload field a condition may
 // address. raw.* is a v1 non-goal, so this set is closed.
-func isField(name string) bool {
+func IsField(name string) bool {
 	switch name {
 	case "command", "path", "content", "server", "tool", "prompt":
 		return true
@@ -104,14 +104,14 @@ func Parse(name string, data []byte) (*Rule, error) {
 			if err := scalarInto(kv, &r.Event); err != nil {
 				return nil, err
 			}
-			if !isEvent(r.Event) {
+			if !IsEvent(r.Event) {
 				return nil, fmt.Errorf("line %d: unknown event %q", kv.line, r.Event)
 			}
 		case "kind":
 			if err := scalarInto(kv, &r.Kind); err != nil {
 				return nil, err
 			}
-			if !isKind(r.Kind) {
+			if !IsKind(r.Kind) {
 				return nil, fmt.Errorf("line %d: unknown kind %q", kv.line, r.Kind)
 			}
 		case "action":
@@ -232,7 +232,7 @@ func parseTerm(n *node) (*Term, error) {
 		}
 		switch {
 		case kv.key == "field":
-			if !isField(kv.val.scalar) {
+			if !IsField(kv.val.scalar) {
 				return nil, fmt.Errorf("line %d: unknown condition field %q", kv.line, kv.val.scalar)
 			}
 			t.Field = kv.val.scalar
@@ -263,41 +263,103 @@ func parseTerm(n *node) (*Term, error) {
 		}
 		t.Re = re
 	case "glob":
-		if err := validateGlob(t.Value); err != nil {
+		re, err := globToRegexp(t.Value)
+		if err != nil {
 			return nil, fmt.Errorf("line %d: invalid glob: %v", t.line, err)
 		}
+		t.Re = re
 	}
 	return t, nil
 }
 
-// validateGlob rejects the two ways a path.Match pattern can be malformed: a
-// character class that never closes and a trailing escape. ** is deliberately
-// nothing special here; matching gives it meaning.
-func validateGlob(pattern string) error {
+// globToRegexp compiles a glob into an anchored regexp, which is both the
+// validation (a pattern that cannot compile would never match) and the matcher.
+// The dialect is path.Match plus **, spelled out in docs/spec.md section 2.
+func globToRegexp(pattern string) (*regexp.Regexp, error) {
+	var b strings.Builder
+	b.WriteByte('^')
 	for i := 0; i < len(pattern); i++ {
 		switch pattern[i] {
 		case '\\':
 			if i == len(pattern)-1 {
-				return fmt.Errorf("trailing backslash")
+				return nil, fmt.Errorf("trailing backslash")
 			}
 			i++
-		case '[':
-			i++
-			if i < len(pattern) && pattern[i] == '^' {
+			b.WriteString(regexp.QuoteMeta(pattern[i : i+1]))
+		case '*':
+			// ** only crosses separators on its own segment: in foo**/bar the
+			// stars belong to foo, and treating them as a segment skip would
+			// quietly match foobar.
+			atBoundary := i == 0 || pattern[i-1] == '/'
+			switch {
+			case atBoundary && i+2 < len(pattern) && pattern[i+1] == '*' && pattern[i+2] == '/':
+				// Zero directories included, so **/*.env covers a root file.
+				i += 2
+				b.WriteString(`(?:[^/]*/)*`)
+			case atBoundary && i+1 < len(pattern) && pattern[i+1] == '*':
 				i++
+				b.WriteString(`.*`)
+			default:
+				b.WriteString(`[^/]*`)
 			}
-			if i >= len(pattern) || pattern[i] == ']' {
-				return fmt.Errorf("empty character class")
+		case '?':
+			b.WriteString(`[^/]`)
+		case '[':
+			class, end, err := globClass(pattern, i)
+			if err != nil {
+				return nil, err
 			}
-			for ; i < len(pattern) && pattern[i] != ']'; i++ {
-				if pattern[i] == '\\' {
-					i++
-				}
-			}
-			if i >= len(pattern) {
-				return fmt.Errorf("unterminated character class")
-			}
+			b.WriteString(class)
+			i = end
+		default:
+			b.WriteString(regexp.QuoteMeta(pattern[i : i+1]))
 		}
 	}
-	return nil
+	b.WriteByte('$')
+	return regexp.Compile(b.String())
+}
+
+// globClass translates the character class starting at pattern[start] and
+// returns it with the index of its closing bracket. Negation is ^, as in
+// path.Match; ! is an ordinary member.
+func globClass(pattern string, start int) (class string, end int, err error) {
+	var b strings.Builder
+	b.WriteByte('[')
+	i := start + 1
+	if i < len(pattern) && pattern[i] == '^' {
+		b.WriteByte('^')
+		i++
+	}
+	if i >= len(pattern) || pattern[i] == ']' {
+		return "", 0, fmt.Errorf("empty character class")
+	}
+	for ; i < len(pattern) && pattern[i] != ']'; i++ {
+		if pattern[i] != '\\' {
+			b.WriteByte(pattern[i])
+			continue
+		}
+		if i == len(pattern)-1 {
+			return "", 0, fmt.Errorf("trailing backslash")
+		}
+		i++
+		// QuoteMeta leaves - alone, which inside a class turns an escaped
+		// member into a range: [a\-z] would silently become [a-z].
+		if c := pattern[i]; isAlphanumeric(c) {
+			b.WriteByte(c)
+		} else {
+			b.WriteByte('\\')
+			b.WriteByte(c)
+		}
+	}
+	if i >= len(pattern) {
+		return "", 0, fmt.Errorf("unterminated character class")
+	}
+	b.WriteByte(']')
+	return b.String(), i, nil
+}
+
+// isAlphanumeric reports whether c is a byte RE2 reads as itself, so escaping
+// it would name an escape sequence (\d, \a) rather than the literal character.
+func isAlphanumeric(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }

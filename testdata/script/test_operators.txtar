@@ -1,0 +1,131 @@
+# Every operator, exercised through a synthetic payload at the CLI seam.
+# Each rule keys on its own sentinel, so one --field selects exactly one rule.
+
+exec sh -c 'handrail test PreToolUse --field command=a123z; echo code=$?'
+stdout '^code=0$'
+stdout '^warn  re  project-shared$'
+stdout '^outcome: warn$'
+
+# RE2 is case-sensitive by default...
+exec sh -c 'handrail test PreToolUse --field command=A123Z; echo code=$?'
+stdout '^code=0$'
+stdout '^outcome: allow$'
+! stdout '^warn '
+
+# ...and opts into case-insensitivity inline.
+exec sh -c 'handrail test PreToolUse --field command=CI; echo code=$?'
+stdout '^warn  re-insensitive  project-shared$'
+stdout '^outcome: warn$'
+
+exec sh -c 'handrail test PreToolUse --field command="xx c0ntains yy"; echo code=$?'
+stdout '^warn  contains  project-shared$'
+stdout '^outcome: warn$'
+
+exec sh -c 'handrail test PreToolUse --field command=e0quals; echo code=$?'
+stdout '^warn  equals  project-shared$'
+! stdout '^warn  contains'
+
+# equals is the whole value, not a substring of it.
+exec sh -c 'handrail test PreToolUse --field command="  e0quals  "; echo code=$?'
+stdout '^outcome: allow$'
+
+exec sh -c 'handrail test PreToolUse --field command=s0tartsfoo; echo code=$?'
+stdout '^warn  starts-with  project-shared$'
+
+exec sh -c 'handrail test PreToolUse --field command=fooe0nds; echo code=$?'
+stdout '^warn  ends-with  project-shared$'
+
+# String operators have no case flag: they are case-sensitive, full stop.
+exec sh -c 'handrail test PreToolUse --field command="xx C0NTAINS yy"; echo code=$?'
+stdout '^outcome: allow$'
+exec sh -c 'handrail test PreToolUse --field command=E0QUALS; echo code=$?'
+stdout '^outcome: allow$'
+exec sh -c 'handrail test PreToolUse --field command=S0TARTSfoo; echo code=$?'
+stdout '^outcome: allow$'
+exec sh -c 'handrail test PreToolUse --field command=fooE0NDS; echo code=$?'
+stdout '^outcome: allow$'
+
+# glob: ** crosses separators, * does not.
+exec sh -c 'handrail test PreToolUse --field path=.env; echo code=$?'
+stdout '^warn  glob-star-star  project-shared$'
+
+exec sh -c 'handrail test PreToolUse --field path=a/b/.env; echo code=$?'
+stdout '^warn  glob-star-star  project-shared$'
+
+exec sh -c 'handrail test PreToolUse --field path=src/a.go; echo code=$?'
+stdout '^warn  glob-one-segment  project-shared$'
+
+exec sh -c 'handrail test PreToolUse --field path=src/deep/a.go; echo code=$?'
+stdout '^outcome: allow$'
+
+# A condition against a field the payload does not carry never matches: "path
+# ends with .env" says nothing about a shell command that has no path at all.
+exec sh -c 'handrail test PreToolUse --field command=anything; echo code=$?'
+stdout '^outcome: allow$'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/re.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    matches: ^a[0-9]+z$
+---
+matches is RE2 and case-sensitive.
+-- .handrail/re-insensitive.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    matches: (?i)^ci$
+---
+Inline (?i) is the only case flag.
+-- .handrail/contains.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    contains: c0ntains
+---
+contains is a substring test.
+-- .handrail/equals.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    equals: e0quals
+---
+equals is the whole value.
+-- .handrail/starts-with.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    starts_with: s0tarts
+---
+starts_with is a prefix test.
+-- .handrail/ends-with.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    ends_with: e0nds
+---
+ends_with is a suffix test.
+-- .handrail/glob-star-star.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: "**/*.env"
+---
+Double star crosses path separators, and matches no directory at all.
+-- .handrail/glob-one-segment.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: src/*.go
+---
+A single star stays inside one path segment.

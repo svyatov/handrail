@@ -1,0 +1,33 @@
+# kind narrows a rule to one tool kind; an omitted kind matches every kind.
+
+exec sh -c 'handrail test PreToolUse --kind shell; echo code=$?'
+stdout '^code=0$'
+stdout '^warn  any-kind  project-shared$'
+stdout '^warn  shell-only  project-shared$'
+
+exec sh -c 'handrail test PreToolUse --kind file_edit; echo code=$?'
+stdout '^warn  any-kind  project-shared$'
+! stdout 'shell-only'
+
+# No kind on the payload is not the shell kind.
+exec sh -c 'handrail test PreToolUse; echo code=$?'
+stdout '^warn  any-kind  project-shared$'
+! stdout 'shell-only'
+
+# The event has to match too.
+exec sh -c 'handrail test Stop --kind shell; echo code=$?'
+stdout '^outcome: allow$'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/shell-only.md --
+---
+event: PreToolUse
+kind: shell
+---
+Only shell tool calls.
+-- .handrail/any-kind.md --
+---
+event: PreToolUse
+---
+Every tool kind.

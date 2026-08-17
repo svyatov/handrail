@@ -10,7 +10,7 @@ import (
 
 func TestMain(m *testing.M) {
 	testscript.Main(m, map[string]func(){
-		"handrail": func() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) },
+		"handrail": func() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) },
 	})
 }
 
