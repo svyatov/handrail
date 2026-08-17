@@ -1,0 +1,9 @@
+exec sh -c 'handrail nope; echo code=$?'
+stdout '^code=1$'
+stderr 'unknown command "nope"'
+stderr 'Usage: handrail'
+
+# No command at all is the same usage error.
+exec sh -c 'handrail; echo code=$?'
+stdout '^code=1$'
+stderr 'Usage: handrail'

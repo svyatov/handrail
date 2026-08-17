@@ -1,0 +1,12 @@
+# Exit codes are pinned through the shell, because "! exec" only asserts non-zero.
+exec sh -c 'handrail version; echo code=$?'
+stdout '^handrail dev$'
+stdout '^commit: none$'
+stdout '^date: unknown$'
+stdout '^code=0$'
+! stderr .
+
+# An unknown flag is a usage error, not a version print.
+exec sh -c 'handrail version -nope; echo code=$?'
+stdout '^code=1$'
+stderr 'not defined'
