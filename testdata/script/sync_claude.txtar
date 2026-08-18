@@ -59,6 +59,18 @@ grep -count=1 'hook claude PreToolUse' home/.claude/settings.json
 exec handrail sync --harness claude
 stdout 'claude: 6 hook entries already current'
 
+# $CLAUDE_CONFIG_DIR moves the config Claude Code reads, so sync and doctor
+# follow it: ~/.claude there is a file the harness never opens, and may not
+# exist at all.
+env CLAUDE_CONFIG_DIR=$WORK/elsewhere/claude
+mkdir $WORK/elsewhere/claude
+exec handrail sync --harness claude
+stdout 'claude: wrote 6 hook entries to .*/elsewhere/claude/settings.json'
+exists elsewhere/claude/settings.json
+exec handrail doctor
+stdout '^ok +claude: config at .*/elsewhere/claude/settings\.json$'
+env CLAUDE_CONFIG_DIR=
+
 -- .git/HEAD --
 ref: refs/heads/main
 -- .git/info/exclude --

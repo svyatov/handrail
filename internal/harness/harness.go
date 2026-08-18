@@ -31,7 +31,7 @@ type Adapter struct {
 // The differences are the file it lives in and where blocking stops.
 var adapters = []Adapter{
 	{
-		Name: "claude", title: "Claude Code", dir: ".claude", file: "settings.json",
+		Name: "claude", title: "Claude Code", dir: ".claude", homeEnv: "CLAUDE_CONFIG_DIR", file: "settings.json",
 		blocksPrompt: true,
 		Quirks: []string{
 			"hook errors and timeouts fail open, so a broken guardrail never stops the session",
