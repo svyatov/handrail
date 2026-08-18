@@ -21,9 +21,9 @@ func trustFile() string {
 	return filepath.Join(dir, "trusted")
 }
 
-// IsTrusted reports whether root's Project-shared tier has been granted. An
+// isTrusted reports whether root's Project-shared tier has been granted. An
 // unreadable registry means untrusted: the gate fails closed.
-func IsTrusted(root string) bool {
+func isTrusted(root string) bool {
 	file := trustFile()
 	if file == "" {
 		return false
@@ -35,14 +35,16 @@ func IsTrusted(root string) bool {
 	return slices.Contains(strings.Split(string(data), "\n"), root)
 }
 
-// Trust records root as trusted, reporting whether that was new.
-func Trust(root string) (added bool, err error) {
+// Trust records this ruleset's project root as trusted, reporting whether that
+// was new. The load already knows the root, so a caller holding a ruleset never
+// has to work out which path the grant is keyed by.
+func (rs *Ruleset) Trust() (added bool, err error) {
 	// One path per line, so a newline in a path would write a second line and
 	// grant a path nobody asked for. A directory may legally hold one.
-	if strings.Contains(root, "\n") {
-		return false, fmt.Errorf("cannot trust a path containing a newline: %q", root)
+	if strings.Contains(rs.Root, "\n") {
+		return false, fmt.Errorf("cannot trust a path containing a newline: %q", rs.Root)
 	}
-	if IsTrusted(root) {
+	if isTrusted(rs.Root) {
 		return false, nil
 	}
 	file := trustFile()
@@ -56,7 +58,7 @@ func Trust(root string) (added bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	if _, err := fmt.Fprintln(f, root); err != nil {
+	if _, err := fmt.Fprintln(f, rs.Root); err != nil {
 		_ = f.Close()
 		return false, err
 	}

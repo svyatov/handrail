@@ -151,7 +151,7 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout)
 	r.ok("project root %s", rs.Root)
 	r.checkTiers(rs)
-	r.checkExclusion(rs.Root)
+	r.checkExclusion(rs)
 
 	for _, p := range rs.Problems {
 		r.bad("%s: %s", p.Path, p.Message)
@@ -239,12 +239,12 @@ func (r *report) checkTiers(rs *rule.Ruleset) {
 // checkExclusion reports the line sync writes to keep the Project-personal tier
 // out of version control. Outside a working tree there is nothing to exclude,
 // which is not the same as an exclusion that went missing.
-func (r *report) checkExclusion(root string) {
-	switch excluded, path, err := rule.LocalExcluded(root); {
+func (r *report) checkExclusion(rs *rule.Ruleset) {
+	switch excluded, path, err := rs.LocalExcluded(); {
 	case err != nil:
-		r.bad("cannot read the exclude file of %s: %v", root, err)
+		r.bad("cannot read the exclude file of %s: %v", rs.Root, err)
 	case path == "":
-		r.ok("%s is not a git working tree, so nothing needs excluding", root)
+		r.ok("%s is not a git working tree, so nothing needs excluding", rs.Root)
 	case excluded:
 		r.ok(".handrail/local/ is excluded in .git/info/exclude")
 	default:
@@ -281,16 +281,16 @@ func cmdTrust(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1
 	}
-	root := rule.RepoRoot(cwd)
-	added, err := rule.Trust(root)
+	rs := rule.Load(cwd)
+	added, err := rs.Trust()
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1
 	}
 	if added {
-		fmt.Fprintf(stdout, "trusted %s\n", root)
+		fmt.Fprintf(stdout, "trusted %s\n", rs.Root)
 	} else {
-		fmt.Fprintf(stdout, "already trusted %s\n", root)
+		fmt.Fprintf(stdout, "already trusted %s\n", rs.Root)
 	}
 	return 0
 }
@@ -556,7 +556,7 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	added, err := rule.ExcludeLocal(rs.Root)
+	added, err := rs.ExcludeLocal()
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1
