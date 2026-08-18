@@ -53,6 +53,13 @@ stdout '^warn  mid-star  project-shared$'
 exec sh -c 'handrail test PreToolUse --field path=mt.txt; echo code=$?'
 stdout '^outcome: allow$'
 
+# The same on the left: in **.env the stars belong to .env, so they stay inside
+# one segment.
+exec sh -c 'handrail test PreToolUse --field path=x.env; echo code=$?'
+stdout '^warn  left-star  project-shared$'
+exec sh -c 'handrail test PreToolUse --field path=nested/x.env; echo code=$?'
+stdout '^outcome: allow$'
+
 # A trailing ** takes everything below.
 exec sh -c 'handrail test PreToolUse --field path=d/a; echo code=$?'
 stdout '^warn  deep  project-shared$'
@@ -117,6 +124,14 @@ conditions:
     glob: m**/t.txt
 ---
 Stars that are not their own segment stay inside one segment.
+-- .handrail/left-star.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: '**.env'
+---
+Stars glued to the segment on their right stay inside one segment.
 -- .handrail/deep.md --
 ---
 event: PreToolUse

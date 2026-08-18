@@ -24,8 +24,8 @@ Canonical event names are Claude Code's, verbatim. The v1 set is the six-event c
 - Common envelope: `event`, `harness`, `session_id`, `cwd`, `tool_kind`, `tool_name` (raw harness tool name).
 - `tool_kind`, assigned by each Adapter: `shell`, `file_edit`, `file_read`, `mcp`, `other`.
 - Per-kind normalized fields: `command` (shell); `path` and `content` (file_edit); `path` (file_read); `server` and `tool` (mcp); `prompt` (UserPromptSubmit). `content` is the new content being written (added by ADR [0008](adr/0008-hookify-importer-mapping.md)).
-- The raw harness payload rides along untouched under `raw.*`. Conditions cannot address it in v1; it exists so normalization never loses information.
-- `transcript_path` is optional, present only where the harness provides it.
+- The raw harness payload rides along untouched under `raw.*`. Conditions cannot address it in v1; it exists so normalization never loses information. Because nothing in v1 can read it, the engine does not carry it on the hot path: it is a shape reserved for the first consumer, not plumbing already built.
+- `transcript_path` is optional, present only where the harness provides it. Nothing in v1 reads it either: the Analyzer is a skill, and a skill never sees a hook payload (section 7), so the engine does not carry this field yet.
 
 ### Outcomes
 
@@ -93,7 +93,7 @@ One Go binary; the Adapters live in one internal package, `harness`, one value p
 
 ### Capability matrix
 
-Hardcoded in Go per Adapter, next to its translation knowledge. Per-event: exists, can block. Global flags: context injection, transcript access, fail-open on hook error, fail-open on timeout. The v1 matrix:
+Hardcoded in Go per Adapter, next to its translation knowledge. Per-event: exists, can block. Global flags: context injection, transcript access, fail-open on hook error, fail-open on timeout. Both v1 Adapters agree on every row but one, so only the differing fact (can block on `UserPromptSubmit`) is a per-Adapter flag in code; the rest are engine-wide behaviour and prose quirks reported at sync and by `doctor`. A third Adapter that disagrees is what turns a row into a flag. The v1 matrix:
 
 | Capability | Claude Code (`claude`) | Codex CLI (`codex`) |
 |---|---|---|
@@ -120,7 +120,7 @@ ADR: [0005](adr/0005-advisor-recommend-only.md).
 
 Recommend-only. The Advisor emits the exact native entry; the authoring skill (or a human running `handrail advise`) applies it on consent; the applied entry becomes the user's own harness config, untracked by handrail. The rule always stays active: the hook path delivers the message, the native entry is the fail-closed backstop.
 
-- **Eligibility**: block rules only, and only provably-safe translations. `starts_with`/`equals` on `command` compiles to `Bash(prefix*)` denies and Codex execpolicy `prefix_rule(decision="forbidden")`; `glob`/`equals` on `path` compiles to `Read`/`Edit` denies. `any:` groups only when every branch independently translates. `matches` (RE2) never translates. Coarse mechanisms (Codex sandbox modes, `approval_policy`) are out of scope.
+- **Eligibility**: block rules on `PreToolUse` only, one condition, and only provably-safe translations. `starts_with`/`equals` on `command` compiles to `Bash(prefix*)` denies; only `starts_with` reaches Codex execpolicy `prefix_rule(decision="forbidden")`, since a prefix rule forbids strictly more than an `equals` rule says and execpolicy has no exact-match form. `glob`/`equals` on `path` compiles to `Read`/`Edit` denies. `any:` groups only when every branch independently translates. `matches` (RE2) and any `not_` operator never translate. A `command` carrying shell metacharacters and a `path` that is not absolute (or `**/`-prefixed for a glob) are refused: their native form would not mean what the rule means. Coarse mechanisms (Codex sandbox modes, `approval_policy`) are out of scope.
 - ADR 0005 also lists domain conditions compiling to `WebFetch(domain:)` denies. The v1 payload defines no domain or URL field, so this row is dormant: it activates if a canonical URL field ever lands. Recorded here so implementation does not hunt for a field that does not exist.
 - All translation knowledge lives in the Go CLI per adapter, kept current by binary releases. The skill contains zero harness-specific pattern knowledge and only relays.
 - Advice surfaces at authoring time and via standalone audit, never as a sync nag. Promoting a project-tier rule states the scope widening explicitly. Codex advice carries the `--ignore-rules` bypass caveat.
@@ -136,7 +136,7 @@ ADR: [0006](adr/0006-cli-and-plugin-surface.md). Nine commands; harness identifi
 | `check` | Strict-validate all tiers; print the annotated effective ruleset (tier, shadowing, disabling per rule). The authoring-time surface: adding a rule needs no re-sync. |
 | `test <event> [--kind] [--field key=value]... [--stdin]` | Dry-run: matched rules with tier and action, then the final outcome. Exit 2 on block. |
 | `trust` | Grant the current repo's Project-shared tier (path-once registry). |
-| `advise [rule-name] [--harness]` | The Advisor. No argument audits every rule in every tier; a rule name scopes to one. |
+| `advise [rule-name] [--harness]` | The Advisor. No argument audits every enforcing rule in every tier (a shadowed or disabled rule enforces nothing, so it earns no backstop); a rule name scopes to one. |
 | `import hookify [path]` | One-shot upstream-hookify converter (section 9). |
 | `doctor` | Offline-only: binary location and version; per harness, hook entries present, current, pointing at an existing executable; the current repo's tier discovery, trust state, `local/` exclusion line; rule validity summary. Exit 1 when any check fails. |
 | `version` | Version, commit, date (GoReleaser-injected). |
@@ -152,7 +152,7 @@ ADR: [0006](adr/0006-cli-and-plugin-surface.md). Nine commands; harness identifi
 
 ADRs: [0006](adr/0006-cli-and-plugin-surface.md), [0007](adr/0007-analyzer-design.md).
 
-Both v1 harnesses get a native plugin with full parity: an add skill, an analyze skill, and a SessionStart bootstrap hook. Skills are authored once and referenced by both plugin manifests. The Codex plugin uses the handrail repo as its own marketplace (`.codex-plugin/plugin.json`, `hooks/` directory for the bootstrap); its one caveat is Codex's one-time trust review for non-managed plugin hooks.
+Both v1 harnesses get a native plugin with full parity: an add skill, an analyze skill, and a SessionStart bootstrap hook. Skills are authored once in one `skills/` tree that both plugins ship: the Codex manifest points at it explicitly, the Claude Code manifest picks it up by convention. The Codex plugin uses the handrail repo as its own marketplace (`.codex-plugin/plugin.json`, `hooks/` directory for the bootstrap); its one caveat is Codex's one-time trust review for non-managed plugin hooks.
 
 - **`/handrail:add`**: describe a guardrail in words; the skill writes the rule file, runs `handrail check`, relays `handrail advise --json`.
 - **`/handrail:analyze`** (the Analyzer): on demand only; no automatic session-end analysis, no nudge hook. Scope is the current session's transcript. `transcript_path` is a hook-payload field and a skill never sees one, so the skill resolves the file from the session id the harness exports (`CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`); both were confirmed present in the shell environment of a tool call. It receives `handrail check --json` and proposes **new rules only**, skipping covered behaviors. Each proposal is a complete rule draft with rationale and transcript evidence. Nothing is written without per-rule approval; on approval the skill writes the file, validates with `check`, replays the motivating event through `test` to prove the rule matches its own incident, and relays `advise --json`. Suggested tier: Project-personal by default, Global when clearly project-agnostic; Project-shared stays a manual act. Signal categories (non-exhaustive): explicit user corrections, repeated instructions, manual reverts and interventions, near-miss dangerous actions. Claude Code writes the transcript asynchronously, so the Analyzer tolerates a slightly stale tail. Harnesses without transcript access lack the feature; the fallback is describing the incident to `/handrail:add`.
@@ -199,7 +199,7 @@ Decided in [the Go stack research](https://github.com/svyatov/handrail/issues/5)
 No daemon; a plain fast binary (settled during charting). No primary source publishes cold-start numbers for Go CLI stacks, so the budget is structural plus one acceptance bar:
 
 - Structural: the section 9 constraints (stdlib-only runtime, minimal import graph, no `init()` work).
-- Acceptance bar: a no-match `handrail hook` invocation (read stdin, discover tiers, parse rules, evaluate, exit) completes in under 50 ms cold on typical developer hardware; single-digit milliseconds expected. Implementation adds a benchmark to verify this before v1 ships. The 50 ms number is an assembly-time call, not a researched constant; tighten it if the benchmark says so.
+- Acceptance bar: a no-match `handrail hook` invocation (read stdin, discover tiers, parse rules, evaluate, exit) completes in under 50 ms cold on typical developer hardware; single-digit milliseconds expected. A test at the same seam enforces this: it builds the release binary, spawns it repeatedly against a populated three-tier fixture, and fails when the median crosses the bar. It is a test rather than a `Benchmark`, so CI fails on a regression instead of merely reporting one. The 50 ms number is an assembly-time call, not a researched constant; tighten it if the numbers say so.
 
 ## 11. Non-goals (v1)
 
