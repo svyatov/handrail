@@ -308,16 +308,17 @@ func globToRegexp(pattern string) (*regexp.Regexp, error) {
 			i++
 			b.WriteString(regexp.QuoteMeta(pattern[i : i+1]))
 		case '*':
-			// ** only crosses separators on its own segment: in foo**/bar the
-			// stars belong to foo, and treating them as a segment skip would
-			// quietly match foobar.
+			// ** only crosses separators on its own segment, so it needs a
+			// boundary on both sides: in foo**/bar and in **.env the stars
+			// belong to their neighbour, and treating them as a segment skip
+			// would quietly match foobar and nested/x.env.
 			atBoundary := i == 0 || pattern[i-1] == '/'
 			switch {
 			case atBoundary && i+2 < len(pattern) && pattern[i+1] == '*' && pattern[i+2] == '/':
 				// Zero directories included, so **/*.env covers a root file.
 				i += 2
 				b.WriteString(`(?:[^/]*/)*`)
-			case atBoundary && i+1 < len(pattern) && pattern[i+1] == '*':
+			case atBoundary && i+2 == len(pattern) && pattern[i+1] == '*':
 				i++
 				b.WriteString(`.*`)
 			default:
