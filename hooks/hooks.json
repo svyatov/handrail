@@ -1,0 +1,16 @@
+{
+  "description": "Installs the pinned handrail binary on miss and syncs once after a fresh install.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap.sh\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

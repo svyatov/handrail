@@ -1,0 +1,16 @@
+{
+  "name": "handrail",
+  "description": "handrail's own marketplace: the cross-harness guardrail manager plugin.",
+  "owner": {
+    "name": "Leonid Svyatov",
+    "email": "leonid@svyatov.com"
+  },
+  "plugins": [
+    {
+      "name": "handrail",
+      "source": "./",
+      "description": "Cross-harness guardrail manager: one rule file, enforced in every harness.",
+      "category": "safety"
+    }
+  ]
+}
