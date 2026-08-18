@@ -19,7 +19,7 @@ type Payload struct {
 func Effective(rules []*Rule, p Payload) []*Rule {
 	var out []*Rule
 	for _, r := range rules {
-		if r.ShadowedBy == "" && r.Matches(p) {
+		if r.ShadowedBy == nil && r.Matches(p) {
 			out = append(out, r)
 		}
 	}

@@ -14,7 +14,7 @@ type Rule struct {
 	Name       string
 	Path       string
 	Tier       string
-	ShadowedBy string // path of the higher-tier file replacing this one, if any
+	ShadowedBy *Rule // the higher-tier rule replacing this one, if any
 	Event      string
 	Kind       string
 	Action     string
