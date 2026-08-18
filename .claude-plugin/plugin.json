@@ -1,0 +1,13 @@
+{
+  "name": "handrail",
+  "description": "Declare an agent guardrail once, in one neutral format, and enforce it through every harness's native hooks.",
+  "version": "0.1.0-rc.1",
+  "author": {
+    "name": "Leonid Svyatov",
+    "email": "leonid@svyatov.com"
+  },
+  "homepage": "https://github.com/svyatov/handrail",
+  "repository": "https://github.com/svyatov/handrail",
+  "license": "MIT",
+  "keywords": ["guardrails", "hooks", "safety", "rules"]
+}
