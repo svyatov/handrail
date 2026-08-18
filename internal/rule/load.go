@@ -74,11 +74,11 @@ func Load(cwd string) *Ruleset {
 		rs.Tiers = append(rs.Tiers, t)
 	}
 
-	gather(Tier{Name: TierGlobal, Dir: ConfigDir(), Trusted: true}, false)
+	gather(Tier{Name: TierGlobal, Dir: configDir(), Trusted: true}, false)
 	// A user-level hook entry means any repo on the machine is enforced, so a
 	// clone's committed rules wait for an explicit grant. The user's own two
 	// tiers are never gated.
-	gather(Tier{Name: TierProjectShared, Dir: SharedDir(root), Trusted: IsTrusted(root)}, true)
+	gather(Tier{Name: TierProjectShared, Dir: sharedDir(root), Trusted: isTrusted(root)}, true)
 	gather(Tier{Name: TierProjectPersonal, Dir: LocalDir(root), Trusted: true}, false)
 
 	// Identity is the basename, so the highest tier holding a name carries the
@@ -95,17 +95,18 @@ func Load(cwd string) *Ruleset {
 	return rs
 }
 
-// SharedDir is the Project-shared tier's directory, at the project root.
-func SharedDir(root string) string { return filepath.Join(root, ".handrail") }
+// sharedDir is the Project-shared tier's directory, at the project root.
+func sharedDir(root string) string { return filepath.Join(root, ".handrail") }
 
 // LocalDir is the Project-personal tier's directory, inside the shared one so a
-// single exclude line keeps it out of version control.
-func LocalDir(root string) string { return filepath.Join(SharedDir(root), "local") }
+// single exclude line keeps it out of version control. Exported for import,
+// which writes into the tier without loading it.
+func LocalDir(root string) string { return filepath.Join(sharedDir(root), "local") }
 
-// ConfigDir is the Global tier's directory: XDG on every Unix platform,
+// configDir is the Global tier's directory: XDG on every Unix platform,
 // including macOS, following the git and gh dotfiles precedent rather than
 // os.UserConfigDir's ~/Library/Application Support.
-func ConfigDir() string {
+func configDir() string {
 	return xdgSubdir("XDG_CONFIG_HOME", ".config")
 }
 
