@@ -23,6 +23,10 @@ _Avoid_: scope, level
 **Shadowing**:
 A rule file in a higher-precedence tier replacing a same-named rule in a lower tier wholesale. There is no field-level merging; the shadowing file is the effective rule.
 
+**Effective ruleset**:
+The merged, shadow-resolved set of rules for one working directory: every tier that applies, with each shadowed rule replaced by its higher-tier namesake. What `check` prints and what the Analyzer reads.
+_Avoid_: conflating with the rules that match one event, which is a matcher outcome rather than a set
+
 **Matcher**:
 The selecting half of a rule: an event name, an optional tool kind, and a list of conditions.
 
