@@ -57,7 +57,9 @@ tasks:
       # carries it as its cache key, so all three move together or the plugin
       # ships a bootstrap that installs the wrong binary.
       - >-
-        ruby -rjson -e 'pin = File.read("scripts/bootstrap.sh")[/^PIN=(.+)$/, 1];
-        %w[.claude-plugin .codex-plugin].each { |dir|
-        version = JSON.parse(File.read("#{dir}/plugin.json"))["version"];
-        abort "#{dir}/plugin.json is #{version}, bootstrap pins #{pin}" unless version == pin }'
+        pin=$(sed -n 's/^PIN=//p' scripts/bootstrap.sh);
+        for dir in .claude-plugin .codex-plugin; do
+        version=$(sed -n 's/^ *"version": "\(.*\)",*$/\1/p' "$dir/plugin.json");
+        [ "$version" = "$pin" ] ||
+        { echo "$dir/plugin.json is $version, bootstrap pins $pin" >&2; exit 1; };
+        done
