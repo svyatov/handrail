@@ -128,7 +128,7 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1
 	}
-	rules, ruleProblems, d := rule.LoadTiers(cwd)
+	rs := rule.Load(cwd)
 
 	for _, a := range harness.Adapters() {
 		fmt.Fprintln(stdout)
@@ -140,7 +140,7 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 		r.checkEntries(a, bin)
 		// Degradation is reported at sync time and reprintable here: a rule
 		// weakened months ago is exactly the kind that reads as not firing.
-		for _, deg := range a.Degradations(rules) {
+		for _, deg := range a.Degradations(rs.Rules) {
 			r.note("%s: %s", a.Name, deg)
 		}
 		for _, q := range a.Quirks {
@@ -149,14 +149,14 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 	}
 
 	fmt.Fprintln(stdout)
-	r.ok("project root %s", d.Root)
-	r.checkTiers(rules, d)
-	r.checkExclusion(d.Root)
+	r.ok("project root %s", rs.Root)
+	r.checkTiers(rs)
+	r.checkExclusion(rs.Root)
 
-	for _, p := range ruleProblems {
+	for _, p := range rs.Problems {
 		r.bad("%s: %s", p.Path, p.Message)
 	}
-	r.ok("%s valid", countRules(len(rules)))
+	r.ok("%s valid", countRules(len(rs.Rules)))
 
 	if r.problems > 0 {
 		return 1
@@ -219,32 +219,21 @@ func (r *report) checkEntries(a harness.Adapter, bin string) {
 // checkTiers reports what tier discovery found for this working directory, with
 // the directory each tier was read from: a rule in the wrong place and a repo
 // root that is not the one expected look identical from the outside.
-func (r *report) checkTiers(rules []*rule.Rule, d rule.Discovery) {
-	counts := map[string]int{}
-	for _, rl := range rules {
-		counts[rl.Tier]++
-	}
-	if global := rule.ConfigDir(); global == "" {
-		r.bad("%s: no config directory: set HOME or XDG_CONFIG_HOME", rule.TierGlobal)
-	} else {
-		r.ok("%s: %s in %s", rule.TierGlobal, countRules(counts[rule.TierGlobal]), global)
-	}
-
-	shared := rule.SharedDir(d.Root)
-	if d.Skipped {
-		r.bad("%s: %s holds rules this machine has not trusted; run handrail trust",
-			rule.TierProjectShared, shared)
-	} else {
+func (r *report) checkTiers(rs *rule.Ruleset) {
+	for _, t := range rs.Tiers {
 		trusted := ""
-		if rule.IsTrusted(d.Root) {
+		switch {
+		case t.Dir == "":
+			r.bad("%s: no config directory: set HOME or XDG_CONFIG_HOME", t.Name)
+			continue
+		case t.Skipped:
+			r.bad("%s: %s holds rules this machine has not trusted; run handrail trust", t.Name, t.Dir)
+			continue
+		case t.Name == rule.TierProjectShared && t.Trusted:
 			trusted = ", trusted"
 		}
-		r.ok("%s: %s in %s%s",
-			rule.TierProjectShared, countRules(counts[rule.TierProjectShared]), shared, trusted)
+		r.ok("%s: %s in %s%s", t.Name, countRules(t.Count), t.Dir, trusted)
 	}
-
-	r.ok("%s: %s in %s",
-		rule.TierProjectPersonal, countRules(counts[rule.TierProjectPersonal]), rule.LocalDir(d.Root))
 }
 
 // checkExclusion reports the line sync writes to keep the Project-personal tier
@@ -349,19 +338,13 @@ func cmdAdvise(args []string, stdout, stderr io.Writer) int {
 	}
 
 	// An authoring-time surface, so it is strict like check and test.
-	rules, code := loadValidRules(stderr)
+	rs, code := loadValidRules(stderr)
 	if code != 0 {
 		return code
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		fmt.Fprintf(stderr, "handrail: %v\n", err)
-		return 1
-	}
-	root := rule.RepoRoot(cwd)
 
 	var targets []*rule.Rule
-	for _, r := range rules {
+	for _, r := range rs.Rules {
 		// Advice is about what is live: a shadowed or disabled rule enforces
 		// nothing, so promoting it would install a deny nothing asked for.
 		if !r.Enabled || r.ShadowedBy != nil || (name != "" && r.Name != name) {
@@ -376,7 +359,7 @@ func cmdAdvise(args []string, stdout, stderr io.Writer) int {
 
 	out := []adviceOutput{}
 	for _, r := range targets {
-		widening := scopeWidening(r.Tier, root)
+		widening := scopeWidening(r.Tier, rs.Root)
 		for _, a := range harness.Adapters() {
 			if *only != "" && a.Name != *only {
 				continue
@@ -456,7 +439,7 @@ func cmdImport(args []string, stdout, stderr io.Writer) int {
 			src = filepath.Join(cwd, src)
 		}
 	}
-	results, err := rule.ImportHookify(src, filepath.Join(root, ".handrail", "local"))
+	results, err := rule.ImportHookify(src, rule.LocalDir(root))
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail import: %v\n", err)
 		return 1
@@ -521,7 +504,7 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 
 	// Validation first: a machine synced against half a ruleset is worse than an
 	// unsynced one, so nothing reaches disk until every tier parses.
-	rules, code := loadValidRules(stderr)
+	rs, code := loadValidRules(stderr)
 	if code != 0 {
 		return code
 	}
@@ -565,7 +548,7 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		} else {
 			fmt.Fprintf(stdout, "%s: %d hook entries already current in %s\n", a.Name, entries, a.ConfigPath())
 		}
-		for _, d := range a.Degradations(rules) {
+		for _, d := range a.Degradations(rs.Rules) {
 			fmt.Fprintf(stdout, "%s: %s\n", a.Name, d)
 		}
 		for _, q := range a.Quirks {
@@ -573,12 +556,7 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		fmt.Fprintf(stderr, "handrail: %v\n", err)
-		return 1
-	}
-	added, err := rule.ExcludeLocal(rule.RepoRoot(cwd))
+	added, err := rule.ExcludeLocal(rs.Root)
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1
@@ -588,7 +566,7 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 	}
 
 	fmt.Fprintln(stdout)
-	if err := printRuleset(stdout, rules); err != nil {
+	if err := printRuleset(stdout, rs.Rules); err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1
 	}
@@ -649,10 +627,10 @@ func evaluate(payload rule.Payload, cwd string) (message string, block bool) {
 			return fmt.Sprintf("handrail: no working directory, so no rule was evaluated: %v", err), false
 		}
 	}
-	rules, problems, d := rule.LoadTiers(cwd)
+	rs := rule.Load(cwd)
 
 	var sections []string
-	for _, r := range rule.Effective(rules, payload) {
+	for _, r := range rs.Match(payload) {
 		if r.Action == "block" {
 			block = true
 		}
@@ -660,49 +638,58 @@ func evaluate(payload rule.Payload, cwd string) (message string, block bool) {
 	}
 	// Loud fail-open: a rule that cannot be parsed is skipped, and the skipping
 	// is named. A guardrail that guards nothing must never look like one that did.
-	for _, p := range problems {
+	for _, p := range rs.Problems {
 		sections = append(sections, fmt.Sprintf("handrail: skipped the broken rule %s: %s", p.Path, p.Message))
 	}
-	if d.Skipped {
-		sections = append(sections, trustNotice(d.Root))
+	if notice := trustNotice(rs); notice != "" {
+		sections = append(sections, notice)
 	}
 	return strings.Join(sections, "\n\n"), block
 }
 
 // loadRules reads the tiers that apply to the working directory and reports an
 // untrusted shared tier, which is skipped rather than silently missing.
-func loadRules(stderr io.Writer) ([]*rule.Rule, []rule.Problem, error) {
+func loadRules(stderr io.Writer) (*rule.Ruleset, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	rules, problems, d := rule.LoadTiers(cwd)
-	if d.Skipped {
-		fmt.Fprintln(stderr, trustNotice(d.Root))
+	rs := rule.Load(cwd)
+	if notice := trustNotice(rs); notice != "" {
+		fmt.Fprintln(stderr, notice)
 	}
-	return rules, problems, nil
+	return rs, nil
 }
 
 // loadValidRules is the authoring-time contract sync and test share: every tier
 // parses, or the command stops without acting. Only check reports problems and
 // keeps going, because reporting them is the whole of its job.
-func loadValidRules(stderr io.Writer) ([]*rule.Rule, int) {
-	rules, problems, err := loadRules(stderr)
+func loadValidRules(stderr io.Writer) (*rule.Ruleset, int) {
+	rs, err := loadRules(stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return nil, 1
 	}
-	if len(problems) > 0 {
-		for _, p := range problems {
+	if len(rs.Problems) > 0 {
+		for _, p := range rs.Problems {
 			fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
 		}
 		return nil, 1
 	}
-	return rules, 0
+	return rs, 0
 }
 
-func trustNotice(root string) string {
-	return fmt.Sprintf("handrail: skipping the untrusted Project-shared rules in %s; run handrail trust to enable them", root)
+// trustNotice is what a skipped Project-shared tier owes the user, and "" when
+// nothing was skipped.
+func trustNotice(rs *rule.Ruleset) string {
+	for _, t := range rs.Tiers {
+		if t.Skipped {
+			return fmt.Sprintf(
+				"handrail: skipping the untrusted Project-shared rules in %s; run handrail trust to enable them",
+				rs.Root)
+		}
+	}
+	return ""
 }
 
 func writeJSON(stdout, stderr io.Writer, v any) int {
@@ -748,7 +735,7 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	rules, problems, err := loadRules(stderr)
+	rs, err := loadRules(stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1
@@ -756,10 +743,10 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 
 	if *asJSON {
 		out := checkOutput{
-			Rules:  make([]checkRule, 0, len(rules)),
-			Errors: make([]checkError, 0, len(problems)),
+			Rules:  make([]checkRule, 0, len(rs.Rules)),
+			Errors: make([]checkError, 0, len(rs.Problems)),
 		}
-		for _, r := range rules {
+		for _, r := range rs.Rules {
 			var shadowedBy *string
 			if r.ShadowedBy != nil {
 				shadowedBy = &r.ShadowedBy.Path
@@ -775,23 +762,23 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 				Path:       r.Path,
 			})
 		}
-		for _, p := range problems {
+		for _, p := range rs.Problems {
 			out.Errors = append(out.Errors, checkError{Path: p.Path, Message: p.Message})
 		}
 		if code := writeJSON(stdout, stderr, out); code != 0 {
 			return code
 		}
 	} else {
-		if err := printRuleset(stdout, rules); err != nil {
+		if err := printRuleset(stdout, rs.Rules); err != nil {
 			fmt.Fprintf(stderr, "handrail: %v\n", err)
 			return 1
 		}
-		for _, p := range problems {
+		for _, p := range rs.Problems {
 			fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
 		}
 	}
 
-	if len(problems) > 0 {
+	if len(rs.Problems) > 0 {
 		return 1
 	}
 	return 0
@@ -891,13 +878,13 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	// test is an authoring-time surface, so it is strict like check: the loud
 	// fail-open belongs to the event-time hook path, not here.
-	rules, code := loadValidRules(stderr)
+	rs, code := loadValidRules(stderr)
 	if code != 0 {
 		return code
 	}
 
 	out := testOutput{Outcome: "allow", Matched: []testMatch{}}
-	for _, r := range rule.Effective(rules, payload) {
+	for _, r := range rs.Match(payload) {
 		out.Matched = append(out.Matched, testMatch{
 			Rule: r.Name, Tier: r.Tier, Action: r.Action, Message: r.Message,
 		})
