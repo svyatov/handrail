@@ -24,62 +24,75 @@ const (
 	TierProjectPersonal = "project-personal"
 )
 
-// Discovery is what tier discovery found for one working directory.
-type Discovery struct {
-	Root    string // the project root: the repo root, or the cwd outside a repo
-	Skipped bool   // whether a Project-shared tier held rules and was skipped for want of trust
+// Tier is one tier as the load found it: where it was read from, how many rules
+// it contributed, and whether trust let it contribute at all.
+type Tier struct {
+	Name    string
+	Dir     string // "" when the machine says nowhere, which only Global can
+	Count   int    // rules this tier contributed
+	Trusted bool   // trust gates the Project-shared tier; the user's own two carry it
+	Skipped bool   // this tier held something and went untrusted, so none of it counts
 }
 
-// LoadTiers parses every tier that applies to cwd: Global from the XDG config
-// dir, Project-shared at the project root, Project-personal under it. Rules
-// come back in delivery order, tier by tier and alphabetical within a tier,
-// each tagged with its tier and with the higher-tier rule that shadows it.
-func LoadTiers(cwd string) ([]*Rule, []Problem, Discovery) {
-	root := RepoRoot(cwd)
-	d := Discovery{Root: root}
-	shared := SharedDir(root)
+// Ruleset is every rule that applies to one working directory, plus what the
+// load had to say about producing it. Shadowing is resolved on the rules rather
+// than by dropping them, so check can report what a higher tier replaced.
+// Problems are reported, never judged: the hook path is loud fail-open and the
+// authoring commands are strict.
+type Ruleset struct {
+	Root     string  // the project root: the repo root, or the cwd outside a repo
+	Rules    []*Rule // delivery order, shadowed and disabled included
+	Tiers    []Tier
+	Problems []Problem
+}
 
-	var rules []*Rule
-	var problems []Problem
-	add := func(tier, dir string, skipLocal bool) {
-		if dir == "" {
-			return
+// Load parses every tier that applies to cwd: Global from the XDG config dir,
+// Project-shared at the project root, Project-personal under it. Rules come
+// back in delivery order, tier by tier and alphabetical within a tier, each
+// tagged with its tier and with the higher-tier rule that shadows it.
+func Load(cwd string) *Ruleset {
+	root := RepoRoot(cwd)
+	rs := &Ruleset{Root: root}
+
+	// An untrusted tier is read and then dropped, not left unread: strict
+	// validation is what check promises for every tier, and .handrail/ existing
+	// says nothing on its own, since the Project-personal tier lives inside it.
+	gather := func(t Tier, skipLocal bool) {
+		if t.Dir != "" {
+			rules, problems := load(t.Dir, skipLocal)
+			rs.Problems = append(rs.Problems, problems...)
+			if t.Trusted {
+				for _, r := range rules {
+					r.Tier = t.Name
+				}
+				t.Count = len(rules)
+				rs.Rules = append(rs.Rules, rules...)
+			} else {
+				t.Skipped = len(rules)+len(problems) > 0
+			}
 		}
-		rs, ps := load(dir, skipLocal)
-		for _, r := range rs {
-			r.Tier = tier
-		}
-		rules = append(rules, rs...)
-		problems = append(problems, ps...)
+		rs.Tiers = append(rs.Tiers, t)
 	}
 
-	add(TierGlobal, ConfigDir(), false)
+	gather(Tier{Name: TierGlobal, Dir: ConfigDir(), Trusted: true}, false)
 	// A user-level hook entry means any repo on the machine is enforced, so a
 	// clone's committed rules wait for an explicit grant. The user's own two
 	// tiers are never gated.
-	if IsTrusted(root) {
-		add(TierProjectShared, shared, true)
-	} else if sharedRules, ps := load(shared, true); len(sharedRules)+len(ps) > 0 {
-		// The tier is skipped, not unread: strict validation is what check
-		// promises for every tier, and .handrail/ existing says nothing on its
-		// own, since the Project-personal tier lives inside it.
-		d.Skipped = true
-		problems = append(problems, ps...)
-	}
-	add(TierProjectPersonal, LocalDir(root), false)
+	gather(Tier{Name: TierProjectShared, Dir: SharedDir(root), Trusted: IsTrusted(root)}, true)
+	gather(Tier{Name: TierProjectPersonal, Dir: LocalDir(root), Trusted: true}, false)
 
 	// Identity is the basename, so the highest tier holding a name carries the
 	// effective rule and every lower one is shadowed by it, wholesale.
-	byName := make(map[string]*Rule, len(rules))
-	for _, r := range rules {
+	byName := make(map[string]*Rule, len(rs.Rules))
+	for _, r := range rs.Rules {
 		byName[r.Name] = r
 	}
-	for _, r := range rules {
+	for _, r := range rs.Rules {
 		if effective := byName[r.Name]; effective != r {
 			r.ShadowedBy = effective
 		}
 	}
-	return rules, problems, d
+	return rs
 }
 
 // SharedDir is the Project-shared tier's directory, at the project root.

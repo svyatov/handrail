@@ -12,13 +12,13 @@ type Payload struct {
 	Fields map[string]string
 }
 
-// Effective returns the rules that select the payload, in delivery order: tier
+// Match returns the rules that select the payload, in delivery order: tier
 // order, then alphabetical within a tier. A shadowed rule is left out whatever
 // its own matcher says, because the effective rule under that name is its
 // namesake in the higher tier.
-func Effective(rules []*Rule, p Payload) []*Rule {
+func (rs *Ruleset) Match(p Payload) []*Rule {
 	var out []*Rule
-	for _, r := range rules {
+	for _, r := range rs.Rules {
 		if r.ShadowedBy == nil && r.Matches(p) {
 			out = append(out, r)
 		}
