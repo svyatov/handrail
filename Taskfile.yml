@@ -50,6 +50,7 @@ tasks:
       - golangci-lint fmt --diff
 
   release-check:
-    desc: Validate .goreleaser.yml, so a bad config fails here rather than on a tag
+    desc: Validate .goreleaser.yml and the pinned version, so a bad config fails here rather than on a tag
     cmds:
       - goreleaser check
+      - scripts/check-version-pin.sh
