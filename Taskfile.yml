@@ -53,13 +53,4 @@ tasks:
     desc: Validate .goreleaser.yml and the pinned version, so a bad config fails here rather than on a tag
     cmds:
       - goreleaser check
-      # The bootstrap pins the version it installs and each plugin manifest
-      # carries it as its cache key, so all three move together or the plugin
-      # ships a bootstrap that installs the wrong binary.
-      - >-
-        pin=$(sed -n 's/^PIN=//p' scripts/bootstrap.sh);
-        for dir in .claude-plugin .codex-plugin; do
-        version=$(sed -n 's/^ *"version": "\(.*\)",*$/\1/p' "$dir/plugin.json");
-        [ "$version" = "$pin" ] ||
-        { echo "$dir/plugin.json is $version, bootstrap pins $pin" >&2; exit 1; };
-        done
+      - scripts/check-version-pin.sh
