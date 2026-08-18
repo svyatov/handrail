@@ -33,7 +33,7 @@ type Discovery struct {
 // LoadTiers parses every tier that applies to cwd: Global from the XDG config
 // dir, Project-shared at the project root, Project-personal under it. Rules
 // come back in delivery order, tier by tier and alphabetical within a tier,
-// each tagged with its tier and with the higher-tier file that shadows it.
+// each tagged with its tier and with the higher-tier rule that shadows it.
 func LoadTiers(cwd string) ([]*Rule, []Problem, Discovery) {
 	root := RepoRoot(cwd)
 	d := Discovery{Root: root}
@@ -76,7 +76,7 @@ func LoadTiers(cwd string) ([]*Rule, []Problem, Discovery) {
 	}
 	for _, r := range rules {
 		if effective := byName[r.Name]; effective != r {
-			r.ShadowedBy = effective.Path
+			r.ShadowedBy = effective
 		}
 	}
 	return rules, problems, d

@@ -271,7 +271,7 @@ func (d Degradation) String() string {
 func (a Adapter) Degradations(rules []*rule.Rule) []Degradation {
 	var out []Degradation
 	for _, r := range rules {
-		if !r.Enabled || r.ShadowedBy != "" {
+		if !r.Enabled || r.ShadowedBy != nil {
 			continue
 		}
 		if r.Action == "block" && !a.canBlock(r.Event) {

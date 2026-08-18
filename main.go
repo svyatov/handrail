@@ -364,7 +364,7 @@ func cmdAdvise(args []string, stdout, stderr io.Writer) int {
 	for _, r := range rules {
 		// Advice is about what is live: a shadowed or disabled rule enforces
 		// nothing, so promoting it would install a deny nothing asked for.
-		if !r.Enabled || r.ShadowedBy != "" || (name != "" && r.Name != name) {
+		if !r.Enabled || r.ShadowedBy != nil || (name != "" && r.Name != name) {
 			continue
 		}
 		targets = append(targets, r)
@@ -761,8 +761,8 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 		}
 		for _, r := range rules {
 			var shadowedBy *string
-			if r.ShadowedBy != "" {
-				shadowedBy = &r.ShadowedBy
+			if r.ShadowedBy != nil {
+				shadowedBy = &r.ShadowedBy.Path
 			}
 			out.Rules = append(out.Rules, checkRule{
 				Rule:       r.Name,
@@ -939,19 +939,13 @@ func printRuleset(w io.Writer, rules []*rule.Rule) error {
 	if len(rules) == 0 {
 		return nil
 	}
-	// Rules arrive in tier order, so the last one under a name is the effective
-	// one: the tier that shadows every earlier namesake.
-	effective := make(map[string]string, len(rules))
-	for _, r := range rules {
-		effective[r.Name] = r.Tier
-	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "TIER\tRULE\tEVENT\tKIND\tACTION\tSTATUS")
 	for _, r := range rules {
 		status := "enabled"
 		switch {
-		case r.ShadowedBy != "":
-			status = "shadowed by " + effective[r.Name]
+		case r.ShadowedBy != nil:
+			status = "shadowed by " + r.ShadowedBy.Tier
 		case !r.Enabled:
 			status = "disabled"
 		}
