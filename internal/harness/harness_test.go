@@ -58,6 +58,30 @@ func TestAdapterWithoutAHomeDirectory(t *testing.T) {
 	}
 }
 
+// Every harness handrail syncs for lets a variable relocate its config
+// directory, and config written anywhere else is config it never reads. The
+// field is opt-in per adapter, so an adapter added without one fails silently:
+// detection and sync go to ~/<dir> while the harness reads elsewhere. Only a
+// walk of the table can catch that, which the compiled binary cannot do.
+func TestEveryAdapterFollowsItsRelocationVariable(t *testing.T) {
+	for _, a := range Adapters() {
+		t.Run(a.Name, func(t *testing.T) {
+			if a.homeEnv == "" {
+				t.Fatalf("%s has no homeEnv, so its relocation variable is ignored", a.Name)
+			}
+			dir := t.TempDir()
+			t.Setenv(a.homeEnv, dir)
+
+			if got, want := a.ConfigPath(), filepath.Join(dir, a.file); got != want {
+				t.Errorf("ConfigPath() = %q, want %q", got, want)
+			}
+			if !a.Installed() {
+				t.Error("Installed() = false for the directory the variable names")
+			}
+		})
+	}
+}
+
 func TestWriteReportsAnUnusableParent(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "settings.json")
 	if err := os.WriteFile(file, []byte("{}\n"), 0o600); err != nil {

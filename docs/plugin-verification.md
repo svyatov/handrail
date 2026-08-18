@@ -8,11 +8,11 @@ or a plugin manifest changes, and record what the run showed.
 ## Checklist
 
 Run each case against an isolated `HOME`, never the real one, so a failed run
-cannot leave hook entries behind on the machine. Create `$HOME/.claude` in it:
-harness detection reads that path and nothing else, so without it sync finds no
-harness and case 1 cannot pass. Isolate the plugin install with
-`CLAUDE_CONFIG_DIR`, which moves where Claude Code itself stores plugins but,
-per the findings below, does not move where sync looks.
+cannot leave hook entries behind on the machine. Isolate the plugin install with
+`CLAUDE_CONFIG_DIR`, which moves where Claude Code stores plugins and where sync
+writes alike. Create that directory, or `$HOME/.claude` when the variable is
+unset: harness detection reads it, so without it sync finds no harness and case
+1 cannot pass.
 
 | # | Case | Expected |
 |---|---|---|
@@ -52,7 +52,8 @@ archive; the others hit the real release.
   one warning from `claude plugin validate --strict`: a `CLAUDE.md` at the plugin
   root is not loaded as plugin context. That file is the repo's own agent
   instructions and is meant to stay; the warning is expected.
-- **`CLAUDE_CONFIG_DIR` is not honored by sync.** Harness detection looks at
-  `~/.claude` only, while Codex's `CODEX_HOME` is honored. A session started with
-  `CLAUDE_CONFIG_DIR` set therefore installs the binary and then reports no
-  harness found. Engine-side gap, tracked separately from the plugin.
+- **`CLAUDE_CONFIG_DIR` was not honored by sync.** Harness detection looked at
+  `~/.claude` only, while Codex's `CODEX_HOME` was honored, so a session started
+  with `CLAUDE_CONFIG_DIR` set installed the binary and then reported no harness
+  found. Fixed in #37: the claude adapter carries the variable the way the codex
+  one does.

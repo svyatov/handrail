@@ -105,7 +105,7 @@ Hardcoded in Go per Adapter, next to its translation knowledge. Per-event: exist
 | Transcript access | Yes (`transcript_path`, written asynchronously, tail may lag) | Yes (`transcript_path`) |
 | Fail-open on hook error | Yes (documented) | Yes |
 | Tool names on the wire | `Bash`, `Edit`/`Write`, `Read`, `mcp__<server>__<tool>` | The same, plus `apply_patch` for every file edit, whose whole edit rides in `tool_input.command` |
-| Config sync writes | `~/.claude/settings.json` | `~/.codex/hooks.json`, or `$CODEX_HOME/hooks.json` where that is set |
+| Config sync writes | `~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR/settings.json` where that is set | `~/.codex/hooks.json`, or `$CODEX_HOME/hooks.json` where that is set |
 | Known bypasses | `disableAllHooks`, cloud sessions | an enterprise `allow_managed_hooks_only` requirement. `--dangerously-bypass-hook-trust` skips the trust review rather than the hooks, and `codex exec --ignore-rules` bypasses execpolicy, which costs a promoted rule (section 5) its backstop but leaves the hook path intact |
 
 Codex's hash-based hook trust prompts once per entry change; the stable one-entry-per-event shape (section 3) keeps that to a single approval.
