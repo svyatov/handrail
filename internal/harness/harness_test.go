@@ -117,6 +117,28 @@ func TestEveryAdapterDeclaresItsPromotionWhole(t *testing.T) {
 	}
 }
 
+// Wholeness is not enough for scope, because Advise compares it against the one
+// scope handrail knows and reads anything else as narrower. A misspelling is
+// therefore a declaration the table accepts and the Advisor answers backwards:
+// the entry still reaches every repo, and the user is no longer told so before
+// pasting it. On the harnesses sync writes for, advise.txtar and
+// advise_json.txtar catch that; on the next harness added, nothing does until
+// someone writes its cases, which is the gap only a walk of the table closes.
+//
+// Comparing against scopeUser rather than a set is what having one scope means.
+// A harness whose mechanism reaches less has to add the constant and widen this
+// test, which is the point where that harness's reach gets thought about.
+func TestEveryPromotionDeclaresAScopeHandrailKnows(t *testing.T) {
+	for _, a := range Adapters() {
+		t.Run(a.Name, func(t *testing.T) {
+			if a.promotion.scope != "" && a.promotion.scope != scopeUser {
+				t.Errorf("%s declares scope %q, which is not a scope handrail knows: Advise reads it as narrower than %q and drops the widening warning",
+					a.Name, a.promotion.scope, scopeUser)
+			}
+		})
+	}
+}
+
 func TestWriteReportsAnUnusableParent(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "settings.json")
 	if err := os.WriteFile(file, []byte("{}\n"), 0o600); err != nil {
