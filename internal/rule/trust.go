@@ -9,9 +9,11 @@ import (
 	"strings"
 )
 
-// The trust registry is one project root per line in the XDG state dir. It
-// gates the Project-shared tier only: cloning a repo cannot put its committed
-// rules in front of the agent until the user grants that path once.
+// Trust end to end: the registry that records it, and what the user is told
+// when a tier goes untrusted. The registry is one project root per line in the
+// XDG state dir, and it gates the Project-shared tier only: cloning a repo
+// cannot put its committed rules in front of the agent until the user grants
+// that path once.
 
 func trustFile() string {
 	dir := xdgSubdir("XDG_STATE_HOME", filepath.Join(".local", "state"))

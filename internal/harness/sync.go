@@ -272,7 +272,7 @@ func (d Degradation) String() string {
 func (a Adapter) Degradations(rules []*rule.Rule) []Degradation {
 	var out []Degradation
 	for _, r := range rules {
-		if r.Action == "block" && !a.canBlock(r.Event) {
+		if r.Action == rule.Block && !a.canBlock(r.Event) {
 			out = append(out, Degradation{
 				Rule: r.Name, From: "block", To: "warn", Reason: a.blockReason(r.Event),
 			})

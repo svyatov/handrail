@@ -179,7 +179,7 @@ func convertHookify(path string) (name, file string, err error) {
 	}
 	// Upstream treats anything that is not "block" as a warning.
 	if action != "block" {
-		action = "warn"
+		action = Warn
 	}
 
 	file = renderRule(ev, kind, action, enabled, terms, strings.TrimSpace(body))

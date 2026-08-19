@@ -71,7 +71,7 @@ func (a Adapter) Advise(r *rule.Rule) (Advice, bool) {
 	// nothing to promote to. Conditions AND together, and a native entry is one
 	// pattern: two conditions cannot be one entry, and either alone blocks more
 	// than the pair does.
-	if r.Action != "block" || r.Event != "PreToolUse" || len(r.Conditions) != 1 {
+	if r.Action != rule.Block || r.Event != "PreToolUse" || len(r.Conditions) != 1 {
 		return Advice{}, false
 	}
 	terms := r.Conditions[0].Any
