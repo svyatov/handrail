@@ -1,0 +1,114 @@
+# A tool input that carries a canonical field with an empty value carries no
+# answer for that field, so the Adapter leaves it absent. A negated condition
+# then stays silent rather than firing on the strength of nothing: "command does
+# not contain git" says nothing about a call that has no command at all.
+exec handrail trust
+
+# The negation fires when the field is there and really lacks the word.
+stdin yarn.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: bare-shell'
+
+# ...and not when the tool carries command empty.
+stdin empty-command.json
+exec handrail hook claude PreToolUse
+! stdout .
+! stderr .
+
+# An mcp name carrying both halves is addressable as usual.
+stdin full-mcp.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: bare-mcp'
+
+# ...while a name with no server half leaves server absent, not empty.
+stdin bare-mcp.json
+exec handrail hook claude PreToolUse
+! stdout .
+! stderr .
+
+# A patch header naming a file is read as before.
+stdin full-patch.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: bare-patch'
+
+# ...and a header naming none leaves path absent while the content it adds stays
+# readable: an unusable path must not cost the condition that still works.
+stdin bare-patch.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: patched-content'
+! stdout 'handrail warn: bare-patch'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- yarn.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {"command": "yarn install"}
+}
+-- empty-command.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {"command": ""}
+}
+-- full-mcp.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "mcp__stripe__refund",
+  "tool_input": {}
+}
+-- bare-mcp.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "mcp____refund",
+  "tool_input": {}
+}
+-- full-patch.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Add File: notes.txt\n+hello\n*** End Patch\n"}
+}
+-- bare-patch.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Add File:\n+hello\n*** End Patch\n"}
+}
+-- .handrail/bare-shell.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    not_contains: git
+---
+Shell calls that are not git are worth a note.
+-- .handrail/bare-mcp.md --
+---
+event: PreToolUse
+kind: mcp
+conditions:
+  - field: server
+    not_equals: fly
+---
+An mcp server other than fly is worth a note.
+-- .handrail/bare-patch.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    not_glob: '**/*.md'
+---
+Editing something that is not markdown is worth a note.
+-- .handrail/patched-content.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: content
+    contains: hello
+---
+The patch adds a greeting.
