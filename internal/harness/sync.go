@@ -266,14 +266,12 @@ func (d Degradation) String() string {
 	return fmt.Sprintf("%s degraded to %s for %s: %s", d.From, d.To, d.Rule, d.Reason)
 }
 
-// Degradations reports where the harness weakens a rule's action. Sync and
-// doctor print this; the runtime hot path stays quiet about it.
+// Degradations reports where the harness weakens a rule's action, for the
+// rules it is given: pass the Effective ruleset, since a rule that cannot fire
+// cannot be degraded. Sync and doctor print this; the hot path stays quiet.
 func (a Adapter) Degradations(rules []*rule.Rule) []Degradation {
 	var out []Degradation
 	for _, r := range rules {
-		if !r.Enabled || r.ShadowedBy != nil {
-			continue
-		}
 		if r.Action == "block" && !a.canBlock(r.Event) {
 			out = append(out, Degradation{
 				Rule: r.Name, From: "block", To: "warn", Reason: a.blockReason(r.Event),

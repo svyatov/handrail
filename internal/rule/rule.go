@@ -23,6 +23,13 @@ type Rule struct {
 	Message    string
 }
 
+// Live reports whether this rule can fire: enabled, and not shadowed by a
+// higher tier. A rule that is loaded is not thereby a rule that enforces
+// anything, and every caller asking which is which asks here. check reads the
+// two fields directly, because it reports the distinction rather than acts on
+// it.
+func (r *Rule) Live() bool { return r.Enabled && r.ShadowedBy == nil }
+
 // Condition is one entry of a rule's implicit-AND condition list: either a
 // single Term, or a one-level any group that ORs its Terms.
 type Condition struct {

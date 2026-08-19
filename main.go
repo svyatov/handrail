@@ -140,7 +140,7 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 		r.checkEntries(a, bin)
 		// Degradation is reported at sync time and reprintable here: a rule
 		// weakened months ago is exactly the kind that reads as not firing.
-		for _, deg := range a.Degradations(rs.Rules) {
+		for _, deg := range a.Degradations(rs.Effective()) {
 			r.note("%s: %s", a.Name, deg)
 		}
 		for _, q := range a.Quirks {
@@ -343,11 +343,11 @@ func cmdAdvise(args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 
+	// Advice is about what is live: a shadowed or disabled rule enforces
+	// nothing, so promoting it would install a deny nothing asked for.
 	var targets []*rule.Rule
-	for _, r := range rs.Rules {
-		// Advice is about what is live: a shadowed or disabled rule enforces
-		// nothing, so promoting it would install a deny nothing asked for.
-		if !r.Enabled || r.ShadowedBy != nil || (name != "" && r.Name != name) {
+	for _, r := range rs.Effective() {
+		if name != "" && r.Name != name {
 			continue
 		}
 		targets = append(targets, r)
@@ -548,7 +548,7 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		} else {
 			fmt.Fprintf(stdout, "%s: %d hook entries already current in %s\n", a.Name, entries, a.ConfigPath())
 		}
-		for _, d := range a.Degradations(rs.Rules) {
+		for _, d := range a.Degradations(rs.Effective()) {
 			fmt.Fprintf(stdout, "%s: %s\n", a.Name, d)
 		}
 		for _, q := range a.Quirks {

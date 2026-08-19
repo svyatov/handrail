@@ -12,24 +12,24 @@ type Payload struct {
 	Fields map[string]string
 }
 
-// Match returns the rules that select the payload, in delivery order: tier
-// order, then alphabetical within a tier. A shadowed rule is left out whatever
-// its own matcher says, because the effective rule under that name is its
-// namesake in the higher tier.
+// Match returns the rules of the Effective ruleset that select the payload, in
+// delivery order: tier order, then alphabetical within a tier. Liveness is
+// checked inline rather than over rs.Effective(), because this is the hot path
+// and the selector would allocate a second slice per event.
 func (rs *Ruleset) Match(p Payload) []*Rule {
 	var out []*Rule
 	for _, r := range rs.Rules {
-		if r.ShadowedBy == nil && r.Matches(p) {
+		if r.Live() && r.Matches(p) {
 			out = append(out, r)
 		}
 	}
 	return out
 }
 
-// Matches reports whether this rule's matcher selects the payload. A disabled
-// rule never matches: it exists to shadow a lower tier, not to fire.
+// Matches reports whether this rule's matcher selects the payload. Whether the
+// rule can fire at all is Live's question, not this one's.
 func (r *Rule) Matches(p Payload) bool {
-	if !r.Enabled || r.Event != p.Event {
+	if r.Event != p.Event {
 		return false
 	}
 	if r.Kind != "" && r.Kind != p.Kind {
