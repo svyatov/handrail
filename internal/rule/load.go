@@ -46,6 +46,19 @@ type Ruleset struct {
 	Problems []Problem
 }
 
+// Effective returns the Effective ruleset: the rules that can fire, in
+// delivery order. Callers that ask what is enforced want this; Rules is the
+// full set, shadowed and disabled included, for reporting on the load itself.
+func (rs *Ruleset) Effective() []*Rule {
+	var out []*Rule
+	for _, r := range rs.Rules {
+		if r.Live() {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // Load parses every tier that applies to cwd: Global from the XDG config dir,
 // Project-shared at the project root, Project-personal under it. Rules come
 // back in delivery order, tier by tier and alphabetical within a tier, each
