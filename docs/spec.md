@@ -21,6 +21,7 @@ Canonical event names are Claude Code's, verbatim. The v1 set is the six-event c
 
 ### Canonical payload
 
+- An in-process value the Adapter produces, not an input format. Nothing reads one from stdin: `hook` and `test` both take the harness's own payload and normalize it, so this shape has exactly one producer and no wire spelling to keep in step.
 - Common envelope: `event`, `harness`, `session_id`, `cwd`, `tool_kind`, `tool_name` (raw harness tool name).
 - `tool_kind`, assigned by each Adapter: `shell`, `file_edit`, `file_read`, `mcp`, `other`.
 - Per-kind normalized fields: `command` (shell); `path` and `content` (file_edit); `path` (file_read); `server` and `tool` (mcp); `prompt` (UserPromptSubmit). `content` is the new content being written (added by ADR [0008](adr/0008-hookify-importer-mapping.md)).
@@ -135,7 +136,7 @@ ADR: [0006](adr/0006-cli-and-plugin-surface.md). Nine commands; harness identifi
 | `sync` | Validate via `check`'s logic, detect installed harnesses (`~/.claude`, `~/.codex`; `--harness` to scope), write each native config, print the annotated effective ruleset and degradation report. |
 | `hook <harness> <event>` | The entrypoint sync installs. Payload JSON on stdin, exit codes per the harness protocol. Visible in help, documented as not for humans. |
 | `check` | Strict-validate all tiers; print the annotated effective ruleset (tier, shadowing, disabling per rule). The authoring-time surface: adding a rule needs no re-sync. |
-| `test <event> [--kind] [--field key=value]... [--stdin]` | Dry-run: matched rules with tier and action, then the final outcome. Exit 2 on block. |
+| `test <event> [--kind] [--field key=value]... [--stdin] [--harness]` | Dry-run: matched rules with tier and action, then the final outcome. Exit 2 on block. `--stdin` reads a harness payload as that harness sends it and normalizes it the way the hook path does, so what test reports is what hook does; `--harness` says whose payload it is, defaulting to `claude`. The payload's own cwd is discarded: tier discovery starts from the working directory. |
 | `trust` | Grant the current repo's Project-shared tier (path-once registry). |
 | `advise [rule-name] [--harness]` | The Advisor. No argument audits every enforcing rule in every tier (a shadowed or disabled rule enforces nothing, so it earns no backstop); a rule name scopes to one. |
 | `import hookify [path]` | One-shot upstream-hookify converter (section 9). |

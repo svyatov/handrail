@@ -43,7 +43,10 @@ Converts upstream hookify's .claude/hookify.*.local.md rules. Anything the rule
 format cannot express is skipped and reported, never written.
 `
 
-const testUsage = `Usage: handrail test <event> [--kind kind] [--field key=value]... [--stdin] [--json]
+const testUsage = `Usage: handrail test <event> [--kind kind] [--field key=value]... [--stdin] [--harness name] [--json]
+
+With --stdin, reads a harness payload as that harness sends it, normalized the
+way the hook path normalizes it. Flags override what the payload carries.
 `
 
 const hookUsage = `Usage: handrail hook <harness> <event>
@@ -785,6 +788,13 @@ func (f fieldSet) Set(s string) error {
 	if !rule.IsField(k) {
 		return fmt.Errorf("unknown canonical field %q", k)
 	}
+	// The Adapter never presents a field it carries empty, so accepting one here
+	// would let test build a payload hook cannot, and answer for a case it would
+	// get wrong: an empty value tests as present, an absent field never matches
+	// in either polarity. Dropping it silently would leave that belief in place.
+	if v == "" {
+		return fmt.Errorf("field %q needs a value; a field carried empty is absent, so omit it", k)
+	}
 	f[k] = v
 	return nil
 }
@@ -807,7 +817,8 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	kind := fs.String("kind", "", "tool kind of the synthetic payload")
 	fields := fieldSet{}
 	fs.Var(fields, "field", "canonical payload field as key=value, repeatable")
-	fromStdin := fs.Bool("stdin", false, "read a canonical payload JSON from stdin")
+	fromStdin := fs.Bool("stdin", false, "read a harness payload JSON from stdin")
+	only := fs.String("harness", "claude", "read the payload as this harness sends it")
 	asJSON := fs.Bool("json", false, "print the result as JSON")
 
 	// The event is positional and leads, so pull it before flag parsing: the
@@ -835,26 +846,29 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "handrail test: unknown kind %q\n", *kind)
 		return 1
 	}
+	a, known := harness.Lookup(*only)
+	if !known {
+		fmt.Fprintf(stderr, "handrail test: unknown harness %q; known: %s\n",
+			*only, strings.Join(harness.Names(), ", "))
+		return 1
+	}
 
 	payload := rule.Payload{Event: event, Fields: map[string]string{}}
 	if *fromStdin {
-		var raw map[string]any
-		if err := json.NewDecoder(stdin).Decode(&raw); err != nil {
+		data, err := io.ReadAll(stdin)
+		if err != nil {
 			fmt.Fprintf(stderr, "handrail test: reading payload: %v\n", err)
 			return 1
 		}
-		if k, ok := raw["tool_kind"].(string); ok {
-			if !rule.IsKind(k) {
-				fmt.Fprintf(stderr, "handrail test: unknown kind %q\n", k)
-				return 1
-			}
-			payload.Kind = k
-		}
-		// Anything the matcher cannot address, raw.* included, is ignored here.
-		for k, v := range raw {
-			if s, ok := v.(string); ok && rule.IsField(k) {
-				payload.Fields[k] = s
-			}
+		// The Adapter's own normalization, so a capture read here reads exactly
+		// as it will on the hook path: the kind comes from the tool name, and
+		// the fields come out of the tool input. The cwd it reports is dropped,
+		// because test answers for the ruleset in the working directory rather
+		// than the one the capture was taken under.
+		payload, _, err = a.Normalize(event, data)
+		if err != nil {
+			fmt.Fprintf(stderr, "handrail test: reading payload: %v\n", err)
+			return 1
 		}
 	}
 	// Flags win over the payload, so one field can be varied against a capture.
