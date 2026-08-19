@@ -607,8 +607,19 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		var payload rule.Payload
 		var cwd string
 		if payload, cwd, err = a.Normalize(event, data); err == nil {
-			message, block := evaluate(payload, cwd)
-			return a.Deliver(event, message, block, stdout, stderr)
+			// The payload names the directory the event happened in; the process's
+			// own is the fallback for a harness that leaves it out. That is process
+			// state rather than payload, so it is answered here and not in Normalize.
+			if !filepath.IsAbs(cwd) {
+				if cwd, err = os.Getwd(); err != nil {
+					return a.Deliver(event,
+						fmt.Sprintf("handrail: no working directory, so no rule was evaluated: %v", err),
+						false, stdout, stderr)
+				}
+			}
+			rs := rule.Load(cwd)
+			matched, outcome := rs.Evaluate(payload)
+			return a.Deliver(event, agentMessage(rs, matched), outcome == "block", stdout, stderr)
 		}
 	}
 	return a.Deliver(event,
@@ -616,24 +627,13 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		false, stdout, stderr)
 }
 
-// evaluate merges the tiers and collects everything the agent should hear: the
-// matched messages, then whatever handrail had to skip to get there.
-func evaluate(payload rule.Payload, cwd string) (message string, block bool) {
-	// The payload names the directory the event happened in; the process's own
-	// is the fallback for a harness that leaves it out.
-	if !filepath.IsAbs(cwd) {
-		var err error
-		if cwd, err = os.Getwd(); err != nil {
-			return fmt.Sprintf("handrail: no working directory, so no rule was evaluated: %v", err), false
-		}
-	}
-	rs := rule.Load(cwd)
-
+// agentMessage is the wire format the hook path delivers: everything the agent
+// should hear, which is the matched messages, then whatever handrail had to
+// skip to get there. It stays in the CLI because it is the hook command's own
+// output format, with one caller and nothing to disagree with.
+func agentMessage(rs *rule.Ruleset, matched []*rule.Rule) string {
 	var sections []string
-	for _, r := range rs.Match(payload) {
-		if r.Action == "block" {
-			block = true
-		}
+	for _, r := range matched {
 		sections = append(sections, fmt.Sprintf("handrail %s: %s (%s)\n%s", r.Action, r.Name, r.Tier, r.Message))
 	}
 	// Loud fail-open: a rule that cannot be parsed is skipped, and the skipping
@@ -641,10 +641,10 @@ func evaluate(payload rule.Payload, cwd string) (message string, block bool) {
 	for _, p := range rs.Problems {
 		sections = append(sections, fmt.Sprintf("handrail: skipped the broken rule %s: %s", p.Path, p.Message))
 	}
-	if notice := trustNotice(rs); notice != "" {
+	if notice := rs.TrustNotice(); notice != "" {
 		sections = append(sections, notice)
 	}
-	return strings.Join(sections, "\n\n"), block
+	return strings.Join(sections, "\n\n")
 }
 
 // loadRules reads the tiers that apply to the working directory and reports an
@@ -655,7 +655,7 @@ func loadRules(stderr io.Writer) (*rule.Ruleset, error) {
 		return nil, err
 	}
 	rs := rule.Load(cwd)
-	if notice := trustNotice(rs); notice != "" {
+	if notice := rs.TrustNotice(); notice != "" {
 		fmt.Fprintln(stderr, notice)
 	}
 	return rs, nil
@@ -677,19 +677,6 @@ func loadValidRules(stderr io.Writer) (*rule.Ruleset, int) {
 		return nil, 1
 	}
 	return rs, 0
-}
-
-// trustNotice is what a skipped Project-shared tier owes the user, and "" when
-// nothing was skipped.
-func trustNotice(rs *rule.Ruleset) string {
-	for _, t := range rs.Tiers {
-		if t.Skipped {
-			return fmt.Sprintf(
-				"handrail: skipping the untrusted Project-shared rules in %s; run handrail trust to enable them",
-				rs.Root)
-		}
-	}
-	return ""
 }
 
 func writeJSON(stdout, stderr io.Writer, v any) int {
@@ -883,16 +870,13 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return code
 	}
 
-	out := testOutput{Outcome: "allow", Matched: []testMatch{}}
-	for _, r := range rs.Match(payload) {
+	// The same call the hook path makes, so what test reports is what hook does.
+	matched, outcome := rs.Evaluate(payload)
+	out := testOutput{Outcome: outcome, Matched: []testMatch{}}
+	for _, r := range matched {
 		out.Matched = append(out.Matched, testMatch{
 			Rule: r.Name, Tier: r.Tier, Action: r.Action, Message: r.Message,
 		})
-		if r.Action == "block" {
-			out.Outcome = "block"
-		} else if out.Outcome == "allow" {
-			out.Outcome = "warn"
-		}
 	}
 
 	if *asJSON {
