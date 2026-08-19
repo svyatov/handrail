@@ -4,8 +4,9 @@ import "strings"
 
 // Payload is the canonical event payload a matcher is evaluated against: the
 // envelope fields a matcher can select on, plus the per-kind normalized fields.
-// A field the event does not carry is absent from Fields, which is not the same
-// as being present and empty.
+// A field the event does not carry is absent from Fields, and so is a field it
+// carries empty: an empty value is no answer about the field rather than an
+// answer of nothing.
 type Payload struct {
 	Event  string
 	Kind   string

@@ -120,12 +120,11 @@ func (a Adapter) Normalize(event string, data []byte) (rule.Payload, string, err
 		set(p.Fields, "path", in.ToolInput, "file_path")
 	case "mcp":
 		if server, tool, ok := strings.Cut(strings.TrimPrefix(in.ToolName, "mcp__"), "__"); ok {
-			p.Fields["server"], p.Fields["tool"] = server, tool
+			setField(p.Fields, "server", server)
+			setField(p.Fields, "tool", tool)
 		}
 	}
-	if in.Prompt != "" {
-		p.Fields["prompt"] = in.Prompt
-	}
+	setField(p.Fields, "prompt", in.Prompt)
 	return p, in.CWD, nil
 }
 
@@ -169,16 +168,15 @@ func unwrapPatch(fields map[string]string, patch string) {
 			if found {
 				break
 			}
-			found, fields["path"] = true, path
+			found = true
+			setField(fields, "path", path)
 			continue
 		}
 		if found && strings.HasPrefix(line, "+") {
 			added = append(added, line[1:])
 		}
 	}
-	if len(added) > 0 {
-		fields["content"] = strings.Join(added, "\n")
-	}
+	setField(fields, "content", strings.Join(added, "\n"))
 }
 
 // patchPath reads the file a patch header names. The headers sit at column 0,
@@ -196,13 +194,33 @@ func patchPath(line string) (string, bool) {
 	return "", false
 }
 
+// setField writes a canonical field unless the value is empty, and reports
+// whether it wrote. A field the call carries empty is no answer about that
+// field rather than an answer of nothing, so it stays absent, and a condition
+// against it reads absence: no match, in either polarity. Every canonical field
+// is written here, so this is the one place that rule is spelled.
+//
+// content is deliberately not an exception, and it is the case that costs
+// something: a Write carrying content "" or an Edit carrying new_string ""
+// truncates a real file, and no content condition sees it, in either polarity.
+// Presenting the empty string instead would fire every not_contains rule
+// against text nobody wrote, which is the louder mistake and the one that
+// blocks the wrong call.
+func setField(fields map[string]string, name, value string) bool {
+	if value == "" {
+		return false
+	}
+	fields[name] = value
+	return true
+}
+
 // set copies the first key the tool input actually carries into the canonical
-// field. A field the call does not carry stays absent, which is what a condition
-// against it reads as: no match, in either polarity.
+// field. A key the call omits and a key it carries empty are the same answer,
+// so both fall through to the next key and, failing every key, leave the field
+// absent.
 func set(fields map[string]string, name string, input map[string]any, keys ...string) {
 	for _, k := range keys {
-		if s, ok := input[k].(string); ok {
-			fields[name] = s
+		if s, ok := input[k].(string); ok && setField(fields, name, s) {
 			return
 		}
 	}
