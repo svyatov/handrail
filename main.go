@@ -362,7 +362,6 @@ func cmdAdvise(args []string, stdout, stderr io.Writer) int {
 
 	out := []adviceOutput{}
 	for _, r := range targets {
-		widening := scopeWidening(r.Tier, rs.Root)
 		for _, a := range harness.Adapters() {
 			if *only != "" && a.Name != *only {
 				continue
@@ -374,7 +373,7 @@ func cmdAdvise(args []string, stdout, stderr io.Writer) int {
 			out = append(out, adviceOutput{
 				Rule: r.Name, Tier: r.Tier, Harness: a.Name,
 				Mechanism: adv.Mechanism, Entry: adv.Entry, Location: adv.Location,
-				ScopeWidening: widening, Caveats: adv.Caveats,
+				ScopeWidening: scopeNote(adv.WidensScope, rs.Root), Caveats: adv.Caveats,
 			})
 		}
 	}
@@ -472,11 +471,11 @@ func relTo(root, path string) string {
 	return rel
 }
 
-// scopeWidening states what a promotion changes about a rule's reach. Native
-// entries are user-level, so promoting a project-tier rule spreads it to every
-// repo on the machine; a Global rule was already there.
-func scopeWidening(tier, root string) *string {
-	if tier == rule.TierGlobal {
+// scopeNote renders what a promotion changes about a rule's reach. Whether the
+// entry widens it is the Advisor's answer, because only the Adapter knows how
+// far its mechanism reaches; naming the repo is this side's job.
+func scopeNote(widens bool, root string) *string {
+	if !widens {
 		return nil
 	}
 	s := fmt.Sprintf("this rule applies only in %s, and the entry applies in every repo on this machine", root)

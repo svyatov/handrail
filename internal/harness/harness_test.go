@@ -89,23 +89,29 @@ func TestEveryAdapterFollowsItsRelocationVariable(t *testing.T) {
 	}
 }
 
-// A Promotion is three declarations that only mean something together: the
-// mechanism names it, the file says where its entries are pasted, and entries
-// spells them. Half of one is a harness that advertises a mechanism it cannot
-// write an entry for, or writes entries with nowhere to put them. Declaring
-// none is how a harness says it has no Promotion, so only the mixture is wrong,
-// and only a walk of the table can see it.
+// A Promotion is four declarations that only mean something together: the
+// mechanism names it, the file says where its entries are pasted, the scope
+// says how far one reaches once pasted, and entries spells them. Part of one is
+// a harness that advertises a mechanism it cannot write an entry for, writes
+// entries with nowhere to put them, or leaves handrail to guess how far they
+// carry. Declaring none is how a harness says it has no Promotion, so only the
+// mixture is wrong, and only a walk of the table can see it.
 func TestEveryAdapterDeclaresItsPromotionWhole(t *testing.T) {
 	for _, a := range Adapters() {
 		t.Run(a.Name, func(t *testing.T) {
 			declared := 0
-			for _, part := range []bool{a.promotion.mechanism != "", a.promotion.file != "", a.promotion.entries != nil} {
+			for _, part := range []bool{
+				a.promotion.mechanism != "",
+				a.promotion.file != "",
+				a.promotion.scope != "",
+				a.promotion.entries != nil,
+			} {
 				if part {
 					declared++
 				}
 			}
-			if declared != 0 && declared != 3 {
-				t.Errorf("%s declares %d of the 3 Promotion parts: %+v", a.Name, declared, a.promotion)
+			if declared != 0 && declared != 4 {
+				t.Errorf("%s declares %d of the 4 Promotion parts: %+v", a.Name, declared, a.promotion)
 			}
 		})
 	}

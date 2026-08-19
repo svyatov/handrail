@@ -16,12 +16,22 @@ type Advice struct {
 	Mechanism string
 	Entry     string
 	Location  string
-	Caveats   []string
+	// WidensScope reports that pasting the entry gives the rule more reach than
+	// its tier gives it. The sentence saying so is the caller's to render,
+	// because it names the repo, which the Advisor has no reason to know.
+	WidensScope bool
+	Caveats     []string
 }
 
 // The rule stays the message-bearing layer either way, so every promotion says
 // so: a native deny states no reason, and an agent that hears none retries.
 const silentCaveat = "the native entry denies without a message, so keep the rule: the hook path is what tells the agent why"
+
+// scopeUser is a mechanism whose entries live at the user level and therefore
+// reach every repo on the machine. Promoting anything narrower than a Global
+// rule into one widens the rule's reach. Declared per harness rather than
+// assumed, because a mechanism scoped to a single project would not.
+const scopeUser = "user"
 
 // promotion is one harness's translation knowledge: the mechanism a rule can be
 // promoted into, where its entries live, and how a condition is spelled there.
@@ -31,6 +41,10 @@ type promotion struct {
 	mechanism string   // what the harness calls it
 	file      string   // where entries go, relative to the user-level directory
 	caveats   []string // what every promotion to this harness carries
+	// scope says how far an entry reaches once pasted. A string rather than a
+	// bool because the table test counts the parts a Promotion declares, and an
+	// unset bool reads the same as a declared narrow one.
+	scope string
 	// entries spells one condition, and names the caveat that spelling earns.
 	entries func(*rule.Rule, rule.Term) (spelled []string, caveat string, ok bool)
 }
@@ -66,7 +80,11 @@ func (a Adapter) Advise(r *rule.Rule) (Advice, bool) {
 	// A deny list is a disjunction, which is exactly what an any group is, so
 	// each branch earns its own entry. One untranslatable branch sinks the rule:
 	// the remaining entries would be a guardrail with a hole in it.
-	adv := Advice{Mechanism: p.mechanism, Location: target}
+	adv := Advice{
+		Mechanism:   p.mechanism,
+		Location:    target,
+		WidensScope: p.scope == scopeUser && r.Tier != rule.TierGlobal,
+	}
 	adv.Caveats = append(adv.Caveats, silentCaveat)
 	adv.Caveats = append(adv.Caveats, p.caveats...)
 	var entries []string
