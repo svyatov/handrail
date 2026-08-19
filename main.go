@@ -619,7 +619,7 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 			rs := rule.Load(cwd)
 			matched, outcome := rs.Evaluate(payload)
-			return a.Deliver(event, agentMessage(rs, matched), outcome == "block", stdout, stderr)
+			return a.Deliver(event, agentMessage(rs, matched), outcome == rule.Block, stdout, stderr)
 		}
 	}
 	return a.Deliver(event,
@@ -898,7 +898,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "outcome: %s\n", out.Outcome)
 	}
 
-	if out.Outcome == "block" {
+	if out.Outcome == rule.Block {
 		return 2
 	}
 	return 0

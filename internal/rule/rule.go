@@ -8,6 +8,16 @@ import (
 	"strings"
 )
 
+// The Action and Outcome vocabulary, one set for both: an Outcome takes the
+// strongest Action among the matched rules, so warn and block are the same two
+// values under either name. Allow is exported although no Rule.Action may hold
+// it, because it belongs to the vocabulary rather than to one field.
+const (
+	Allow = "allow"
+	Warn  = "warn"
+	Block = "block"
+)
+
 // Rule is one guardrail: a matcher (event, kind, conditions) and the message
 // delivered when it matches. Identity is the file's basename.
 type Rule struct {
@@ -101,7 +111,7 @@ func Parse(name string, data []byte) (*Rule, error) {
 		return nil, err
 	}
 
-	r := &Rule{Name: name, Action: "warn", Enabled: true, Message: strings.TrimSpace(body)}
+	r := &Rule{Name: name, Action: Warn, Enabled: true, Message: strings.TrimSpace(body)}
 	seen := make(map[string]bool, len(doc.mapping))
 	for _, kv := range doc.mapping {
 		if seen[kv.key] {
@@ -128,7 +138,7 @@ func Parse(name string, data []byte) (*Rule, error) {
 			if err := scalarInto(kv, &r.Action); err != nil {
 				return nil, err
 			}
-			if r.Action != "warn" && r.Action != "block" {
+			if r.Action != Warn && r.Action != Block {
 				return nil, fmt.Errorf("line %d: unknown action %q", kv.line, r.Action)
 			}
 		case "enabled":

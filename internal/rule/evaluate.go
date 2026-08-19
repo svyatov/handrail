@@ -23,16 +23,16 @@ type Payload struct {
 // Liveness is checked inline rather than over rs.Effective(), because this is
 // the hot path and the selector would allocate a second slice per event.
 func (rs *Ruleset) Evaluate(p Payload) (matched []*Rule, outcome string) {
-	outcome = "allow"
+	outcome = Allow
 	for _, r := range rs.Rules {
 		if !r.Live() || !r.matches(p) {
 			continue
 		}
 		matched = append(matched, r)
-		if r.Action == "block" {
-			outcome = "block"
-		} else if outcome == "allow" {
-			outcome = "warn"
+		if r.Action == Block {
+			outcome = Block
+		} else if outcome == Allow {
+			outcome = Warn
 		}
 	}
 	return matched, outcome
