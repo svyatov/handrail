@@ -39,3 +39,7 @@ The five canonical roles, each label string equal to its name. See `docs/agents/
 ### Domain docs
 
 Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Semantic code navigation
+
+Serena's LSP symbol tools, optional, needs `gopls`. See `docs/agents/serena.md`.

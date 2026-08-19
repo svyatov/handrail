@@ -8,3 +8,6 @@
 
 # Release artifacts, written by goreleaser
 /dist/
+
+# Serena's per-project state, regenerated whenever it loads the project
+/.serena/
