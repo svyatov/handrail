@@ -52,8 +52,8 @@ _Avoid_: conflating with the Advisor
 What a matched rule does: warn (proceed, but inject the rule's message into the agent's context) or block (deny, with the rule's message as the reason). Allow is the absence of a match, not an action.
 
 **Outcome**:
-What evaluating one event against the Effective ruleset produces: allow, warn, or block. Exactly three, and allow is the absence of a match rather than an Action. Among several matched rules, one block makes the Outcome block.
-_Avoid_: result, verdict, conflating with Action
+What evaluating one event against the Effective ruleset produces: allow, warn, or block. Exactly three. An Outcome takes the strongest Action among the matched rules, so warn and block are deliberately the Action's own values; allow is the absence of a match rather than an Action, and belongs to no rule.
+_Avoid_: result, verdict, calling one matched rule's Action the Outcome
 
 **Tool kind**:
 The canonical cross-harness classification of a tool, assigned by the Adapter: shell, file_edit, file_read, mcp, other.
