@@ -35,6 +35,21 @@ func isTrusted(root string) bool {
 	return slices.Contains(strings.Split(string(data), "\n"), root)
 }
 
+// TrustNotice is what a skipped Project-shared tier owes the user, and "" when
+// nothing was skipped. The tiers and the root are the ruleset's own state, so
+// the sentence is written here rather than assembled by every caller that has
+// to print it.
+func (rs *Ruleset) TrustNotice() string {
+	for _, t := range rs.Tiers {
+		if t.Skipped {
+			return fmt.Sprintf(
+				"handrail: skipping the untrusted Project-shared rules in %s; run handrail trust to enable them",
+				rs.Root)
+		}
+	}
+	return ""
+}
+
 // Trust records this ruleset's project root as trusted, reporting whether that
 // was new. The load already knows the root, so a caller holding a ruleset never
 // has to work out which path the grant is keyed by.

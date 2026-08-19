@@ -12,23 +12,35 @@ type Payload struct {
 	Fields map[string]string
 }
 
-// Match returns the rules of the Effective ruleset that select the payload, in
-// delivery order: tier order, then alphabetical within a tier. Liveness is
-// checked inline rather than over rs.Effective(), because this is the hot path
-// and the selector would allocate a second slice per event.
-func (rs *Ruleset) Match(p Payload) []*Rule {
-	var out []*Rule
+// Evaluate runs the payload against the Effective ruleset and answers with both
+// halves of what an event produces: the rules that matched, in delivery order
+// (tier order, then alphabetical within a tier), and the Outcome, allow, warn
+// or block, where one block among several matches makes it block. A caller
+// deriving the Outcome for itself would be a second answer to the same
+// question, free to disagree with this one, and test exists to say what hook
+// will do.
+//
+// Liveness is checked inline rather than over rs.Effective(), because this is
+// the hot path and the selector would allocate a second slice per event.
+func (rs *Ruleset) Evaluate(p Payload) (matched []*Rule, outcome string) {
+	outcome = "allow"
 	for _, r := range rs.Rules {
-		if r.Live() && r.Matches(p) {
-			out = append(out, r)
+		if !r.Live() || !r.matches(p) {
+			continue
+		}
+		matched = append(matched, r)
+		if r.Action == "block" {
+			outcome = "block"
+		} else if outcome == "allow" {
+			outcome = "warn"
 		}
 	}
-	return out
+	return matched, outcome
 }
 
-// Matches reports whether this rule's matcher selects the payload. Whether the
+// matches reports whether this rule's matcher selects the payload. Whether the
 // rule can fire at all is Live's question, not this one's.
-func (r *Rule) Matches(p Payload) bool {
+func (r *Rule) matches(p Payload) bool {
 	if r.Event != p.Event {
 		return false
 	}
