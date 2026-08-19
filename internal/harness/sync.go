@@ -40,14 +40,21 @@ func (a Adapter) Installed() bool {
 	return err == nil && fi.IsDir()
 }
 
-// ConfigPath is the one file sync writes: user-level, never project-level.
-func (a Adapter) ConfigPath() string {
+// path locates a file inside the harness's user-level directory. A machine with
+// no home directory has no such directory, and no path either: a relative one
+// would point at whatever the caller's cwd happens to be. A file nothing named
+// is the same answer, since joining it yields the directory: a paste target
+// that is a directory is no more usable than one that is a bare name.
+func (a Adapter) path(file string) string {
 	dir := a.userDir()
-	if dir == "" {
+	if dir == "" || file == "" {
 		return ""
 	}
-	return filepath.Join(dir, a.file)
+	return filepath.Join(dir, file)
 }
+
+// ConfigPath is the one file sync writes: user-level, never project-level.
+func (a Adapter) ConfigPath() string { return a.path(a.file) }
 
 // Install puts exactly one hook entry per canonical event into the harness's
 // user-level config, invoking bin. It reports how many entries it wrote and

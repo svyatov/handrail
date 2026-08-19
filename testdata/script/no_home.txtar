@@ -31,12 +31,26 @@ stdout '^code=1$'
 stdout '^problem +global: no config directory: set HOME or XDG_CONFIG_HOME$'
 stdout '^note +claude: not installed$'
 
+# advise never gates on whether a harness is installed, but a promotion is a
+# paste target, and with no home directory there is nowhere to paste. A rule
+# that would otherwise translate to both harnesses earns nothing.
+exec sh -c 'handrail advise; echo code=$?'
+stdout '^code=0$'
+stdout 'no rule translates to a native entry'
+
 # With home set and no XDG variable, the base is the spec's default under it.
 env HOME=$WORK/home
 mkdir $WORK/home/.config/handrail
 cp global.md $WORK/home/.config/handrail/from-home.md
 exec handrail check
 stdout '^global +from-home '
+
+# The same rule, the same harnesses, and now a directory to name.
+exec handrail advise
+stdout 'no-force-push  project-personal  claude  permissions\.deny'
+stdout 'add to .*/\.claude/settings\.json:'
+stdout 'no-force-push  project-personal  codex  execpolicy prefix_rule'
+stdout 'add to .*/\.codex/rules/default\.rules:'
 
 # A relative XDG value is ignored, as the basedir spec requires, so the same
 # default applies.
@@ -76,3 +90,13 @@ A committed rule, which waits for a grant.
 event: PreToolUse
 ---
 The user's own rule, which never waits for anything.
+-- .handrail/local/no-force-push.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: git push --force
+---
+A rule both harnesses have a native mechanism for.

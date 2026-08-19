@@ -2,7 +2,6 @@ package harness
 
 import (
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,37 +23,16 @@ type Advice struct {
 // so: a native deny states no reason, and an agent that hears none retries.
 const silentCaveat = "the native entry denies without a message, so keep the rule: the hook path is what tells the agent why"
 
-// native is one harness's translation knowledge: where its mechanism lives,
-// what to call it, and how a condition is spelled there. One value per harness
-// keeps the mechanism and the spelling from ever disagreeing about who is
-// supported.
-type native struct {
-	mechanism string
-	location  string
+// promotion is one harness's translation knowledge: the mechanism a rule can be
+// promoted into, where its entries live, and how a condition is spelled there.
+// It is declared on the Adapter, beside the capability matrix, so a harness
+// added to the table cannot silently produce no advice (ADR 0005).
+type promotion struct {
+	mechanism string   // what the harness calls it
+	file      string   // where entries go, relative to the user-level directory
 	caveats   []string // what every promotion to this harness carries
 	// entries spells one condition, and names the caveat that spelling earns.
 	entries func(*rule.Rule, rule.Term) (spelled []string, caveat string, ok bool)
-}
-
-func (a Adapter) native() (native, bool) {
-	switch a.Name {
-	case "claude":
-		return native{
-			mechanism: "permissions.deny",
-			location:  a.ConfigPath(),
-			entries:   claudeEntries,
-		}, true
-	case "codex":
-		return native{
-			mechanism: "execpolicy prefix_rule",
-			location:  filepath.Join(a.userDir(), "rules", "default.rules"),
-			caveats: []string{
-				"codex exec --ignore-rules bypasses execpolicy, so the backstop is absent there while the rule still fires",
-			},
-			entries: codexEntries,
-		}, true
-	}
-	return native{}, false
 }
 
 // Advise translates a rule into this harness's native mechanism, and reports
@@ -63,8 +41,14 @@ func (a Adapter) native() (native, bool) {
 // into the user's own config, so anything the native pattern language cannot
 // say exactly is left alone (ADR 0005).
 func (a Adapter) Advise(r *rule.Rule) (Advice, bool) {
-	n, ok := a.native()
-	if !ok {
+	p := a.promotion
+	target := a.path(p.file)
+	// A harness with no way to spell an entry has no promotion, whatever else it
+	// declares. advise is the one command that never gates on whether the harness
+	// is installed, so the paste target is the other half of that: with no home
+	// directory there is nowhere to name, and advice that names nowhere is worse
+	// than none.
+	if p.entries == nil || target == "" {
 		return Advice{}, false
 	}
 	// A permission deny answers a tool call, so a block on any other event has
@@ -82,12 +66,12 @@ func (a Adapter) Advise(r *rule.Rule) (Advice, bool) {
 	// A deny list is a disjunction, which is exactly what an any group is, so
 	// each branch earns its own entry. One untranslatable branch sinks the rule:
 	// the remaining entries would be a guardrail with a hole in it.
-	adv := Advice{Mechanism: n.mechanism, Location: n.location}
+	adv := Advice{Mechanism: p.mechanism, Location: target}
 	adv.Caveats = append(adv.Caveats, silentCaveat)
-	adv.Caveats = append(adv.Caveats, n.caveats...)
+	adv.Caveats = append(adv.Caveats, p.caveats...)
 	var entries []string
 	for _, t := range terms {
-		spelled, caveat, ok := n.entries(r, t)
+		spelled, caveat, ok := p.entries(r, t)
 		if !ok {
 			return Advice{}, false
 		}

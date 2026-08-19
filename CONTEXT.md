@@ -44,6 +44,10 @@ _Avoid_: driver, backend, integration
 The CLI-resident intelligence that recommends promoting a rule to a harness-native mechanism (for example a Claude Code permission deny) when the matcher translates exactly. Recommend-only: accepted entries become the user's own harness config, and the rule stays active as the message-bearing layer.
 _Avoid_: suggestion engine, linter
 
+**Promotion**:
+What the Advisor recommends: one harness's native mechanism a rule can be restated in (a Claude Code permission deny, a Codex execpolicy prefix rule), declared by the Adapter alongside the capability matrix. Unlike a Hook, which handrail installs and which calls back into handrail on every event, a Promotion is an entry the user pastes into their own config and owns from then on, and it decides without handrail running at all. The rule stays, as the layer that says why.
+_Avoid_: conflating with a Hook, calling it enforcement handrail installs or tracks
+
 **Analyzer**:
 The LLM-side agent, shipped in each harness plugin, that reads the current session's transcript on demand and proposes new rules for behaviors worth preventing. Proposal-only: every rule needs per-rule user approval and is verified via check and test before it lands.
 _Avoid_: conflating with the Advisor
