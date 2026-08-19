@@ -24,8 +24,8 @@ _Avoid_: scope, level
 A rule file in a higher-precedence tier replacing a same-named rule in a lower tier wholesale. There is no field-level merging; the shadowing file is the effective rule.
 
 **Effective ruleset**:
-The merged, shadow-resolved set of rules for one working directory: every tier that applies, with each shadowed rule replaced by its higher-tier namesake. What `check` prints and what the Analyzer reads.
-_Avoid_: conflating with the rules that match one event, which is a matcher outcome rather than a set
+The rules that can fire in one working directory: every tier that applies, merged, with each shadowed rule replaced by its higher-tier namesake and each disabled rule dropped. `check` prints it annotated with what was replaced or disabled, and the Analyzer reads it.
+_Avoid_: conflating with the rules that match one event, which is one event's match set rather than a ruleset
 
 **Matcher**:
 The selecting half of a rule: an event name, an optional tool kind, and a list of conditions.
@@ -50,6 +50,10 @@ _Avoid_: conflating with the Advisor
 
 **Action**:
 What a matched rule does: warn (proceed, but inject the rule's message into the agent's context) or block (deny, with the rule's message as the reason). Allow is the absence of a match, not an action.
+
+**Outcome**:
+What evaluating one event against the Effective ruleset produces: allow, warn, or block. Exactly three, and allow is the absence of a match rather than an Action. Among several matched rules, one block makes the Outcome block.
+_Avoid_: result, verdict, conflating with Action
 
 **Tool kind**:
 The canonical cross-harness classification of a tool, assigned by the Adapter: shell, file_edit, file_read, mcp, other.
