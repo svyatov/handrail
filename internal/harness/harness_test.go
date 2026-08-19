@@ -23,6 +23,13 @@ func TestAdviseRefusesWhatItCannotSpellExactly(t *testing.T) {
 		// Every harness sync writes for has a native mechanism today, so this is
 		// the shape of the next one added before its translation is written.
 		{"a harness with no native mechanism", Adapter{Name: "gemini"}, translatable},
+		// And this is the shape of one added with half of it: a mechanism named,
+		// with nothing to spell an entry with.
+		{
+			"a harness naming a mechanism it cannot spell entries for",
+			Adapter{Name: "gemini", promotion: promotion{mechanism: "policy.deny", file: "policy.json"}},
+			translatable,
+		},
 		// A condition that names no term spells no entry, and an advice with no
 		// entry is a paste target with nothing to paste.
 		{"a condition carrying no term", claude, []rule.Condition{{}}},
@@ -77,6 +84,28 @@ func TestEveryAdapterFollowsItsRelocationVariable(t *testing.T) {
 			}
 			if !a.Installed() {
 				t.Error("Installed() = false for the directory the variable names")
+			}
+		})
+	}
+}
+
+// A Promotion is three declarations that only mean something together: the
+// mechanism names it, the file says where its entries are pasted, and entries
+// spells them. Half of one is a harness that advertises a mechanism it cannot
+// write an entry for, or writes entries with nowhere to put them. Declaring
+// none is how a harness says it has no Promotion, so only the mixture is wrong,
+// and only a walk of the table can see it.
+func TestEveryAdapterDeclaresItsPromotionWhole(t *testing.T) {
+	for _, a := range Adapters() {
+		t.Run(a.Name, func(t *testing.T) {
+			declared := 0
+			for _, part := range []bool{a.promotion.mechanism != "", a.promotion.file != "", a.promotion.entries != nil} {
+				if part {
+					declared++
+				}
+			}
+			if declared != 0 && declared != 3 {
+				t.Errorf("%s declares %d of the 3 Promotion parts: %+v", a.Name, declared, a.promotion)
 			}
 		})
 	}
