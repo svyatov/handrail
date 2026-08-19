@@ -41,13 +41,14 @@ var adapters = []Adapter{
 			"disableAllHooks and cloud sessions bypass handrail entirely",
 		},
 		// Permission rules live in the same file sync writes, under a different key.
-		promotion: promotion{mechanism: "permissions.deny", file: "settings.json", entries: claudeEntries},
+		promotion: promotion{mechanism: "permissions.deny", file: "settings.json", scope: scopeUser, entries: claudeEntries},
 	},
 	{
 		Name: "codex", title: "Codex CLI", dir: ".codex", homeEnv: "CODEX_HOME", file: "hooks.json",
 		promotion: promotion{
 			mechanism: "execpolicy prefix_rule",
 			file:      filepath.Join("rules", "default.rules"),
+			scope:     scopeUser,
 			caveats: []string{
 				"codex exec --ignore-rules bypasses execpolicy, so the backstop is absent there while the rule still fires",
 			},
