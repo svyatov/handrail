@@ -36,6 +36,10 @@ One field test inside a matcher: a single operator applied to one canonical payl
 **Event model**:
 The harness-neutral set of lifecycle events rules are written against.
 
+**Canonical payload**:
+What an Adapter's normalization produces from one harness event: the event name, the Tool kind, and the canonical fields a Condition can address. An in-process value rather than an input format: no command reads one from stdin, and `raw.*` and `transcript_path` are shape the spec reserves rather than data the engine carries.
+_Avoid_: envelope, wire format, conflating with the harness payload the Adapter reads
+
 **Adapter**:
 The per-harness layer that maps the event model and rule enforcement onto one specific harness.
 _Avoid_: driver, backend, integration

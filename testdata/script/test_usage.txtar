@@ -21,6 +21,10 @@ exec sh -c 'handrail test PreToolUse --kind bash; echo code=$?'
 stdout '^code=1$'
 stderr 'handrail test: unknown kind "bash"'
 
+exec sh -c 'handrail test PreToolUse --harness nope; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail test: unknown harness "nope"'
+
 exec sh -c 'handrail test PreToolUse Stop; echo code=$?'
 stdout '^code=1$'
 stderr 'handrail test: unexpected argument "Stop"'
@@ -32,11 +36,20 @@ exec sh -c 'cd broken && handrail test PreToolUse; echo code=$?'
 stdout '^code=1$'
 stderr 'bad\.md: line 2: unknown event "Nope"'
 
-# --stdin builds the payload from a canonical payload JSON.
+# --stdin reads what the harness sends, through the same normalization the hook
+# path uses: the kind comes from tool_name rather than being named, and the
+# command comes out of tool_input. The payload's own cwd is discarded, so the
+# ruleset under test is the one in the working directory, not the one the
+# capture was taken under.
 stdin payload.json
 exec sh -c 'handrail test PreToolUse --stdin; echo code=$?'
 stdout '^code=2$'
 stdout '^block  danger  project-shared$'
+
+# Codex sends the same shape, so reading a capture as either harness agrees.
+stdin payload.json
+exec sh -c 'handrail test PreToolUse --stdin --harness codex; echo code=$?'
+stdout '^code=2$'
 
 # Flags override the payload, so one field can be varied against a real capture.
 stdin payload.json
@@ -49,31 +62,15 @@ exec sh -c 'handrail test PreToolUse --stdin; echo code=$?'
 stdout '^code=1$'
 stderr 'handrail test: reading payload'
 
-# A kind the payload names is checked like one the flag names: a capture with a
-# harness-specific tool kind in it is a payload handrail cannot evaluate.
-stdin bad-kind.json
-exec sh -c 'handrail test PreToolUse --stdin; echo code=$?'
-stdout '^code=1$'
-stderr 'handrail test: unknown kind "bash"'
-
--- bad-kind.json --
-{
-  "event": "PreToolUse",
-  "tool_kind": "bash",
-  "command": "rm -rf /"
-}
 -- .git/HEAD --
 ref: refs/heads/main
 -- payload.json --
 {
-  "event": "PreToolUse",
-  "harness": "claude",
   "session_id": "abc",
   "cwd": "/repo",
-  "tool_kind": "shell",
+  "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
-  "command": "rm -rf /",
-  "raw": {"anything": "rides along untouched"}
+  "tool_input": {"command": "rm -rf /", "description": "clean"}
 }
 -- not-json.txt --
 not json at all
