@@ -788,6 +788,13 @@ func (f fieldSet) Set(s string) error {
 	if !rule.IsField(k) {
 		return fmt.Errorf("unknown canonical field %q", k)
 	}
+	// The Adapter never presents a field it carries empty, so accepting one here
+	// would let test build a payload hook cannot, and answer for a case it would
+	// get wrong: an empty value tests as present, an absent field never matches
+	// in either polarity. Dropping it silently would leave that belief in place.
+	if v == "" {
+		return fmt.Errorf("field %q needs a value; a field carried empty is absent, so omit it", k)
+	}
 	f[k] = v
 	return nil
 }

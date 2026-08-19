@@ -17,6 +17,14 @@ exec sh -c 'handrail test PreToolUse --field command; echo code=$?'
 stdout '^code=1$'
 stderr 'expected key=value'
 
+# A field carried empty is a field not carried, so the flags cannot build a
+# payload the hook path cannot: naming one with no value is a usage error rather
+# than a silent drop, because the case it looks like it is testing is the case
+# it would get wrong.
+exec sh -c 'handrail test PreToolUse --field command=; echo code=$?'
+stdout '^code=1$'
+stderr 'field "command" needs a value'
+
 exec sh -c 'handrail test PreToolUse --kind bash; echo code=$?'
 stdout '^code=1$'
 stderr 'handrail test: unknown kind "bash"'
