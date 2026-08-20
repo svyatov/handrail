@@ -102,30 +102,30 @@ func (a Adapter) Normalize(event string, data []byte) (rule.Payload, string, err
 	if err := json.Unmarshal(data, &in); err != nil {
 		return rule.Payload{}, "", err
 	}
-	p := rule.Payload{Event: event, Kind: classify(in.ToolName), Fields: map[string]string{}}
+	p := rule.Payload{Event: event, Kind: classify(in.ToolName)}
 	switch p.Kind {
 	case "shell":
-		set(p.Fields, "command", in.ToolInput, "command")
+		set(&p, "command", in.ToolInput, "command")
 	case "file_edit":
-		set(p.Fields, "path", in.ToolInput, "file_path", "notebook_path")
-		set(p.Fields, "content", in.ToolInput, "content", "new_string", "new_source")
+		set(&p, "path", in.ToolInput, "file_path", "notebook_path")
+		set(&p, "content", in.ToolInput, "content", "new_string", "new_source")
 		// Codex passes apply_patch as a shell-like tool, so the whole edit
 		// arrives as one patch envelope under command, which its hooks reference
 		// states outright: "Bash and apply_patch use tool_input.command". Left
 		// unread, every path and content condition would silently never fire on
 		// that harness's only editing tool.
-		if patch, ok := in.ToolInput["command"].(string); ok && p.Fields["path"] == "" {
-			unwrapPatch(p.Fields, patch)
+		if patch, ok := in.ToolInput["command"].(string); ok && p.Field("path") == "" {
+			unwrapPatch(&p, patch)
 		}
 	case "file_read":
-		set(p.Fields, "path", in.ToolInput, "file_path")
+		set(&p, "path", in.ToolInput, "file_path")
 	case "mcp":
 		if server, tool, ok := strings.Cut(strings.TrimPrefix(in.ToolName, "mcp__"), "__"); ok {
-			setField(p.Fields, "server", server)
-			setField(p.Fields, "tool", tool)
+			p.SetField("server", server)
+			p.SetField("tool", tool)
 		}
 	}
-	setField(p.Fields, "prompt", in.Prompt)
+	p.SetField("prompt", in.Prompt)
 	return p, in.CWD, nil
 }
 
@@ -167,7 +167,7 @@ func classify(tool string) string {
 //
 // ponytail: first file only, because the canonical payload has one path field.
 // A per-file payload is a spec change, not an implementation one.
-func unwrapPatch(fields map[string]string, patch string) {
+func unwrapPatch(p *rule.Payload, patch string) {
 	var added []string
 	var found bool
 	for line := range strings.SplitSeq(patch, "\n") {
@@ -176,14 +176,14 @@ func unwrapPatch(fields map[string]string, patch string) {
 				break
 			}
 			found = true
-			setField(fields, "path", path)
+			p.SetField("path", path)
 			continue
 		}
 		if found && strings.HasPrefix(line, "+") {
 			added = append(added, line[1:])
 		}
 	}
-	setField(fields, "content", strings.Join(added, "\n"))
+	p.SetField("content", strings.Join(added, "\n"))
 }
 
 // patchPath reads the file a patch header names. The headers sit at column 0,
@@ -201,33 +201,14 @@ func patchPath(line string) (string, bool) {
 	return "", false
 }
 
-// setField writes a canonical field unless the value is empty, and reports
-// whether it wrote. A field the call carries empty is no answer about that
-// field rather than an answer of nothing, so it stays absent, and a condition
-// against it reads absence: no match, in either polarity. Every canonical field
-// is written here, so this is the one place that rule is spelled.
-//
-// content is deliberately not an exception, and it is the case that costs
-// something: a Write carrying content "" or an Edit carrying new_string ""
-// truncates a real file, and no content condition sees it, in either polarity.
-// Presenting the empty string instead would fire every not_contains rule
-// against text nobody wrote, which is the louder mistake and the one that
-// blocks the wrong call.
-func setField(fields map[string]string, name, value string) bool {
-	if value == "" {
-		return false
-	}
-	fields[name] = value
-	return true
-}
-
 // set copies the first key the tool input actually carries into the canonical
 // field. A key the call omits and a key it carries empty are the same answer,
 // so both fall through to the next key and, failing every key, leave the field
-// absent.
-func set(fields map[string]string, name string, input map[string]any, keys ...string) {
+// absent. Which of those two a key is, and what an empty one means, is
+// rule.Payload.SetField's answer rather than this Adapter's.
+func set(p *rule.Payload, name string, input map[string]any, keys ...string) {
 	for _, k := range keys {
-		if s, ok := input[k].(string); ok && setField(fields, name, s) {
+		if s, ok := input[k].(string); ok && p.SetField(name, s) {
 			return
 		}
 	}
