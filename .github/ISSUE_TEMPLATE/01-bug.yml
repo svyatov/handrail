@@ -1,0 +1,107 @@
+name: Bug report
+description: handrail did something other than what docs/spec.md says
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Run `handrail check` and `handrail doctor` before filing. Between them they answer most reports about a rule that did not fire, and this form asks for both.
+
+        For a security vulnerability, do not file here. Use [Report a vulnerability](https://github.com/svyatov/handrail/security/advisories/new) instead.
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened
+      description: Quote the sentence in `docs/spec.md` or the README that says so, if you can find it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened instead
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: rule
+    attributes:
+      label: The rule file
+      description: The whole file, frontmatter and body, exactly as it is on disk. Redact values, not structure.
+      render: markdown
+    validations:
+      required: true
+
+  - type: dropdown
+    id: harness
+    attributes:
+      label: Harness
+      description: Where handrail was running. handrail only sees an event if the harness calls its hook, so this is the first thing triage has to establish.
+      options:
+        - Claude Code
+        - Codex CLI
+        - Neither, I ran the CLI directly
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: harness-version
+    attributes:
+      label: Harness version
+      description: Name the harness here as well if you chose Other above. Free text rather than a list, because these ship faster than handrail releases.
+      placeholder: claude 2.1.217
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: handrail version
+      description: The full output of `handrail version`, which prints the version, the commit, and the build date.
+      placeholder: handrail 0.1.0 (abc1234, 2026-08-20)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you installed it
+      description: This decides which binary you are running and how it got there.
+      options:
+        - Claude Code plugin
+        - Codex CLI plugin
+        - Homebrew
+        - go install
+        - Release tarball
+        - Built from source
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: OS and architecture
+      description: There is no Windows build. CI covers Linux and macOS, and several failure paths differ between them.
+      placeholder: macOS 15.5 arm64
+    validations:
+      required: true
+
+  - type: textarea
+    id: check
+    attributes:
+      label: Output of `handrail check`
+      description: Run it in the repository where the rule should have fired. It prints the effective ruleset with tier, shadowing, and disabling.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `handrail doctor`
+      render: text
+    validations:
+      required: true
