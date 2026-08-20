@@ -1,0 +1,46 @@
+name: Proposal
+description: A guardrail the rule format cannot express, or a change to the command surface
+labels: [enhancement, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        handrail is pre-1.0, and `docs/spec.md` records what was deliberately left out of v1 and why. Read that section first: a deliberate omission needs a different argument than an oversight.
+
+  - type: textarea
+    id: guardrail
+    attributes:
+      label: The guardrail you want to express
+      description: In words, as you would say it to a person. What should the agent be stopped from doing, or warned about?
+    validations:
+      required: true
+
+  - type: textarea
+    id: attempt
+    attributes:
+      label: What you tried
+      description: The rule file you wrote and what `handrail test` or `handrail check` said about it. Leave empty only if the format offers no starting point at all.
+      render: markdown
+
+  - type: textarea
+    id: gap
+    attributes:
+      label: Why the current format cannot do it
+      description: Name the missing piece. A new event, a new kind, a new operator, a field that is not carried, an action no harness maps to.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: harnesses
+    attributes:
+      label: Which harnesses this has to reach
+      description: Where a harness cannot do what a rule asks, sync substitutes the strongest action it does support. Say if a substitution would be acceptable to you.
+      options:
+        - label: Claude Code
+        - label: Codex CLI
+
+  - type: textarea
+    id: spec
+    attributes:
+      label: What `docs/spec.md` says today
+      description: Quote the sentence this would change or contradict, if there is one. Say so if you looked and found nothing.
