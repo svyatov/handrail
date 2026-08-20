@@ -21,6 +21,7 @@ jobs:
       contents: write # create the release and upload assets
       id-token: write # the short-lived OIDC token the attestation is signed with
       attestations: write # record the provenance of each asset on the repository
+      artifact-metadata: write # write the storage record actions/attest v4 creates
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -51,7 +52,7 @@ jobs:
       # The signed tag covers the commit, not the files uploaded under it. This
       # is what a downloader verifies the archives themselves against, with
       # `gh attestation verify <file> --repo svyatov/handrail`.
-      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             dist/*.tar.gz
