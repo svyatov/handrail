@@ -14,7 +14,7 @@ set -eu
 # The version this plugin pins; equal to the plugin's own version, since the
 # manifest version is the cache key that ships a new bootstrap. Bump this and
 # the version in both manifests, .claude-plugin/ and .codex-plugin/, together.
-PIN=0.1.0-rc.1
+PIN=0.1.0
 REPO=svyatov/handrail
 
 # A binary the user's package manager owns wins, always.
