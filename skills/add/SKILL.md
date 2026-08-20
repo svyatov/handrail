@@ -119,6 +119,11 @@ step 5 for the name you chose before settling on it. To disable an inherited
 rule, write the same filename one tier up with only `enabled: false` in the
 frontmatter and nothing else.
 
+To re-enable it, delete that stub. Do not set `enabled: true` on it: an enabled
+rule needs an `event`, so the stub fails validation instead of restoring the
+original. Never delete the lower-tier rule to undo a disable, which removes the
+guardrail from every project that inherited it.
+
 ## 5. Validate
 
 ```sh
