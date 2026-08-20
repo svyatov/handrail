@@ -9,6 +9,14 @@ stdout '^code=2$'
 stderr '^handrail block: dangerous-rm \(project-shared\)$'
 stderr 'Never delete recursively from the filesystem root'
 
+# PowerShell is the other shell Claude Code can route commands through, and it
+# carries its command in the same key, so the same shell rule reaches it. A rule
+# that stopped here would be a guardrail covering one of the two shells.
+stdin pwsh-rm.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=2$'
+stderr '^handrail block: dangerous-rm \(project-shared\)$'
+
 # A warning file_edit rule matching on content: the action proceeds, the message
 # is injected as context.
 stdin write-secret.json
@@ -96,6 +104,12 @@ ref: refs/heads/main
   "cwd": "CWD",
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
+  "tool_input": {"command": "rm -rf /tmp/build", "description": "clean"}
+}
+-- pwsh-rm.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "PowerShell",
   "tool_input": {"command": "rm -rf /tmp/build", "description": "clean"}
 }
 -- bash-curl.json --

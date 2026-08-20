@@ -119,6 +119,14 @@ func claudeEntries(r *rule.Rule, t rule.Term) ([]string, string, bool) {
 		}
 		// Claude Code globs a Bash pattern, so a bare value is an exact match and
 		// a trailing star is the prefix: the two operators, verbatim.
+		//
+		// ponytail: Bash only, so a promoted shell rule keeps its native backstop
+		// on one of the two shells the rule itself now reaches. PowerShell(...) is
+		// a real permission form, but a rule's command pattern is POSIX-shaped and
+		// PowerShell's command language is not, so pasting the same string under
+		// that form would author an entry denying something other than what the
+		// rule denies, which is exactly what ADR 0005 refuses. Emitting a pair
+		// needs a translation that is exact, not a second spelling of a guess.
 		if t.Op == "equals" {
 			return []string{"Bash(" + t.Value + ")"}, compoundCaveat, true
 		}
