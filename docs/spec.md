@@ -77,7 +77,7 @@ ADR: [0004](adr/0004-rule-tiers-and-precedence.md).
 | Project-shared | `.handrail/` at the repo root | Committed. Gated by trust. |
 | Project-personal | `.handrail/local/` | Sync appends the ignore line to `.git/info/exclude` when missing. |
 
-- Project tiers are discovered at the repo root only: `git rev-parse --show-toplevel` from the event's cwd, or the cwd itself outside a repo. No walk-up, no monorepo nesting in v1.
+- Project tiers are discovered at the repo root only: the nearest ancestor of the event's cwd holding a `.git` entry, or the cwd itself outside a repo. Handrail finds that ancestor by walking up itself rather than running `git rev-parse --show-toplevel`, for the same root without a process spawn, which is most of the hook budget, and without requiring git on the machine. Rule directories are then read at that root and nowhere else: no walk-up for `.handrail/`, no monorepo nesting in v1.
 - Precedence is most specific wins: Global < Project-shared < Project-personal. Not a security boundary.
 - Scanning is recursive; identity = basename; a duplicate basename within a tier is a sync error; `local/` is excluded from the shared scan.
 - A same-named rule in a higher tier **shadows** the lower one wholesale; no field merging. Disabling an inherited rule is a stub shadow containing only `enabled: false`; a disabled rule is exempt from matcher validation, present fields still validate strictly.
