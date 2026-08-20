@@ -41,19 +41,25 @@ type Rule struct {
 // it.
 func (r *Rule) Live() bool { return r.Enabled && r.ShadowedBy == nil }
 
-// Condition is one entry of a rule's implicit-AND condition list: either a
-// single Term, or a one-level any group that ORs its Terms.
+// Condition is one entry of a rule's implicit-AND condition list: one or more
+// Terms, which OR together. A bare field test parses to a one-Term condition
+// and an any group to a many-Term one, so nothing downstream has to ask which
+// way the rule file wrote it.
 type Condition struct {
-	Term *Term
-	Any  []Term
+	Terms []Term
 }
 
-// Term is one operator applied to one canonical payload field.
+// Term is one operator applied to one canonical payload field. re is compiled
+// by the parser for the two pattern operators, matches and glob, in either
+// polarity, and is unexported because a pattern reaching matches without having
+// gone through the parser is a pattern nothing validated. That leaves the
+// parser as the only place a pattern Term can be built: a hand-built one is a
+// nil re, and there is no spelling of it that is merely wrong instead.
 type Term struct {
 	Field string
 	Op    string
 	Value string
-	Re    *regexp.Regexp // compiled, for matches and not_matches
+	re    *regexp.Regexp
 	line  int
 }
 
@@ -229,7 +235,7 @@ func parseConditions(list *node) ([]Condition, error) {
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, Condition{Term: t})
+			out = append(out, Condition{Terms: []Term{*t}})
 			continue
 		}
 		if len(item.mapping) != 1 {
@@ -253,7 +259,7 @@ func parseConditions(list *node) ([]Condition, error) {
 			}
 			terms = append(terms, *t)
 		}
-		out = append(out, Condition{Any: terms})
+		out = append(out, Condition{Terms: terms})
 	}
 	return out, nil
 }
@@ -301,13 +307,13 @@ func parseTerm(n *node) (*Term, error) {
 		if err != nil {
 			return nil, fmt.Errorf("line %d: invalid regexp: %w", t.line, err)
 		}
-		t.Re = re
+		t.re = re
 	case "glob":
 		re, err := globToRegexp(t.Value)
 		if err != nil {
 			return nil, fmt.Errorf("line %d: invalid glob: %w", t.line, err)
 		}
-		t.Re = re
+		t.re = re
 	}
 	return t, nil
 }

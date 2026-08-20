@@ -49,15 +49,9 @@ func (r *Rule) matches(p Payload) bool {
 		return false
 	}
 	for _, c := range r.Conditions {
-		if c.Term != nil {
-			if !c.Term.matches(p) {
-				return false
-			}
-			continue
-		}
 		hit := false
-		for i := range c.Any {
-			if c.Any[i].matches(p) {
+		for i := range c.Terms {
+			if c.Terms[i].matches(p) {
 				hit = true
 				break
 			}
@@ -81,7 +75,7 @@ func (t *Term) matches(p Payload) bool {
 	var hit bool
 	switch op {
 	case "matches", "glob":
-		hit = t.Re.MatchString(v)
+		hit = t.re.MatchString(v)
 	case "contains":
 		hit = strings.Contains(v, t.Value)
 	case "equals":
