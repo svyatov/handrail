@@ -1,6 +1,7 @@
 ---
 name: add
 description: Turn a plain-language guardrail into a handrail Rule file, validate it, and relay the native permission entry handrail recommends. Use when the user wants to add, write, or create a handrail rule, or says "never let the agent ...", "block ...", "warn me when ..." and wants it enforced from now on.
+license: MIT
 ---
 
 # Add a handrail Rule

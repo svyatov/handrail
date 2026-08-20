@@ -133,6 +133,8 @@ Prebuilt binaries cover macOS and Linux on amd64 and arm64. There is no Windows 
 - [`docs/spec.md`](docs/spec.md) is the behavioural source of truth: the event model, the rule format in full, every operator, and the per-harness capability matrix.
 - [`CONTEXT.md`](CONTEXT.md) defines the vocabulary.
 - [`docs/adr/`](docs/adr/) records why each decision went the way it did.
+- [`CHANGELOG.md`](CHANGELOG.md) says what changed in each release.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) says how to set up, test, and send a change.
 
 ## Questions and bugs
 
