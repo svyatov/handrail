@@ -1,0 +1,30 @@
+# Pinning an action to a SHA freezes it until something unfreezes it, so the
+# pins in .github/workflows/ are only as good as this file.
+#
+# `cooldown` holds a newly published version back before it is proposed. An
+# attacker who takes a maintainer account publishes within seconds; what ends
+# those incidents is other people looking, which takes days. No `include` or
+# `exclude` key, so the delay covers every dependency. It applies to version
+# updates only and never delays a security update.
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      go:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
