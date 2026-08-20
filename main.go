@@ -2,6 +2,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -934,14 +935,7 @@ func printRuleset(w io.Writer, rules []*rule.Rule) error {
 			status = "disabled"
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			r.Tier, r.Name, orDefault(r.Event, "-"), orDefault(r.Kind, "*"), r.Action, status)
+			r.Tier, r.Name, cmp.Or(r.Event, "-"), cmp.Or(r.Kind, "*"), r.Action, status)
 	}
 	return tw.Flush()
-}
-
-func orDefault(s, fallback string) string {
-	if s == "" {
-		return fallback
-	}
-	return s
 }
