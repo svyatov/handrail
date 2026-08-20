@@ -93,7 +93,7 @@ Rules live in three places, and the most specific one wins.
 | Project-shared | `.handrail/` | The repo, committed for the team. Needs `handrail trust`. |
 | Project-personal | `.handrail/local/` | Just you, kept out of version control. |
 
-A rule in a higher tier replaces a lower one of the same filename outright; there is no field-by-field merge. To switch an inherited rule off, shadow it with a stub carrying only `enabled: false`, which is the `disabled` row in the `check` output above.
+A rule in a higher tier replaces a lower one of the same filename outright; there is no field-by-field merge. To switch an inherited rule off, shadow it with a stub carrying only `enabled: false`, which is the `disabled` row in the `check` output above. To switch it back on, delete the stub.
 
 ## Codex CLI
 

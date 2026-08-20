@@ -24,7 +24,7 @@ _Avoid_: scope, level
 The directory a working directory's project tiers are discovered at and its Trust grant is keyed by: the repo root, or the working directory itself outside a repo, with symlinks resolved so that one project has one identity.
 
 **Shadowing**:
-A rule file in a higher-precedence tier replacing a same-named rule in a lower tier wholesale. There is no field-level merging; the shadowing file is the effective rule.
+A rule file in a higher-precedence tier replacing a same-named rule in a lower tier wholesale. There is no field-level merging; the shadowing file is the effective rule. Shadowing with a disabled rule is how an inherited rule is switched off, so the act has an inverse: removing the shadowing file restores the rule it replaced.
 
 **Effective ruleset**:
 The rules that can fire in one working directory: every tier that applies, merged, with each shadowed rule replaced by its higher-tier namesake and each disabled rule dropped. `check` prints it annotated with what was replaced or disabled, and the Analyzer reads it.
