@@ -108,13 +108,21 @@ func Load(cwd string) *Ruleset {
 	return rs
 }
 
+// The two project-tier directory names, written once: the exclude line and the
+// walk's skip are both spelled from them, so renaming either directory cannot
+// leave one of the three sites behind still compiling.
+const (
+	dirName   = ".handrail"
+	localName = "local"
+)
+
 // sharedDir is the Project-shared tier's directory, at the project root.
-func sharedDir(root string) string { return filepath.Join(root, ".handrail") }
+func sharedDir(root string) string { return filepath.Join(root, dirName) }
 
 // LocalDir is the Project-personal tier's directory, inside the shared one so a
 // single exclude line keeps it out of version control. Exported for import,
 // which writes into the tier without loading it.
-func LocalDir(root string) string { return filepath.Join(sharedDir(root), "local") }
+func LocalDir(root string) string { return filepath.Join(sharedDir(root), localName) }
 
 // configDir is the Global tier's directory: XDG on every Unix platform,
 // including macOS, following the git and gh dotfiles precedent rather than
@@ -155,7 +163,7 @@ func load(dir string, skipLocal bool) ([]*Rule, []Problem) {
 			return nil
 		}
 		if d.IsDir() {
-			if skipLocal && d.Name() == "local" && filepath.Dir(p) == dir {
+			if skipLocal && d.Name() == localName && filepath.Dir(p) == dir {
 				return fs.SkipDir
 			}
 			return nil
