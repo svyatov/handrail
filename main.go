@@ -605,8 +605,8 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// Nothing below may exit non-zero on handrail's own failure: an engine that
-	// cannot answer must let the event through rather than wedge the harness.
+	// An engine that cannot answer lets the event through rather than wedge the
+	// harness, so every failure below delivers a message and never blocks.
 	failOpen := func(format string, args ...any) int {
 		return a.Deliver(event, fmt.Sprintf(format, args...), false, stdout, stderr)
 	}

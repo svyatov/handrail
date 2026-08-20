@@ -64,18 +64,13 @@ var events = [...]string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "Sessi
 
 // Events lists the six core events. Only sync needs the list, and it gets a
 // copy so no caller can reorder the array IsEvent reads.
-func Events() []string {
-	return slices.Clone(events[:])
-}
+func Events() []string { return slices.Clone(events[:]) }
+
+// IsEvent reports whether name is one of the six core events.
+func IsEvent(name string) bool { return slices.Contains(events[:], name) }
 
 // The three sets below are switches rather than package-level maps for the same
 // reason: nothing may run before main.
-
-// IsEvent reports whether name is one of the six core events. Slicing the array
-// allocates nothing, so the hook path stays free of startup work.
-func IsEvent(name string) bool {
-	return slices.Contains(events[:], name)
-}
 
 // IsKind reports whether name is a canonical tool kind.
 func IsKind(name string) bool {

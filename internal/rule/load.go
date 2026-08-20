@@ -108,9 +108,8 @@ func Load(cwd string) *Ruleset {
 	return rs
 }
 
-// The two project-tier directory names, written once: the exclude line and the
-// walk's skip are both spelled from them, so renaming either directory cannot
-// leave one of the three sites behind still compiling.
+// The project tiers' directory names, written once so that excludeLine and the
+// walk's skip cannot drift from the paths they are meant to describe.
 const (
 	dirName   = ".handrail"
 	localName = "local"
