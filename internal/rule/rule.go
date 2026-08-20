@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -56,23 +57,24 @@ type Term struct {
 	line  int
 }
 
-// Events lists the six core events, in the order sync writes hook entries for
-// them. Only sync needs the list; it is a function rather than a package
-// variable so the hook path pays no startup cost for a slice it never reads.
+// events holds the six core events, in the order sync writes hook entries for
+// them. An array of constants is static data, so nothing runs before main to
+// build it: the hook path pays for every byte of startup work.
+var events = [...]string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop"}
+
+// Events lists the six core events. Only sync needs the list, and it gets a
+// copy so no caller can reorder the array IsEvent reads.
 func Events() []string {
-	return []string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop"}
+	return slices.Clone(events[:])
 }
 
-// These four sets are switches rather than package-level maps so that nothing
-// runs before main: the hook path pays for every byte of startup work.
+// The three sets below are switches rather than package-level maps for the same
+// reason: nothing may run before main.
 
-// IsEvent reports whether name is one of the six core events.
+// IsEvent reports whether name is one of the six core events. Slicing the array
+// allocates nothing, so the hook path stays free of startup work.
 func IsEvent(name string) bool {
-	switch name {
-	case "PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop":
-		return true
-	}
-	return false
+	return slices.Contains(events[:], name)
 }
 
 // IsKind reports whether name is a canonical tool kind.
