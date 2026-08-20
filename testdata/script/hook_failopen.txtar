@@ -17,16 +17,19 @@ stdout '^code=2$'
 stderr 'handrail block: blocker \(project-shared\)'
 stderr 'skipped the broken rule'
 
-# Malformed stdin never blocks the harness: fail open, loudly.
+# Malformed stdin never blocks the harness: fail open, loudly. The payload
+# arrived and was read; it is the JSON that is wrong, and the message has to say
+# so rather than send the reader to look at stdin.
 stdin garbage
 exec handrail hook claude PreToolUse
 ! stderr .
-stdout 'handrail: could not read the PreToolUse payload'
+stdout 'handrail: could not parse the PreToolUse payload'
+! stdout 'could not read'
 
-# Neither does empty stdin.
+# Neither does empty stdin, which is the same fault: nothing to parse.
 exec sh -c 'printf "" | handrail hook claude PreToolUse; echo code=$?'
 stdout '^code=0$'
-stdout 'could not read the PreToolUse payload'
+stdout 'could not parse the PreToolUse payload'
 
 # SessionEnd has no decision control and its JSON output is discarded, so its
 # one remaining channel is stderr, which the harness shows to the user.

@@ -610,15 +610,16 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	failOpen := func(format string, args ...any) int {
 		return a.Deliver(event, fmt.Sprintf(format, args...), false, stdout, stderr)
 	}
-	const unreadable = "handrail: could not read the %s payload, so no rule was evaluated: %v"
-
+	// Two different faults, so two different messages: stdin never arrived, or it
+	// arrived and was not the payload. Reporting the second as the first sends the
+	// reader to look at the pipe when the harness's JSON is what to fix.
 	data, err := io.ReadAll(stdin)
 	if err != nil {
-		return failOpen(unreadable, event, err)
+		return failOpen("handrail: could not read the %s payload, so no rule was evaluated: %v", event, err)
 	}
 	payload, cwd, err := a.Normalize(event, data)
 	if err != nil {
-		return failOpen(unreadable, event, err)
+		return failOpen("handrail: could not parse the %s payload, so no rule was evaluated: %v", event, err)
 	}
 	// The payload names the directory the event happened in; the process's own is
 	// the fallback for a harness that leaves it out. That is process state rather
