@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -857,7 +856,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	payload := rule.Payload{Event: event, Fields: map[string]string{}}
+	payload := rule.Payload{Event: event}
 	if *fromStdin {
 		data, err := io.ReadAll(stdin)
 		if err != nil {
@@ -876,7 +875,10 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 	// Flags win over the payload, so one field can be varied against a capture.
-	maps.Copy(payload.Fields, fields)
+	// --field already refuses an empty value, so nothing here is dropped.
+	for k, v := range fields {
+		payload.SetField(k, v)
+	}
 	if *kind != "" {
 		payload.Kind = *kind
 	}

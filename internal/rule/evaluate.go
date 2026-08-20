@@ -4,14 +4,47 @@ import "strings"
 
 // Payload is the canonical event payload a matcher is evaluated against: the
 // envelope fields a matcher can select on, plus the per-kind normalized fields.
-// A field the event does not carry is absent from Fields, and so is a field it
-// carries empty: an empty value is no answer about the field rather than an
-// answer of nothing.
+// The zero value is a valid empty payload, so an Adapter that fails to
+// normalize can return one.
+//
+// Fill one, then read it: Evaluate takes a Payload by value, and a copy shares
+// the map its fields live in, so a SetField on the copy would write through to
+// the original once that map exists and be dropped while it does not. Nothing
+// does that today, and this is the sentence saying not to start.
 type Payload struct {
-	Event  string
-	Kind   string
-	Fields map[string]string
+	Event string
+	Kind  string
+	// fields is unexported so that SetField is the only way in. The rule it
+	// enforces is a matcher's rule, so it belongs to this package rather than to
+	// each Adapter that fills a payload in.
+	fields map[string]string
 }
+
+// SetField writes a canonical field unless the value is empty, and reports
+// whether it wrote. A field the event carries empty is no answer about that
+// field rather than an answer of nothing, so it stays absent, and a condition
+// against it reads absence: no match, in either polarity.
+//
+// content is deliberately not an exception, and it is the case that costs
+// something: a Write carrying content "" or an Edit carrying new_string ""
+// truncates a real file, and no content condition sees it, in either polarity.
+// Presenting the empty string instead would fire every not_contains rule
+// against text nobody wrote, which is the louder mistake and the one that
+// blocks the wrong call.
+func (p *Payload) SetField(name, value string) bool {
+	if value == "" {
+		return false
+	}
+	if p.fields == nil {
+		p.fields = make(map[string]string)
+	}
+	p.fields[name] = value
+	return true
+}
+
+// Field reads a canonical field. Empty means the payload does not carry it,
+// which is the same answer SetField refuses to write.
+func (p Payload) Field(name string) string { return p.fields[name] }
 
 // Evaluate runs the payload against the Effective ruleset and answers with both
 // halves of what an event produces: the rules that matched, in delivery order
@@ -67,7 +100,7 @@ func (r *Rule) matches(p Payload) bool {
 // payload does not carry never matches, in either polarity: "path does not end
 // with .env" says nothing about a shell command that has no path at all.
 func (t *Term) matches(p Payload) bool {
-	v, ok := p.Fields[t.Field]
+	v, ok := p.fields[t.Field]
 	if !ok {
 		return false
 	}

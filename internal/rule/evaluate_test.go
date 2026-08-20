@@ -30,7 +30,8 @@ func TestEveryOperatorTheParserAcceptsAlsoMatches(t *testing.T) {
 		"ends_with":   "now",
 		"glob":        "deploy*",
 	}
-	payload := Payload{Event: "PreToolUse", Kind: "shell", Fields: map[string]string{"command": command}}
+	payload := Payload{Event: "PreToolUse", Kind: "shell"}
+	payload.SetField("command", command)
 
 	for _, op := range operators {
 		t.Run(op, func(t *testing.T) {
