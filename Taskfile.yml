@@ -44,10 +44,11 @@ tasks:
         print "coverage " $3 "% is under the {{.GATE}}% gate"; exit 1 } }'
 
   lint:
-    desc: golangci-lint, plus the formatter check CI runs separately
+    desc: golangci-lint, the formatter check CI runs separately, and the paths the skills quote from the code
     cmds:
       - golangci-lint run
       - golangci-lint fmt --diff
+      - scripts/check-doc-paths.sh
 
   release-check:
     desc: Validate .goreleaser.yml and the pinned version, so a bad config fails here rather than on a tag
