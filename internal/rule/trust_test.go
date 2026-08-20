@@ -12,7 +12,7 @@ import (
 // White box: the CLI covers the trust registry end to end (ADR 0009), and what
 // is left is the one path no shell can hand the binary, because an argument
 // cannot carry a newline through argv on every platform the tests run on. A
-// ruleset built here is the only way to put such a root in front of Trust.
+// call from here is the only way to put such a root in front of Trust.
 func TestTrustRefusesAPathThatWouldWriteTwoLines(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", state)
@@ -20,8 +20,7 @@ func TestTrustRefusesAPathThatWouldWriteTwoLines(t *testing.T) {
 
 	// A directory may legally hold a newline, and the registry is one path per
 	// line: granting this one would grant "/tmp/evil" as well.
-	rs := &Ruleset{Root: "/tmp/a\n/tmp/evil"}
-	added, err := rs.Trust()
+	added, err := Trust("/tmp/a\n/tmp/evil")
 	if err == nil {
 		t.Fatal("Trust() accepted a path containing a newline")
 	}

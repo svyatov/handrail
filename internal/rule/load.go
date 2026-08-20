@@ -216,6 +216,11 @@ func load(dir string, skipLocal bool) ([]*Rule, []Problem) {
 // there is none, always as a symlink-free path. It walks up for .git rather
 // than shelling out to git: this runs on the hook hot path, where a process
 // spawn is most of the budget.
+//
+// It is also the Project root every path-keyed operation takes: Trust,
+// ExcludeLocal, LocalExcluded. Those are keyed by the root and nothing else, so
+// Load is not their prerequisite. A caller that already holds a ruleset passes
+// rs.Root; a caller that only needs the path calls this and reads no rules.
 func RepoRoot(dir string) string {
 	// Trust is keyed by path, and the cwd a harness reports need not be spelled
 	// the same way as the one handrail trust saw: /tmp and /private/tmp are one
