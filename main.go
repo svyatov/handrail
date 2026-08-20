@@ -605,29 +605,32 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	// Nothing below may exit non-zero on handrail's own failure: an engine that
+	// cannot answer must let the event through rather than wedge the harness.
+	failOpen := func(format string, args ...any) int {
+		return a.Deliver(event, fmt.Sprintf(format, args...), false, stdout, stderr)
+	}
+	unreadable := "handrail: could not read the %s payload, so no rule was evaluated: %v"
+
 	data, err := io.ReadAll(stdin)
-	if err == nil {
-		var payload rule.Payload
-		var cwd string
-		if payload, cwd, err = a.Normalize(event, data); err == nil {
-			// The payload names the directory the event happened in; the process's
-			// own is the fallback for a harness that leaves it out. That is process
-			// state rather than payload, so it is answered here and not in Normalize.
-			if !filepath.IsAbs(cwd) {
-				if cwd, err = os.Getwd(); err != nil {
-					return a.Deliver(event,
-						fmt.Sprintf("handrail: no working directory, so no rule was evaluated: %v", err),
-						false, stdout, stderr)
-				}
-			}
-			rs := rule.Load(cwd)
-			matched, outcome := rs.Evaluate(payload)
-			return a.Deliver(event, agentMessage(rs, matched), outcome == rule.Block, stdout, stderr)
+	if err != nil {
+		return failOpen(unreadable, event, err)
+	}
+	payload, cwd, err := a.Normalize(event, data)
+	if err != nil {
+		return failOpen(unreadable, event, err)
+	}
+	// The payload names the directory the event happened in; the process's own is
+	// the fallback for a harness that leaves it out. That is process state rather
+	// than payload, so it is answered here and not in Normalize.
+	if !filepath.IsAbs(cwd) {
+		if cwd, err = os.Getwd(); err != nil {
+			return failOpen("handrail: no working directory, so no rule was evaluated: %v", err)
 		}
 	}
-	return a.Deliver(event,
-		fmt.Sprintf("handrail: could not read the %s payload, so no rule was evaluated: %v", event, err),
-		false, stdout, stderr)
+	rs := rule.Load(cwd)
+	matched, outcome := rs.Evaluate(payload)
+	return a.Deliver(event, agentMessage(rs, matched), outcome == rule.Block, stdout, stderr)
 }
 
 // agentMessage is the wire format the hook path delivers: everything the agent
