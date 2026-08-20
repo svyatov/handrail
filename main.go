@@ -243,7 +243,7 @@ func (r *report) checkTiers(rs *rule.Ruleset) {
 // out of version control. Outside a working tree there is nothing to exclude,
 // which is not the same as an exclusion that went missing.
 func (r *report) checkExclusion(rs *rule.Ruleset) {
-	switch excluded, path, err := rs.LocalExcluded(); {
+	switch excluded, path, err := rule.LocalExcluded(rs.Root); {
 	case err != nil:
 		r.bad("cannot read the exclude file of %s: %v", rs.Root, err)
 	case path == "":
@@ -284,16 +284,19 @@ func cmdTrust(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1
 	}
-	rs := rule.Load(cwd)
-	added, err := rs.Trust()
+	// The grant is keyed by the project root alone, so trust reads no rules:
+	// rules this machine has not trusted yet are exactly what it must not need
+	// to parse before granting them.
+	root := rule.RepoRoot(cwd)
+	added, err := rule.Trust(root)
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1
 	}
 	if added {
-		fmt.Fprintf(stdout, "trusted %s\n", rs.Root)
+		fmt.Fprintf(stdout, "trusted %s\n", root)
 	} else {
-		fmt.Fprintf(stdout, "already trusted %s\n", rs.Root)
+		fmt.Fprintf(stdout, "already trusted %s\n", root)
 	}
 	return 0
 }
@@ -558,7 +561,7 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	added, err := rs.ExcludeLocal()
+	added, err := rule.ExcludeLocal(rs.Root)
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1

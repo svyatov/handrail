@@ -39,22 +39,22 @@ func hasExcludeLine(data []byte) bool {
 	return false
 }
 
-// LocalExcluded reports whether this project's exclude file holds the line, and
+// LocalExcluded reports whether a project's exclude file holds the line, and
 // names the file it read. An empty path means the project root is not a git
 // working tree, where there is nothing to exclude and therefore nothing missing.
-func (rs *Ruleset) LocalExcluded() (excluded bool, path string, err error) {
-	path, data, err := readExclude(rs.Root)
+func LocalExcluded(root string) (excluded bool, path string, err error) {
+	path, data, err := readExclude(root)
 	if err != nil || path == "" {
 		return false, "", err
 	}
 	return hasExcludeLine(data), path, nil
 }
 
-// ExcludeLocal adds the Project-personal tier to this project's own exclude
-// file, reporting whether that was new. info/exclude rather than .gitignore: the
-// tier is one user's, and the ignore rule for it is nobody else's business.
-func (rs *Ruleset) ExcludeLocal() (added bool, err error) {
-	path, data, err := readExclude(rs.Root)
+// ExcludeLocal adds the Project-personal tier to a project's own exclude file,
+// reporting whether that was new. info/exclude rather than .gitignore: the tier
+// is one user's, and the ignore rule for it is nobody else's business.
+func ExcludeLocal(root string) (added bool, err error) {
+	path, data, err := readExclude(root)
 	if err != nil || path == "" || hasExcludeLine(data) {
 		return false, err
 	}

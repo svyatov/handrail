@@ -52,16 +52,16 @@ func (rs *Ruleset) TrustNotice() string {
 	return ""
 }
 
-// Trust records this ruleset's project root as trusted, reporting whether that
-// was new. The load already knows the root, so a caller holding a ruleset never
-// has to work out which path the grant is keyed by.
-func (rs *Ruleset) Trust() (added bool, err error) {
+// Trust records a project root as trusted, reporting whether that was new. The
+// grant is keyed by the root alone, so granting one needs no ruleset: reading
+// the rules is what the grant gates, not a prerequisite for making it.
+func Trust(root string) (added bool, err error) {
 	// One path per line, so a newline in a path would write a second line and
 	// grant a path nobody asked for. A directory may legally hold one.
-	if strings.Contains(rs.Root, "\n") {
-		return false, fmt.Errorf("cannot trust a path containing a newline: %q", rs.Root)
+	if strings.Contains(root, "\n") {
+		return false, fmt.Errorf("cannot trust a path containing a newline: %q", root)
 	}
-	if isTrusted(rs.Root) {
+	if isTrusted(root) {
 		return false, nil
 	}
 	file := trustFile()
@@ -75,7 +75,7 @@ func (rs *Ruleset) Trust() (added bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	if _, err := fmt.Fprintln(f, rs.Root); err != nil {
+	if _, err := fmt.Fprintln(f, root); err != nil {
 		_ = f.Close()
 		return false, err
 	}
