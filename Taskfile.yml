@@ -51,7 +51,10 @@ tasks:
       - scripts/check-doc-paths.sh
 
   release-check:
-    desc: Validate .goreleaser.yml and the pinned version, so a bad config fails here rather than on a tag
+    desc: Validate .goreleaser.yml, the pinned version, and the changelog section the release body is cut from, so a bad release fails here rather than on a tag
     cmds:
       - goreleaser check
       - scripts/check-version-pin.sh
+      # The release body comes from this section, so a missing one is a release
+      # with nothing to say. Discard the output: only the exit code matters.
+      - scripts/release-notes.sh >/dev/null

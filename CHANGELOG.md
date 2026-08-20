@@ -10,6 +10,22 @@ all of which [`docs/spec.md`](docs/spec.md) states.
 
 ## [Unreleased]
 
+### Added
+
+- Every release archive now ships an SPDX SBOM beside it, named
+  `<archive>.sbom.json`, listing what went into that binary.
+- Every published archive, SBOM, and `checksums.txt` now carries a GitHub
+  build-provenance attestation. Verify a download with
+  `gh attestation verify <file> --repo svyatov/handrail`, which checks the file
+  itself rather than the commit the signed tag covers.
+
+### Changed
+
+- The release body on GitHub is now this file's section for that version,
+  instead of the commit list. A tag whose section is missing fails the release
+  before anything is published, and `task release-check` catches it a step
+  earlier, on the pull request.
+
 ## [0.1.0] - 2026-08-20
 
 First release. One rule file, enforced in Claude Code and in Codex CLI through
