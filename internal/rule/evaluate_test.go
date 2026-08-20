@@ -71,8 +71,8 @@ func parseOne(t *testing.T, op, value string) *Term {
 	if err != nil {
 		t.Fatalf("Parse(%s: %s) = %v", op, value, err)
 	}
-	if len(r.Conditions) != 1 || r.Conditions[0].Term == nil {
+	if len(r.Conditions) != 1 || len(r.Conditions[0].Terms) != 1 {
 		t.Fatalf("Parse(%s) produced %d conditions, want one term", op, len(r.Conditions))
 	}
-	return r.Conditions[0].Term
+	return &r.Conditions[0].Terms[0]
 }

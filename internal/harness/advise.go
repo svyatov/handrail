@@ -72,14 +72,9 @@ func (a Adapter) Advise(r *rule.Rule) (Advice, bool) {
 	if r.Action != rule.Block || r.Event != "PreToolUse" || len(r.Conditions) != 1 {
 		return Advice{}, false
 	}
-	terms := r.Conditions[0].Any
-	if t := r.Conditions[0].Term; t != nil {
-		terms = []rule.Term{*t}
-	}
-
-	// A deny list is a disjunction, which is exactly what an any group is, so
-	// each branch earns its own entry. One untranslatable branch sinks the rule:
-	// the remaining entries would be a guardrail with a hole in it.
+	// A deny list is a disjunction, which is exactly what a Condition's Terms
+	// are, so each branch earns its own entry. One untranslatable branch sinks
+	// the rule: the remaining entries would be a guardrail with a hole in it.
 	adv := Advice{
 		Mechanism:   p.mechanism,
 		Location:    target,
@@ -88,7 +83,7 @@ func (a Adapter) Advise(r *rule.Rule) (Advice, bool) {
 	adv.Caveats = append(adv.Caveats, silentCaveat)
 	adv.Caveats = append(adv.Caveats, p.caveats...)
 	var entries []string
-	for _, t := range terms {
+	for _, t := range r.Conditions[0].Terms {
 		spelled, caveat, ok := p.entries(r, t)
 		if !ok {
 			return Advice{}, false

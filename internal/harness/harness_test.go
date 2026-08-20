@@ -12,7 +12,7 @@ import (
 )
 
 func TestAdviseRefusesWhatItCannotSpellExactly(t *testing.T) {
-	translatable := []rule.Condition{{Term: &rule.Term{Field: "command", Op: "starts_with", Value: "git push --force"}}}
+	translatable := []rule.Condition{{Terms: []rule.Term{{Field: "command", Op: "starts_with", Value: "git push --force"}}}}
 	claude, _ := Lookup("claude")
 
 	cases := []struct {
@@ -30,9 +30,10 @@ func TestAdviseRefusesWhatItCannotSpellExactly(t *testing.T) {
 			Adapter{Name: "gemini", promotion: promotion{mechanism: "policy.deny", file: "policy.json"}},
 			translatable,
 		},
-		// A condition that names no term spells no entry, and an advice with no
-		// entry is a paste target with nothing to paste.
-		{"a condition carrying no term", claude, []rule.Condition{{}}},
+		// A condition carrying no terms spells no entry, and an advice with no
+		// entry is a paste target with nothing to paste. The parser never builds
+		// one, so this is the shape a future caller could hand Advise directly.
+		{"a condition carrying no terms", claude, []rule.Condition{{}}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
