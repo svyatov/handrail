@@ -19,19 +19,41 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write # create the release and upload assets
+      id-token: write # the short-lived OIDC token the attestation is signed with
+      attestations: write # record the provenance of each asset on the repository
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # goreleaser reads tag history to build the changelog
-      - uses: actions/setup-go@v7
+          fetch-depth: 0 # goreleaser reads tag history for the release metadata
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      # GoReleaser shells out to syft for the SBOM beside each archive, and the
+      # runner does not ship it.
+      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
 
-      - uses: goreleaser/goreleaser-action@v7
+      # The tag is the version, and the changelog section under it is the body.
+      # A tag whose section is missing fails here, before anything is published.
+      # Written outside the checkout, because `goreleaser release` refuses to run
+      # against a dirty working tree.
+      - name: Cut the release notes from the changelog
+        run: scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/release-notes.md"
+
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean --release-notes=${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # A repo-scoped PAT: GITHUB_TOKEN cannot write to the tap repo.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      # The signed tag covers the commit, not the files uploaded under it. This
+      # is what a downloader verifies the archives themselves against, with
+      # `gh attestation verify <file> --repo svyatov/handrail`.
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.sbom.json
+            dist/checksums.txt

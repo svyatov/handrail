@@ -1,6 +1,7 @@
 ---
 name: analyze
 description: Mine the current session for behaviors worth preventing and propose handrail Rules for them, with transcript evidence and per-rule approval. Use when the user wants to turn this session's corrections into guardrails, or says "analyze this session", "what should I have blocked", "make that a rule so it never happens again".
+license: MIT
 ---
 
 # Analyze this session for guardrails

@@ -27,6 +27,18 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+# Nobody can read a stripped binary to find out what went into it, and a Go
+# binary carries its dependencies rather than resolving them at run time. syft
+# writes one SPDX document per archive; the release workflow installs it.
+sboms:
+  - artifacts: archive
+
+# No `changelog:` block here on purpose. The release body is the changelog
+# section, cut by scripts/release-notes.sh and passed with --release-notes,
+# which already skips GoReleaser's own commit-list generation. Setting
+# `changelog.disable` as well would discard the file too and publish an empty
+# release body.
+
 # A tag like v0.1.0-rc.1 must not become the repo's latest release: the default
 # is prerelease false, which would publish the pipeline's own proving run as v1.
 release:
