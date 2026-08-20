@@ -2,6 +2,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -604,29 +605,33 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	// An engine that cannot answer lets the event through rather than wedge the
+	// harness, so every failure below delivers a message and never blocks.
+	failOpen := func(format string, args ...any) int {
+		return a.Deliver(event, fmt.Sprintf(format, args...), false, stdout, stderr)
+	}
+	// Two different faults, so two different messages: stdin never arrived, or it
+	// arrived and was not the payload. Reporting the second as the first sends the
+	// reader to look at the pipe when the harness's JSON is what to fix.
 	data, err := io.ReadAll(stdin)
-	if err == nil {
-		var payload rule.Payload
-		var cwd string
-		if payload, cwd, err = a.Normalize(event, data); err == nil {
-			// The payload names the directory the event happened in; the process's
-			// own is the fallback for a harness that leaves it out. That is process
-			// state rather than payload, so it is answered here and not in Normalize.
-			if !filepath.IsAbs(cwd) {
-				if cwd, err = os.Getwd(); err != nil {
-					return a.Deliver(event,
-						fmt.Sprintf("handrail: no working directory, so no rule was evaluated: %v", err),
-						false, stdout, stderr)
-				}
-			}
-			rs := rule.Load(cwd)
-			matched, outcome := rs.Evaluate(payload)
-			return a.Deliver(event, agentMessage(rs, matched), outcome == rule.Block, stdout, stderr)
+	if err != nil {
+		return failOpen("handrail: could not read the %s payload, so no rule was evaluated: %v", event, err)
+	}
+	payload, cwd, err := a.Normalize(event, data)
+	if err != nil {
+		return failOpen("handrail: could not parse the %s payload, so no rule was evaluated: %v", event, err)
+	}
+	// The payload names the directory the event happened in; the process's own is
+	// the fallback for a harness that leaves it out. That is process state rather
+	// than payload, so it is answered here and not in Normalize.
+	if !filepath.IsAbs(cwd) {
+		if cwd, err = os.Getwd(); err != nil {
+			return failOpen("handrail: no working directory, so no rule was evaluated: %v", err)
 		}
 	}
-	return a.Deliver(event,
-		fmt.Sprintf("handrail: could not read the %s payload, so no rule was evaluated: %v", event, err),
-		false, stdout, stderr)
+	rs := rule.Load(cwd)
+	matched, outcome := rs.Evaluate(payload)
+	return a.Deliver(event, agentMessage(rs, matched), outcome == rule.Block, stdout, stderr)
 }
 
 // agentMessage is the wire format the hook path delivers: everything the agent
@@ -934,14 +939,7 @@ func printRuleset(w io.Writer, rules []*rule.Rule) error {
 			status = "disabled"
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			r.Tier, r.Name, orDefault(r.Event, "-"), orDefault(r.Kind, "*"), r.Action, status)
+			r.Tier, r.Name, cmp.Or(r.Event, "-"), cmp.Or(r.Kind, "*"), r.Action, status)
 	}
 	return tw.Flush()
-}
-
-func orDefault(s, fallback string) string {
-	if s == "" {
-		return fallback
-	}
-	return s
 }

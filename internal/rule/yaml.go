@@ -274,17 +274,15 @@ func closingQuote(s string) int {
 }
 
 // unquote resolves the two quoting styles the rule format needs. s is the
-// quoted value with nothing after the closing quote.
+// quoted value with nothing after the closing quote, so its first byte is one
+// of the two quotes and there is no third style to fall through to.
 func unquote(s string) (string, error) {
-	switch s[0] {
-	case '\'':
+	if s[0] == '\'' {
 		return strings.ReplaceAll(s[1:len(s)-1], "''", "'"), nil
-	case '"':
-		v, err := strconv.Unquote(s)
-		if err != nil {
-			return "", errors.New("invalid quoted value")
-		}
-		return v, nil
 	}
-	return s, nil
+	v, err := strconv.Unquote(s)
+	if err != nil {
+		return "", errors.New("invalid quoted value")
+	}
+	return v, nil
 }

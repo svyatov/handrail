@@ -20,6 +20,9 @@ _Avoid_: hook, policy, check
 Where a rule lives and whom it applies to. Three tiers: Global (user-level, all projects), Project-shared (committed to the repo), Project-personal (local, gitignored). Precedence is most specific wins: Global < Project-shared < Project-personal. Tiers are convenience layering, not a security boundary.
 _Avoid_: scope, level
 
+**Project root**:
+The directory a working directory's project tiers are discovered at and its Trust grant is keyed by: the repo root, or the working directory itself outside a repo, with symlinks resolved so that one project has one identity.
+
 **Shadowing**:
 A rule file in a higher-precedence tier replacing a same-named rule in a lower tier wholesale. There is no field-level merging; the shadowing file is the effective rule.
 
@@ -31,7 +34,11 @@ _Avoid_: conflating with the rules that match one event, which is one event's ma
 The selecting half of a rule: an event name, an optional tool kind, and a list of conditions.
 
 **Condition**:
-One field test inside a matcher: a single operator applied to one canonical payload field. Conditions AND together; a one-level any group expresses OR.
+One entry of a matcher's condition list: one or more Terms, which OR together. Conditions AND together, so a matcher selects only when every one of them is satisfied. A condition written as a bare field test is a one-Term condition; `any:` is how a rule file writes more than one.
+
+**Term**:
+One field test: a single operator applied to one canonical payload field.
+_Avoid_: condition, when the single field test is meant
 
 **Event model**:
 The harness-neutral set of lifecycle events rules are written against.

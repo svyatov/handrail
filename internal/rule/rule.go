@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -56,24 +57,21 @@ type Term struct {
 	line  int
 }
 
-// Events lists the six core events, in the order sync writes hook entries for
-// them. Only sync needs the list; it is a function rather than a package
-// variable so the hook path pays no startup cost for a slice it never reads.
-func Events() []string {
-	return []string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop"}
-}
+// events holds the six core events, in the order sync writes hook entries for
+// them. The hook path pays for every byte of startup work, so this is an array
+// of constants: static data the linker lays out, with no init to run.
+var events = [...]string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop"}
 
-// These four sets are switches rather than package-level maps so that nothing
-// runs before main: the hook path pays for every byte of startup work.
+// Events lists the six core events. Only sync needs the list, and it gets a
+// copy so no caller can reorder the array IsEvent reads.
+func Events() []string { return slices.Clone(events[:]) }
 
 // IsEvent reports whether name is one of the six core events.
-func IsEvent(name string) bool {
-	switch name {
-	case "PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop":
-		return true
-	}
-	return false
-}
+func IsEvent(name string) bool { return slices.Contains(events[:], name) }
+
+// The three sets below stay switches: each is written down once, so unlike the
+// events there is no second copy for it to drift from. Switch or array, the
+// rule is the same one: nothing may run before main.
 
 // IsKind reports whether name is a canonical tool kind.
 func IsKind(name string) bool {

@@ -108,13 +108,22 @@ func Load(cwd string) *Ruleset {
 	return rs
 }
 
+// The two directory names every path in this package is built from: excludeLine
+// and the walk's skip are spelled from them rather than repeating the literals.
+// The CLI's own messages name the same paths in prose, so a rename is still a
+// grep, not a one-line edit.
+const (
+	sharedName = ".handrail"
+	localName  = "local"
+)
+
 // sharedDir is the Project-shared tier's directory, at the project root.
-func sharedDir(root string) string { return filepath.Join(root, ".handrail") }
+func sharedDir(root string) string { return filepath.Join(root, sharedName) }
 
 // LocalDir is the Project-personal tier's directory, inside the shared one so a
 // single exclude line keeps it out of version control. Exported for import,
 // which writes into the tier without loading it.
-func LocalDir(root string) string { return filepath.Join(sharedDir(root), "local") }
+func LocalDir(root string) string { return filepath.Join(sharedDir(root), localName) }
 
 // configDir is the Global tier's directory: XDG on every Unix platform,
 // including macOS, following the git and gh dotfiles precedent rather than
@@ -155,7 +164,7 @@ func load(dir string, skipLocal bool) ([]*Rule, []Problem) {
 			return nil
 		}
 		if d.IsDir() {
-			if skipLocal && d.Name() == "local" && filepath.Dir(p) == dir {
+			if skipLocal && d.Name() == localName && filepath.Dir(p) == dir {
 				return fs.SkipDir
 			}
 			return nil
