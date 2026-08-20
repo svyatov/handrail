@@ -108,15 +108,17 @@ func Load(cwd string) *Ruleset {
 	return rs
 }
 
-// The project tiers' directory names, written once so that excludeLine and the
-// walk's skip cannot drift from the paths they are meant to describe.
+// The two directory names every path in this package is built from: excludeLine
+// and the walk's skip are spelled from them rather than repeating the literals.
+// The CLI's own messages name the same paths in prose, so a rename is still a
+// grep, not a one-line edit.
 const (
-	dirName   = ".handrail"
-	localName = "local"
+	sharedName = ".handrail"
+	localName  = "local"
 )
 
 // sharedDir is the Project-shared tier's directory, at the project root.
-func sharedDir(root string) string { return filepath.Join(root, dirName) }
+func sharedDir(root string) string { return filepath.Join(root, sharedName) }
 
 // LocalDir is the Project-personal tier's directory, inside the shared one so a
 // single exclude line keeps it out of version control. Exported for import,

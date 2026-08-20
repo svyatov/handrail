@@ -11,7 +11,7 @@ import (
 
 // excludeLine keeps the Project-personal tier out of version control. Git wants
 // forward slashes here whatever the platform, so it is not filepath.Join.
-const excludeLine = dirName + "/" + localName + "/"
+const excludeLine = sharedName + "/" + localName + "/"
 
 // readExclude reads root's exclude file and names it. Outside a git working
 // tree there is no such file, and the empty path says so: that is not the same

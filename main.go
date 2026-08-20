@@ -610,7 +610,7 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	failOpen := func(format string, args ...any) int {
 		return a.Deliver(event, fmt.Sprintf(format, args...), false, stdout, stderr)
 	}
-	unreadable := "handrail: could not read the %s payload, so no rule was evaluated: %v"
+	const unreadable = "handrail: could not read the %s payload, so no rule was evaluated: %v"
 
 	data, err := io.ReadAll(stdin)
 	if err != nil {

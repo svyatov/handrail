@@ -58,8 +58,8 @@ type Term struct {
 }
 
 // events holds the six core events, in the order sync writes hook entries for
-// them. An array of constants is static data, so nothing runs before main to
-// build it: the hook path pays for every byte of startup work.
+// them. The hook path pays for every byte of startup work, so this is an array
+// of constants: static data the linker lays out, with no init to run.
 var events = [...]string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop"}
 
 // Events lists the six core events. Only sync needs the list, and it gets a
@@ -69,8 +69,9 @@ func Events() []string { return slices.Clone(events[:]) }
 // IsEvent reports whether name is one of the six core events.
 func IsEvent(name string) bool { return slices.Contains(events[:], name) }
 
-// The three sets below are switches rather than package-level maps for the same
-// reason: nothing may run before main.
+// The three sets below stay switches: each is written down once, so unlike the
+// events there is no second copy for it to drift from. Switch or array, the
+// rule is the same one: nothing may run before main.
 
 // IsKind reports whether name is a canonical tool kind.
 func IsKind(name string) bool {
