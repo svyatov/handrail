@@ -92,13 +92,17 @@ func IsField(name string) bool {
 	return false
 }
 
+// operators is the condition vocabulary, and a list rather than a switch so a
+// test can walk it. Parsing an operator is only half of supporting one: the
+// other half is Term.matches, whose switch has no default and cannot have one
+// that fails loudly on the hot path. A seventh operator added here alone would
+// parse clean, pass check, and then never match, or, negated, always match.
+// Walking this list is what turns that into a test failure.
+var operators = []string{"matches", "contains", "equals", "starts_with", "ends_with", "glob"}
+
 // isOperator reports whether key is a condition operator, negated or not.
 func isOperator(key string) bool {
-	switch strings.TrimPrefix(key, "not_") {
-	case "matches", "contains", "equals", "starts_with", "ends_with", "glob":
-		return true
-	}
-	return false
+	return slices.Contains(operators, strings.TrimPrefix(key, "not_"))
 }
 
 // Parse reads one rule file. name is the rule's identity, the file's basename
