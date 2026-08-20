@@ -105,7 +105,7 @@ Hardcoded in Go per Adapter, next to its translation knowledge. Per-event: exist
 | Context injection | Yes | Yes (`additionalContext`) |
 | Transcript access | Yes (`transcript_path`, written asynchronously, tail may lag) | Yes (`transcript_path`) |
 | Fail-open on hook error | Yes (documented) | Yes |
-| Tool names on the wire | `Bash`, `Edit`/`Write`, `Read`, `mcp__<server>__<tool>` | The same, plus `apply_patch` for every file edit, whose whole edit rides in `tool_input.command` |
+| Tool names on the wire | `Bash`, `PowerShell`, `Edit`/`Write`, `Read`, `mcp__<server>__<tool>`. `PowerShell` is a `shell` kind carrying its command in `tool_input.command` like `Bash`; it is opt-in on Linux and macOS via `CLAUDE_CODE_USE_POWERSHELL_TOOL` | The same, plus `apply_patch` for every file edit, whose whole edit rides in `tool_input.command` |
 | Config sync writes | `~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR/settings.json` where that is set | `~/.codex/hooks.json`, or `$CODEX_HOME/hooks.json` where that is set |
 | Known bypasses | `disableAllHooks`, cloud sessions | an enterprise `allow_managed_hooks_only` requirement. `--dangerously-bypass-hook-trust` skips the trust review rather than the hooks, and `codex exec --ignore-rules` bypasses execpolicy, which costs a promoted rule (section 5) its backstop but leaves the hook path intact |
 

@@ -136,6 +136,12 @@ func (a Adapter) Normalize(event string, data []byte) (rule.Payload, string, err
 // on the wire: its hooks reference documents Bash, apply_patch, and
 // mcp__<server>__<tool>, and says a model calling Edit or Write still arrives
 // as apply_patch. A name only one harness emits costs the other nothing.
+//
+// PowerShell is a shell for the same reason Bash is, and its command rides in
+// tool_input.command like Bash's: Claude Code's tools reference says so
+// outright. It is opt-in on Linux and macOS rather than absent there, and a
+// shell rule that stops firing the moment a user opts in is the failure this
+// table exists to prevent.
 func classify(tool string) string {
 	if strings.HasPrefix(tool, "mcp__") {
 		return "mcp"
@@ -143,7 +149,7 @@ func classify(tool string) string {
 	switch tool {
 	case "":
 		return ""
-	case "Bash":
+	case "Bash", "PowerShell":
 		return "shell"
 	case "Edit", "Write", "NotebookEdit", "apply_patch":
 		return "file_edit"
