@@ -458,10 +458,22 @@ Four corpora, read as source.
 |---|---|---|---|
 | kenryu42/cc-safety-net | 60 hardcoded ids | 0 | resolves `.git` and cwd at runtime, for `rm -rf` classification |
 | Dicklesworthstone/destructive_command_guard | 99 packs, several hundred rules | 0 | no; the user enables vendor-scoped packs by hand |
-| karanb192/claude-code-hooks | ~130 across 6 guard plugins | 0 | `git branch --show-current`, compared to a hardcoded list |
+| karanb192/claude-code-hooks | ~105 across 6 guard plugins | 0 enforcing; `dead-rules-audit` derives non-enforcing ones from `CLAUDE.md` | yes: `git branch --show-current` against a hardcoded list, `git symbolic-ref refs/remotes/origin/HEAD` in the PR plugin, and a `CLAUDE.md` walk-up in the audit plugin |
 | nizos/probity | 0 built-in rules, 5 rule factories | n/a, everything is user-authored | no |
 
-The headline is uniform and quantitative: **no tool in the field derives a rule by reading a repository, and the count of built-in repo-derived rules across all four corpora is zero.** Every repo-specific rule that exists in the field is one a human wrote by hand or one a human opted into by hand. The closest anything comes is `destructive_command_guard`, which ships ninety-nine vendor-scoped packs and makes the user enable the ones their repo needs. That is the same question this ticket asks, answered with a config file instead of a read.
+The headline is quantitative: **the count of built-in, repo-derived, enforcing rules across all four corpora is zero.** Every repo-specific rule that *blocks* anything in the field is one a human wrote by hand or one a human opted into by hand. `destructive_command_guard` comes closest on the opt-in axis, shipping ninety-nine vendor-scoped packs and making the user enable the ones their repo needs: the same question this ticket asks, answered with a config file instead of a read.
+
+The qualifier "enforcing" is load-bearing, and it is the one place a first pass over this material gets the answer wrong. There is exactly one tool in the field that derives its rules by reading the repository, and it is worth stating precisely because it validates section 2.14 and bounds it at the same time. `claude-code-hooks`' `dead-rules-audit` plugin walks up from the working directory for `CLAUDE.md` or `.claude/CLAUDE.md` (forty levels, then `~/.claude/CLAUDE.md`), extracts directives with
+
+```js
+const DIRECTIVE_RE = /\b(always|never|do not|don'?t|must|should|prefer|avoid|use|don'?t use|ensure|require[sd]?|no |only |use only|make sure|keep|write|run)\b/i;
+```
+
+and scores each one for compliance against the session's edits. That is signal 14, implemented, in production, by someone else. But it is a **scorecard, not a guard**: it registers on `SessionStart`, `PostToolUse`, and `SessionEnd`, has no `permissionDecision` anywhere, and never blocks. Its own output tells you why, rendering a bucket labelled
+
+> `'│ Suggested promotions (Claude ignores these: make them deterministic):'`
+
+for any rule violated at least three times and at least half the time it was judged. Its skill instructs the agent to suggest "a PreToolUse/PostToolUse hook or a lint rule" for those. So the one tool that reads repo prose to derive rules concludes by telling the user to go write the enforcing version by hand, which is precisely the gap D3 proposes to close. That is a better result for this ticket than a clean zero would have been: the reading step is proven to work, and the step nobody has built is the one that turns the reading into an enforceable rule.
 
 ### kenryu42/cc-safety-net
 
@@ -534,9 +546,9 @@ A deploy-environment policy, living in `examples/` rather than in the binary, pr
 
 ### karanb192/claude-code-hooks
 
-Six guard plugins read as source: `block-dangerous-commands`, `git-safety`, `config-guard`, `protect-secrets`, `protect-tests`, `format-code`. About 130 rules between them, each an entry in a hardcoded JavaScript array with a `level` of `critical`, `high`, or `strict` selected by a `HOOK_SAFETY_LEVEL` dial.
+Six guard plugins read as source: `block-dangerous-commands`, `git-safety`, `config-guard`, `protect-secrets`, `protect-tests`, `format-code`. About 105 rules between them (21, 14, 8, 58, 4 respectively, plus `format-code`'s table), each an entry in a hardcoded JavaScript array with a `level` of `critical`, `high`, or `strict` selected by a `HOOK_SAFETY_LEVEL` dial.
 
-**Repo-derived rules: zero of about 130.** Not "few". Zero. Every literal in all six files is a POSIX or git or `gh` or docker command name, a well-known credential filename, an ecosystem-wide test convention, or Claude Code's own config layout. No lockfile name, no project source directory, no linter config, nowhere. The only filesystem reads in the six plugins are the hook's own log directory, an existence check on the file just edited, and symlink resolution of a target path.
+**Repo-derived rules among the enforcing six: zero.** Not "few". Zero. Every literal in all six files is a POSIX or git or `gh` or docker command name, a well-known credential filename, an ecosystem-wide test convention, or Claude Code's own config layout. No lockfile name, no project source directory, no linter config, nowhere. The only filesystem reads in the six plugins are the hook's own log directory, an existence check on the file just edited, and symlink resolution of a target path. (The repo's *non-blocking* plugins do read the repo. `dead-rules-audit` derives its whole ruleset from `CLAUDE.md`, discussed above; `context-hogs` and `bounty-board` carry hardcoded lockfile and vendor-directory lists of exactly the kind sections 2.1 and 2.2 propose deriving, and get them wrong in the predictable way: `context-hogs`' lockfile regex has no `bun.lockb`, `uv.lock`, `Podfile.lock`, or `flake.lock`.)
 
 That is F17's clearest confirmation, and three of the plugins fail in ways that are directly instructive.
 
@@ -559,7 +571,9 @@ function getCurrentBranch() {
     }
 ```
 
-There is no `git symbolic-ref refs/remotes/origin/HEAD`, no `gh api ... default_branch`, and no config for the list. Two consequences, both of which handrail would inherit and cannot even mitigate: a repo whose default branch is `develop` or `trunk` gets no protection at all, and the by-name rule `/\bgit\s+push\b.*\bmain\b/` fires on a feature branch called `main-fix`. Note that the working half of this plugin depends on **running a command at evaluation time**. Handrail's matcher is a pure predicate over payload fields; it does not shell out, and adding that would be a much larger design change than a new field. Rejection 1 is confirmed twice over now: dcg cannot express it and ships both spellings, claude-code-hooks expresses it only by executing git.
+There is no `git symbolic-ref refs/remotes/origin/HEAD`, no `gh api ... default_branch`, and no config for the list, in this plugin. Two consequences: a repo whose default branch is `develop` or `trunk` gets no protection at all, and the by-name rule `/\bgit\s+push\b.*\bmain\b/` fires on a feature branch called `main-fix`.
+
+Worth being precise about the scope of that claim, because a sibling plugin in the same repo *does* resolve the default branch properly. `pr-provenance-stamp.js:388` tries `git symbolic-ref refs/remotes/origin/HEAD` first and only then falls back to `bases.push('origin/main', 'origin/master', 'main', 'master')`. So the default branch is not an unknowable fact. It is a fact obtainable **only by executing a command at evaluation time**, and that is the line handrail's design draws: the matcher is a pure predicate over payload fields, it does not shell out, and giving it a subprocess is a far larger change than adding a field. Rejection 1 therefore rests on handrail's own evaluation model rather than on the fact being unavailable in principle, which is a narrower and more honest claim than the one I would have made from the guard plugins alone. dcg cannot express it and ships both spellings; claude-code-hooks gets it right only where it is free to run git.
 
 **`format-code.js` is rejection 2 from the acting side.** Even a plugin whose whole job is to run the formatter does not detect which one the repo uses:
 
@@ -704,7 +718,7 @@ Seventeen signals, nineteen rules, every one validated with `handrail check` and
 11. **Tag-triggered release plus a publishable manifest.** One rule: no tags, no publish. Section 2.11.
 12. **`.handrail/` exists.** One rule: the guardrails are not the agent's to edit. Section 2.12.
 13. **Workspace manifest.** One rule: workspace installs must name a package. Section 2.13.
-14. **A constraint stated in repo prose.** Two rules here, and in general as many as the prose states. Highest precision in the set. Sections 2.14, 2.15.
+14. **A constraint stated in repo prose.** Two rules here, and in general as many as the prose states, filtered by one test `dead-rules-audit` arrived at independently: **transcribe prohibitions, skip requirements.** "Never call `os.Exit` outside `main.go`" is a predicate over one event; "always run the tests first" is a claim about a sequence and belongs in rejection 3. Highest precision in the set. Sections 2.14, 2.15.
 15. **Terraform state in the tree.** One rule: plan only. Section 2.16.
 16. **`.mcp.json` naming a production server.** One rule: that server is read-only. Section 2.17.
 17. **Migrations directory.** One rule, at `warn` only, because create and modify are indistinguishable. Section 2.18.
@@ -713,9 +727,16 @@ Seventeen signals, nineteen rules, every one validated with `handrail check` and
 
 Thirteen. Each was carried as far as writing the rule; each failed there rather than in the abstract.
 
-1. **Protected branch and default branch name.** No canonical field carries the current branch, and `git push` normally omits it, so the rule would have to read a value that is not in the payload. Corroborated twice in the field: dcg ships both `push-main` and `push-master` because it cannot know which, and claude-code-hooks gets the working half only by shelling out to `git branch --show-current` and comparing against a hardcoded `['main', 'master']`. Handrail's matcher is a pure predicate over payload fields and does not execute anything, so the second route is closed by design, and the first has the false positive that a branch named `main-fix` trips it. (Force-push rules are writable but universal: the protection state does not change them, so this is not a repo signal.)
+1. **Protected branch and default branch name.** No canonical field carries the current branch, and `git push` normally omits it, so the rule would have to read a value that is not in the payload. Corroborated twice in the field: dcg ships both `push-main` and `push-master` because it cannot know which, and claude-code-hooks gets the working half only by shelling out to `git branch --show-current` against a hardcoded `['main', 'master']`. The branch *is* resolvable by command (`pr-provenance-stamp.js:388` does it properly with `git symbolic-ref refs/remotes/origin/HEAD`), so this rejection rests on handrail's evaluation model, not on the fact being unknowable: the matcher is a pure predicate over payload fields and does not execute anything. The pattern-only route that remains has the false positive that a branch named `main-fix` trips it. (Force-push rules are writable but universal: the protection state does not change them, so this is not a repo signal.)
 2. **Formatter configured.** The implied rule is "block edits that bypass the formatter". There is no field for formatted-ness, and no operator runs a program. `content` carries the edit's text, not a verdict on it. Contrast 2.3: a *suppression comment* is literal text and therefore writable; a *lint failure* is not. Corroborated by the one tool that does act on formatting: `format-code.js` picks its formatter from a hardcoded extension table and never reads `.prettierrc`, `ruff.toml`, or a `format` script, because the signal implies an action ("run this program") rather than a matcher.
-3. **The project's check command as a precondition for committing.** probity's `requireCommand({ before: /git commit/, command: /npm run checks/, after: { kind: 'write' } })` needs `ctx.history()`: it finds the last matching command event and scans forward for an invalidating write. Handrail's matcher sees exactly one event and keeps no state between them. The stateless approximation, a `PostToolUse` warn on every source edit, is noise the agent tunes out, and `PostToolUse` cannot block anyway. Rejected as a *matcher*; it may be a feature, but it is not a rule.
+3. **The project's check command as a precondition for committing.** probity's `requireCommand({ before: /git commit/, command: /npm run checks/, after: { kind: 'write' } })` needs `ctx.history()`: it finds the last matching command event and scans forward for an invalidating write. Handrail's matcher sees exactly one event and keeps no state between them. The stateless approximation, a `PostToolUse` warn on every source edit, is noise the agent tunes out, and `PostToolUse` cannot block anyway. Rejected as a *matcher*; it may be a feature, but it is not a rule. The field agrees in a source comment, which is as direct a confirmation as this research produced. `dead-rules-audit` classifies exactly this shape as unjudgeable and short-circuits it:
+
+```
+//   - non-prohibitions ("Always run tests", "Prefer X over Y"): a diff can't
+//     prove they were followed or broken;
+```
+
+That is the tool which reads `CLAUDE.md` to derive rules, declining to derive this one, for the same reason. Note the boundary it draws is prohibition versus requirement, and it lines up exactly with handrail's: a prohibition is a predicate over one event, a requirement is a claim about a sequence.
 4. **Runtime or toolchain version pin.** `.nvmrc` implies "use Node 22", which has no field. `command contains "node"` says nothing about what the shell resolves.
 5. **Coverage threshold in CI.** Nothing an event carries expresses coverage.
 6. **`.gitignore` translated wholesale into path globs.** The dialects genuinely differ: gitignore has `!` negation lines, leading-slash anchoring, and directory-versus-file semantics, while handrail's globs are `path.Match` plus `**`, anchored to the whole field, with `^` negating a `[...]` class and `!` an ordinary member (spec section 2, and `skills/add/SKILL.md` calls out the `!` divergence explicitly). A mechanical translation changes meaning silently, which is the worst failure mode available. Only bare directory-name entries survive, and those are already signal 2.
