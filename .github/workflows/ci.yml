@@ -58,7 +58,7 @@ jobs:
       # `task lint` and leave the formatter check to a second spelling of it.
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v2.12.2
+          version: v2.13.2
           install-only: true
       - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
 
