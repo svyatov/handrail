@@ -19,7 +19,7 @@ identifiers rather than inventing synonyms.
 
 ## Setup
 
-You need [Go](https://go.dev/dl/) at the version in `go.mod`, currently 1.26.6,
+You need [Go](https://go.dev/dl/) at the version in `go.mod`, currently 1.27.1,
 and [Task](https://taskfile.dev/installation/). Then:
 
 ```bash
@@ -29,7 +29,7 @@ task build
 ```
 
 Linting additionally needs [golangci-lint](https://golangci-lint.run/docs/welcome/install/)
-v2.12.2, and `task release-check` needs [GoReleaser](https://goreleaser.com/install/).
+v2.13.2, and `task release-check` needs [GoReleaser](https://goreleaser.com/install/).
 Neither is in `go.mod` on purpose: a tool directive would put roughly 200 modules
 into a `go.sum` whose first promise is zero third-party dependencies.
 
