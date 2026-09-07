@@ -1,0 +1,55 @@
+name: CodeQL
+
+# Advanced setup rather than the default one, for a single reason: default
+# setup never runs on a pull request Dependabot opened, and the ruleset requires
+# both Analyze checks, so every Dependabot PR sat blocked until a maintainer
+# pushed to it. A workflow file runs on every pull_request event, whoever
+# opened it. The categories below are the ones default setup used, so the
+# alert history on main carries over.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1" # weekly, as default setup was
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    # The job name is the status check the ruleset names, so it has to stay
+    # "Analyze (<language>)".
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write # upload the SARIF results
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          # Go has no build-mode none yet, and autobuild needs the toolchain
+          # go.mod names to be installed before init.
+          - language: go
+            build-mode: autobuild
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: matrix.language == 'go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+      - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          category: "/language:${{ matrix.language }}"
