@@ -2,6 +2,7 @@
 name: analyze
 description: Mine the current session for behaviors worth preventing and propose handrail Rules for them, with transcript evidence and per-rule approval. Use when the user wants to turn this session's corrections into guardrails, or says "analyze this session", "what should I have blocked", "make that a rule so it never happens again".
 license: MIT
+compatibility: Requires the handrail binary. Transcript lookup supports Claude Code and Codex CLI.
 ---
 
 # Analyze this session for guardrails
@@ -51,7 +52,8 @@ ones.
 
 **No transcript at all** (harness without transcript access, or the file is
 missing): say so, and offer the fallback: describe the incident in words to
-`/handrail:add`, which writes a rule from a plain-language description. Do not
+the handrail `add` skill (`/handrail:add` in Claude Code, a `$` mention in
+Codex), which writes a rule from a plain-language description. Do not
 guess at a transcript path.
 
 ## 3. Read what is already covered
@@ -113,7 +115,8 @@ For each candidate, show:
    radius honestly; a matcher that is broader than the incident is a decision
    the user makes, not one you make quietly.
 
-Then ask for approval on that rule. Per rule, not in a batch: approving one is
+Then ask for approval on that rule (with `AskUserQuestion` where the harness has
+it: approve or drop). Per rule, not in a batch: approving one is
 not approving the next. Approved means write it; anything else means drop it and
 move to the next candidate. Never write a file before its own approval.
 
