@@ -2,6 +2,7 @@
 name: add
 description: Turn a plain-language guardrail into a handrail Rule file, validate it, and relay the native permission entry handrail recommends. Use when the user wants to add, write, or create a handrail rule, or says "never let the agent ...", "block ...", "warn me when ..." and wants it enforced from now on.
 license: MIT
+compatibility: Requires the handrail binary, on PATH or under $XDG_DATA_HOME/handrail/bin. The handrail plugin's SessionStart hook installs it.
 ---
 
 # Add a handrail Rule
@@ -29,6 +30,9 @@ the tier.
   lets it proceed and injects the message. Default to `warn` unless the user
   says never, or the action is destructive.
 - **Tier**: see step 4.
+
+When action or tier is still open, ask them as one multiple-choice question
+(`AskUserQuestion` in Claude Code), with the default listed first.
 
 ## 3. Write the Matcher
 
