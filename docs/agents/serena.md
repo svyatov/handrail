@@ -39,7 +39,7 @@ takes precedence over `project.yml` key by key, and Serena does not regenerate i
   the built binary, `cover.out`, `dist/`, and the worktree directory. The symbol index
   reads only `.go` files, of which this repo has fifteen.
 - **`excluded_tools`**. The `claude-code` context already drops the duplicated tools.
-- **`initial_prompt` and `memories/`**. `CLAUDE.md`, `CONTEXT.md`, and the rest of
+- **`initial_prompt` and `memories/`**. `CLAUDE.md`, `GLOSSARY.md`, and the rest of
   `docs/agents/` carry the vocabulary, the source-of-truth pointers, and the commands.
   Filling Serena's knowledge layer would duplicate them.
 - **`activation_command` and `ls_specific_settings`**. Serena honours both only for a

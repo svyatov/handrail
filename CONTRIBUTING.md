@@ -14,7 +14,7 @@ Two documents decide whether a change is acceptable:
   third-party runtime dependencies, and `os.Exit` only in `main.go`. Both are
   checked by the linter, so breaking either fails CI rather than review.
 
-[`CONTEXT.md`](CONTEXT.md) defines the vocabulary. Use its words for types and
+[`GLOSSARY.md`](GLOSSARY.md) defines the vocabulary. Use its words for types and
 identifiers rather than inventing synonyms.
 
 ## Setup

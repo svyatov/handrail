@@ -22,7 +22,7 @@ change is invisible to the spec.
 ## Vocabulary and decisions
 
 <!--
-CONTEXT.md if this introduces or renames a term. A new docs/adr/ entry if this
+GLOSSARY.md if this introduces or renames a term. A new docs/adr/ entry if this
 settles a question a future reader would otherwise reopen. Say "neither" if
 neither applies.
 -->
