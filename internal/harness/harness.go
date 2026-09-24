@@ -5,9 +5,11 @@ package harness
 import (
 	"encoding/json"
 	"io"
+	"path"
 	"strings"
 
 	"github.com/svyatov/handrail/internal/rule"
+	"github.com/svyatov/handrail/internal/shell"
 )
 
 // Adapter is one harness's translation knowledge: where its user-level config
@@ -121,26 +123,47 @@ type hookInput struct {
 }
 
 // Normalize turns a harness payload for event into the canonical payloads the
-// matcher evaluates, one today, and reports the cwd tier discovery should start from.
+// matcher evaluates, one per edit a patch makes, and reports the cwd tier
+// discovery should start from.
 func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, error) {
 	var in hookInput
 	if err := json.Unmarshal(data, &in); err != nil {
 		return nil, "", err
 	}
 	p := rule.Payload{Event: event, Kind: classify(in.ToolName)}
+	var edits []rule.Payload
 	switch p.Kind {
 	case "shell":
 		set(&p, "command", in.ToolInput, "command")
+		// Codex applies a patch heredoc sent through the shell itself, after
+		// this hook and with no second one, so this is the only place its
+		// edits are seen. Claude Code runs the same line as a program.
+		if line, ok := in.ToolInput["command"].(string); ok && a.Name == "codex" {
+			if dir, patch, ok := shell.Patch(line); ok {
+				edits = patchPayloads(event, dir, patch)
+			}
+		}
 	case "file_edit":
 		set(&p, "path", in.ToolInput, "file_path", "notebook_path")
 		set(&p, "content", in.ToolInput, "content", "new_string", "new_source")
+		set(&p, "removed_content", in.ToolInput, "old_string")
+		// content stays absent when empty, so the one fact that absence would
+		// hide gets its own field. With content absent, a text key the call
+		// carries as a string carries "": the call writes no text.
+		for _, k := range []string{"content", "new_string", "new_source"} {
+			if _, ok := in.ToolInput[k].(string); ok && p.Has("path") && !p.Has("content") {
+				p.SetField("writes_empty", "true")
+			}
+		}
 		// Codex passes apply_patch as a shell-like tool, so the whole edit
 		// arrives as one patch envelope under command, which its hooks reference
 		// states outright: "Bash and apply_patch use tool_input.command". Left
 		// unread, every path and content condition would silently never fire on
 		// that harness's only editing tool.
 		if patch, ok := in.ToolInput["command"].(string); ok && !p.Has("path") {
-			unwrapPatch(&p, patch)
+			if edits := patchPayloads(event, "", patch); len(edits) > 0 {
+				return edits, in.CWD, nil
+			}
 		}
 	case "file_read":
 		set(&p, "path", in.ToolInput, "file_path")
@@ -151,7 +174,7 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		}
 	}
 	p.SetField("prompt", in.Prompt)
-	return []rule.Payload{p}, in.CWD, nil
+	return append([]rule.Payload{p}, edits...), in.CWD, nil
 }
 
 // classify assigns the canonical tool kind. An event without a tool has no kind,
@@ -184,46 +207,75 @@ func classify(tool string) string {
 	return "other"
 }
 
-// unwrapPatch fills the file_edit fields a patch envelope carries: the first
-// file it names, and the lines that file adds. It stops at the second file,
-// because path and content must describe the same edit: a content condition
-// answering for one file while path answers for another is how a guardrail
-// blocks the wrong thing.
+// patchPayloads reads a patch envelope as one file_edit payload per file
+// section, each holding the file it names and the lines it adds. path and
+// content must describe the same edit: a content condition answering for one
+// file while path answers for another is how a guardrail blocks the wrong
+// thing (ADR 0014).
 //
-// ponytail: first file only, because the canonical payload has one path field.
-// A per-file payload is a spec change, not an implementation one.
-func unwrapPatch(p *rule.Payload, patch string) {
-	var added []string
-	var found bool
-	for line := range strings.SplitSeq(patch, "\n") {
-		if path, ok := patchPath(line); ok {
-			if found {
-				break
-			}
-			found = true
-			p.SetField("path", path)
-			continue
+// A rename is one edit: its Move to: header adds the destination to the
+// section it sits in. A relative path is joined to dir, the directory Codex
+// applies the patch in when a shell call cds there first.
+func patchPayloads(event, dir, patch string) []rule.Payload {
+	var edits []rule.Payload
+	var paths, added, removed []string
+	var deletes bool
+	done := func() {
+		if paths == nil {
+			return
 		}
-		if found && strings.HasPrefix(line, "+") {
-			added = append(added, line[1:])
+		p := rule.Payload{Event: event, Kind: "file_edit"}
+		p.SetRename(paths[0], paths[len(paths)-1])
+		p.SetField("content", strings.Join(added, "\n"))
+		p.SetField("removed_content", strings.Join(removed, "\n"))
+		if deletes {
+			p.SetField("deletes", "true")
+		} else if len(added) == 0 && p.Has("path") {
+			p.SetField("writes_empty", "true")
+		}
+		edits = append(edits, p)
+		paths, added, removed = nil, nil, nil
+	}
+	for line := range strings.SplitSeq(patch, "\n") {
+		verb, file, ok := patchHeader(line)
+		if dir != "" && file != "" && !path.IsAbs(file) {
+			file = path.Join(dir, file)
+		}
+		switch {
+		case !ok:
+			if paths == nil {
+				continue
+			}
+			if strings.HasPrefix(line, "+") {
+				added = append(added, line[1:])
+			} else if strings.HasPrefix(line, "-") {
+				removed = append(removed, line[1:])
+			}
+		case verb == "Move to:":
+			paths = append(paths, file)
+		default:
+			done()
+			paths, deletes = []string{file}, verb == "Delete File:"
 		}
 	}
-	p.SetField("content", strings.Join(added, "\n"))
+	done()
+	return edits
 }
 
-// patchPath reads the file a patch header names. The headers sit at column 0,
-// so an indented line that looks like one is content, not a header.
-func patchPath(line string) (string, bool) {
+// patchHeader reads a patch header: its verb and the file it names. The
+// headers sit at column 0, so an indented line that looks like one is content,
+// not a header.
+func patchHeader(line string) (verb, file string, ok bool) {
 	rest, found := strings.CutPrefix(line, "*** ")
 	if !found {
-		return "", false
+		return "", "", false
 	}
 	for _, verb := range []string{"Add File:", "Update File:", "Delete File:", "Move to:"} {
-		if path, found := strings.CutPrefix(rest, verb); found {
-			return strings.TrimSpace(path), true
+		if file, found := strings.CutPrefix(rest, verb); found {
+			return verb, strings.TrimSpace(file), true
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 // set copies the first key the tool input actually carries into the canonical

@@ -27,6 +27,38 @@ func Read(line string) (cands [][]string, files []File, ok bool) {
 	return r.cands, r.files, !r.gaveUp
 }
 
+// Patch reads the patch a command line hands to apply_patch in the one form
+// Codex intercepts and applies itself rather than running: apply_patch or
+// applypatch fed a heredoc as the line's only statement, alone or after
+// cd <dir> &&. body is the heredoc as written, since Codex applies it without
+// a shell and nothing in it expands; dir is the cd operand, or empty.
+func Patch(line string) (dir, body string, ok bool) {
+	if !strings.Contains(line, "apply_patch") && !strings.Contains(line, "applypatch") {
+		return "", "", false
+	}
+	f, err := syntax.NewParser().Parse(strings.NewReader(line), "")
+	if err != nil || len(f.Stmts) != 1 {
+		return "", "", false
+	}
+	r, st := reader{text: line}, f.Stmts[0]
+	if and, isList := st.Cmd.(*syntax.BinaryCmd); isList {
+		cd, isCall := and.X.Cmd.(*syntax.CallExpr)
+		if and.Op != syntax.AndStmt || !isCall || len(cd.Args) != 2 || cd.Args[0].Lit() != "cd" || !literal(cd.Args[1]) {
+			return "", "", false
+		}
+		dir, st = r.word(cd.Args[1]), and.Y
+	}
+	call, isCall := st.Cmd.(*syntax.CallExpr)
+	if !isCall || len(call.Args) != 1 || len(st.Redirs) != 1 {
+		return "", "", false
+	}
+	rd := st.Redirs[0]
+	if name := call.Args[0].Lit(); name != "apply_patch" && name != "applypatch" || rd.Op != syntax.Hdoc || rd.Hdoc == nil {
+		return "", "", false
+	}
+	return dir, r.src(rd.Hdoc, rd.Hdoc), true
+}
+
 // File is one file a command's syntax names: the target of a redirect to a
 // file, or a file a listed program writes or reads.
 type File struct {

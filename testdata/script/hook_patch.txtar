@@ -1,0 +1,318 @@
+# A Codex patch is read edit by edit: each file section is its own payload,
+# carrying what that one edit writes, removes, and whether it deletes.
+exec handrail trust
+
+# Each file section answers for itself: the key written into secrets.yml is not
+# read against the path of the .env file edited beside it.
+stdin two-files.json
+exec handrail hook codex PreToolUse
+! stdout 'secret-in-env'
+stdout 'handrail warn: env-edit'
+
+# A rule that matches several edits is delivered once, naming each file.
+stdin two-envs.json
+exec handrail hook codex PreToolUse
+stdout -count=1 'handrail warn: env-edit'
+stdout 'Matched files:\\n  config/.env\\n  deploy/.env'
+
+# A rename is one edit whose path holds both files, so a not_ term on path
+# fires when either one fails it: moving code out of src is caught however the
+# rename is spelled, and the content it adds answers for that same edit.
+stdin rename-out.json
+exec handrail hook codex PreToolUse
+stdout 'handrail warn: stay-in-src'
+
+# The source counts as much as the destination: code moved into src from
+# outside it names a path outside src too.
+stdin rename-in.json
+exec handrail hook codex PreToolUse
+stdout 'handrail warn: stay-in-src'
+
+# ...and a rename that stays inside src is left alone.
+stdin rename-within.json
+exec handrail hook codex PreToolUse
+! stdout .
+! stderr .
+
+# removed_content holds the lines an edit names as removed, on either harness:
+# a patch's - lines, and the old_string of Claude Code's Edit.
+stdin drop-nosec.json
+exec handrail hook codex PreToolUse
+stdout 'handrail warn: keep-nosec'
+
+stdin edit-nosec.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: keep-nosec'
+! stdout 'writes-empty'
+
+# A context line is kept, not removed, so it is not read as removed text.
+stdin keep-nosec.json
+exec handrail hook codex PreToolUse
+! stdout .
+
+# A Delete File: section carries deletes, and only the file it removes does:
+# the edit beside it in the same patch is let through.
+stdin delete.json
+exec sh -c 'handrail hook codex PreToolUse; echo code=$?'
+stdout '^code=2$'
+stderr 'handrail block: no-deletes'
+! stderr 'Matched files'
+! stderr 'writes-empty'
+
+# A call that writes no text carries writes_empty, and its empty content stays
+# absent, so a not_contains rule does not fire on text nobody wrote.
+stdin write-empty.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: writes-empty'
+! stdout 'needs-license'
+
+# A patch edit that only removes lines writes no text, and neither does an
+# added file with no lines.
+stdin patch-empty.json
+exec handrail hook codex PreToolUse
+stdout 'handrail warn: writes-empty'
+stdout 'Matched files:\\n  app.py\\n  empty.txt'
+
+# A call that omits the text it writes says nothing about it either way.
+stdin write-omitted.json
+exec handrail hook claude PreToolUse
+! stdout 'writes-empty'
+! stdout 'needs-license'
+
+# Codex applies an apply_patch heredoc sent through the shell itself, with no
+# second hook, so the shell call yields that patch's edits beside its command.
+stdin shell-patch.json
+exec handrail hook codex PreToolUse
+stdout 'handrail warn: env-edit'
+stdout 'handrail warn: patch-in-shell'
+
+# After cd <dir> &&, the patch's paths are joined to that directory, as Codex
+# joins them.
+stdin shell-patch-cd.json
+exec handrail hook codex PreToolUse
+stdout 'handrail warn: deploy-env'
+
+# Claude Code runs the same line as a shell program, which edits no file.
+stdin shell-patch.json
+exec handrail hook claude PreToolUse
+! stdout 'env-edit'
+stdout 'handrail warn: patch-in-shell'
+
+# Any other shape is a program Codex runs rather than a patch it applies: a
+# second statement, a connector other than &&, or an argument.
+stdin shell-patch-after.json
+exec handrail hook codex PreToolUse
+! stdout 'env-edit'
+stdin shell-patch-or.json
+exec handrail hook codex PreToolUse
+! stdout 'env-edit'
+stdin shell-patch-arg.json
+exec handrail hook codex PreToolUse
+! stdout 'env-edit'
+
+# A header naming no file leaves path absent, and with it writes_empty: the
+# signal never stands in for a section handrail could not read.
+stdin empty-header.json
+exec handrail hook codex PreToolUse
+! stdout 'writes-empty'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- two-files.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Update File: config/.env\n@@\n+PORT=3000\n*** Add File: secrets.yml\n+api_key: sk-live-1\n*** End Patch\n"}
+}
+-- two-envs.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Update File: config/.env\n@@\n+PORT=3000\n*** Update File: deploy/.env\n@@\n+PORT=4000\n*** End Patch\n"}
+}
+-- drop-nosec.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Update File: app.py\n@@\n-run(cmd)  # nosec\n+run(cmd)\n*** End Patch\n"}
+}
+-- edit-nosec.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Edit",
+  "tool_input": {"file_path": "/repo/app.py", "old_string": "run(cmd)  # nosec", "new_string": "run(cmd)"}
+}
+-- keep-nosec.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Update File: app.py\n@@\n run(cmd)  # nosec\n-x = 1\n+x = 2\n*** End Patch\n"}
+}
+-- delete.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+new\n*** Delete File: docs/old.md\n*** End Patch\n"}
+}
+-- write-empty.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Write",
+  "tool_input": {"file_path": "/repo/main.go", "content": ""}
+}
+-- patch-empty.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Update File: app.py\n@@\n-debug = True\n*** Add File: empty.txt\n*** End Patch\n"}
+}
+-- write-omitted.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Write",
+  "tool_input": {"file_path": "/repo/main.go"}
+}
+-- shell-patch.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {"command": "apply_patch <<'EOF'\n*** Begin Patch\n*** Update File: config/.env\n@@\n+PORT=3000\n*** End Patch\nEOF"}
+}
+-- shell-patch-cd.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {"command": "cd deploy && applypatch <<'EOF'\n*** Begin Patch\n*** Update File: .env\n@@\n+PORT=3000\n*** End Patch\nEOF"}
+}
+-- shell-patch-after.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {"command": "apply_patch <<'EOF'\n*** Begin Patch\n*** Update File: config/.env\n@@\n+PORT=3000\n*** End Patch\nEOF\necho done"}
+}
+-- shell-patch-or.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {"command": "cd deploy || apply_patch <<'EOF'\n*** Begin Patch\n*** Update File: config/.env\n@@\n+PORT=3000\n*** End Patch\nEOF"}
+}
+-- shell-patch-arg.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {"command": "apply_patch --dry-run <<'EOF'\n*** Begin Patch\n*** Update File: config/.env\n@@\n+PORT=3000\n*** End Patch\nEOF"}
+}
+-- empty-header.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Add File:\n*** End Patch\n"}
+}
+-- rename-out.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Update File: src/app.go\n*** Move to: scratch/app.go\n@@\n-package app\n+package scratch\n*** End Patch\n"}
+}
+-- rename-in.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Update File: scratch/app.go\n*** Move to: src/app.go\n@@\n-package scratch\n+package app\n*** End Patch\n"}
+}
+-- rename-within.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Update File: src/app.go\n*** Move to: src/main.go\n@@\n-package app\n+package scratch\n*** End Patch\n"}
+}
+-- .handrail/stay-in-src.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    not_starts_with: src/
+  - field: content
+    contains: package
+---
+Go code stays under src.
+-- .handrail/secret-in-env.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    glob: '**/.env'
+  - field: content
+    contains: sk-live
+---
+Keep live keys out of env files.
+-- .handrail/env-edit.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    glob: '**/.env'
+---
+Edit the example file instead of the real environment.
+-- .handrail/keep-nosec.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: removed_content
+    contains: '# nosec'
+  - field: content
+    not_contains: '# nosec'
+---
+This edit drops a nosec marker.
+-- .handrail/no-deletes.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: deletes
+    equals: true
+---
+Ask before deleting files.
+-- .handrail/writes-empty.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: writes_empty
+    equals: true
+---
+This call leaves text out of the file.
+-- .handrail/needs-license.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    glob: /repo/*.go
+  - field: content
+    not_contains: SPDX
+---
+Go files start with an SPDX line.
+-- .handrail/patch-in-shell.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: apply_patch
+---
+The shell payload stays beside the patch's edits.
+-- .handrail/deploy-env.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    equals: deploy/.env
+---
+The deploy environment is managed elsewhere.
