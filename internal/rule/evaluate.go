@@ -81,13 +81,12 @@ func (p *Payload) SetField(name, value string) bool {
 
 // SetRename fills path with both files a rename names, source then
 // destination, each its own Candidate, so a not_ term on path fires when either
-// one fails it. An empty one is left out, as SetField leaves it, and a file
-// renamed to itself is one path.
+// one fails it. An empty one is left out, as SetField leaves it.
 func (p *Payload) SetRename(from, to string) {
-	p.SetField("path", to)
-	dest := p.fields["path"]
-	if from != to && p.SetField("path", from) {
-		p.fields["path"] = append(p.fields["path"], dest...)
+	p.SetField("path", from)
+	src := p.fields["path"]
+	if p.SetField("path", to) {
+		p.fields["path"] = append(src, p.fields["path"]...)
 	}
 }
 

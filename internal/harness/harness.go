@@ -25,6 +25,9 @@ type Adapter struct {
 	dir     string // user-level directory, under the home directory
 	homeEnv string // the variable that relocates that directory, if the harness has one
 	file    string // the one config file sync writes inside it
+	// patchInShell is true where the harness applies an apply_patch heredoc a
+	// shell call sends, rather than running the line.
+	patchInShell bool
 	// events is the harness's Capability matrix: what a hook can do on each
 	// event, in the order sync writes
 	// hook entries for them. Delivery, sync and the degradation report all
@@ -74,7 +77,7 @@ var adapters = []Adapter{
 		},
 	},
 	{
-		Name: "codex", title: "Codex CLI", dir: ".codex", homeEnv: "CODEX_HOME", file: "hooks.json",
+		Name: "codex", title: "Codex CLI", dir: ".codex", homeEnv: "CODEX_HOME", file: "hooks.json", patchInShell: true,
 		events: []eventCaps{
 			{name: "PreToolUse", deny: exitTwo, inject: true},
 			{name: "PostToolUse", inject: true},
@@ -139,7 +142,7 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		// Codex applies a patch heredoc sent through the shell itself, after
 		// this hook and with no second one, so this is the only place its
 		// edits are seen. Claude Code runs the same line as a program.
-		if line, ok := in.ToolInput["command"].(string); ok && a.Name == "codex" {
+		if line, ok := in.ToolInput["command"].(string); ok && a.patchInShell {
 			if dir, patch, ok := shell.Patch(line); ok {
 				edits = patchPayloads(event, dir, patch)
 			}
