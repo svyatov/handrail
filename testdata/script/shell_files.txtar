@@ -1,0 +1,134 @@
+# A shell call yields a file_edit or file_read payload for each file its syntax
+# names, so a path rule covers shell as well as the file tools.
+exec handrail trust
+
+# A redirect to a file writes it; the target is cleaned like any path.
+exec handrail test PreToolUse --kind shell --field 'command=echo x > ./.env'
+stdout '^warn  edit-env  project-shared$'
+! stdout 'read-env'
+exec handrail test PreToolUse --kind shell --field 'command=echo x >> .env'
+stdout '^warn  edit-env  project-shared$'
+exec handrail test PreToolUse --kind shell --field 'command=echo x >| .env'
+stdout '^warn  edit-env  project-shared$'
+exec handrail test PreToolUse --kind shell --field 'command=make &> .env'
+stdout '^warn  edit-env  project-shared$'
+exec handrail test PreToolUse --kind shell --field 'command=make &>> .env'
+stdout '^warn  edit-env  project-shared$'
+exec handrail test PreToolUse --kind shell --field 'command=make >&".env"'
+stdout '^warn  edit-env  project-shared$'
+exec handrail test PreToolUse --kind shell --field 'command=> .env'
+stdout '^warn  edit-env  project-shared$'
+
+# An input redirect reads it, and <> does both.
+exec handrail test PreToolUse --kind shell --field 'command=mysql < .env'
+stdout '^warn  read-env  project-shared$'
+! stdout 'edit-env'
+exec handrail test PreToolUse --kind shell --field 'command=mysql <&".env"'
+stdout '^warn  read-env  project-shared$'
+exec handrail test PreToolUse --kind shell --field 'command=exec 3<> .env'
+stdout '^warn  read-env  project-shared$'
+stdout '^warn  edit-env  project-shared$'
+
+# fd duplication, heredocs, herestrings and the device files name no file.
+exec handrail test PreToolUse --kind shell --field 'command=make 2>&1 >/dev/null <&- </dev/stdin <<< .env 2>/dev/fd/3'
+! stdout 'any-path'
+
+# Code a nested shell runs is read the same way.
+exec handrail test PreToolUse --kind shell --field 'command=bash -c "echo x > .env"'
+stdout '^warn  edit-env  project-shared$'
+
+# A target holding an expansion, a command substitution, ~user, a glob or a
+# brace is one handrail cannot read. Its file payload says so and keeps the
+# source text, uncleaned, as a best-effort path.
+exec handrail test PreToolUse --kind shell --field 'command=echo x > $D/../.env'
+stdout '^warn  gap-path  project-shared$'
+stdout '^warn  as-written  project-shared$'
+exec handrail test PreToolUse --kind shell --field 'command=echo x > "$(pwd)/.env"'
+stdout '^warn  gap-path  project-shared$'
+exec handrail test PreToolUse --kind shell --field 'command=echo x > ~root/.env'
+stdout '^warn  gap-path  project-shared$'
+exec handrail test PreToolUse --kind shell --field 'command=echo x > *.env'
+stdout '^warn  gap-path  project-shared$'
+exec handrail test PreToolUse --kind shell --field 'command=echo x > .env.[ab]'
+stdout '^warn  gap-path  project-shared$'
+exec handrail test PreToolUse --kind shell --field 'command=echo x > {a,b}.env'
+stdout '^warn  gap-path  project-shared$'
+# The gap is the file payload's own: the shell payload read its command.
+! stdout 'gap-command'
+# Quoted or escaped, the same characters are literal, and ~ is the home
+# directory handrail keeps as written.
+exec handrail test PreToolUse --kind shell --field 'command=echo x > "*.env" \{a,b\}.env ~/.env'
+! stdout 'gap-path'
+stdout '^warn  any-path  project-shared$'
+
+# Only a shell call yields file payloads, and they carry no command: the shell
+# payload keeps it.
+exec handrail test PreToolUse --field 'command=echo x > .env'
+! stdout 'edit-env'
+exec handrail test PreToolUse --kind shell --field 'command=echo x > .env'
+! stdout 'edit-with-command'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/edit-env.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    equals: .env
+---
+Writes .env.
+-- .handrail/read-env.md --
+---
+event: PreToolUse
+kind: file_read
+conditions:
+  - field: path
+    equals: .env
+---
+Reads .env.
+-- .handrail/any-path.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    matches: .
+---
+Names a file.
+-- .handrail/edit-with-command.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: command
+    matches: .
+---
+A file payload with a command.
+-- .handrail/gap-path.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: unreadable
+    equals: path
+---
+A file handrail could not read.
+-- .handrail/gap-command.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: unreadable
+    matches: .
+---
+A command handrail could not read.
+-- .handrail/as-written.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    contains: $D/../
+---
+Kept as written.

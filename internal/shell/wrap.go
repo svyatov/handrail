@@ -46,6 +46,7 @@ func (r *reader) follow(c *call, i, j int) {
 		return
 	}
 	name := path.Base(c.words[i])
+	r.listed(c, name, i+1, j)
 	switch name {
 	case "sh", "bash", "zsh", "dash", "ksh", "mksh":
 		r.shell(c, i+1, j)
@@ -193,10 +194,11 @@ func literal(w *syntax.Word) bool {
 type grammar struct {
 	// short lists the short flags as getopt does: a letter followed by ':'
 	// takes an argument, one followed by '::' takes the rest of its word if
-	// any, and one followed by '?' may or may not take one.
+	// any, one followed by '?' may or may not take one, and one followed by
+	// ':?' takes the rest of its word, else may or may not take one.
 	short string
 	// long lists the long flags, marked the same way with a trailing '=' or
-	// '?'.
+	// '?', or '==' for two arguments.
 	long string
 	// operands is how many operands come before the command, as timeout's
 	// DURATION does.
@@ -224,12 +226,33 @@ type grammar struct {
 	// splits is true for a program whose script flag's argument is split into
 	// the first words of its command, as env -S's is.
 	splits bool
+
+	// The rest describe a listed file program (docs/spec.md section 1).
+
+	// writes is true for a program that writes its file operands: always, or
+	// only under a writeMode flag where it has one, as sed has -i.
+	writes bool
+	// first is true for a program whose first operand is its pattern or
+	// script, unless a pattern or patternFile flag supplied one.
+	first bool
+	// last is true for a program that writes its last operand, or a target
+	// flag's argument, and reads the others, as cp does.
+	last bool
+	// pattern lists the flags whose argument is the pattern or script, and
+	// patternFile those whose argument is a file holding it, which is read.
+	pattern, patternFile []string
+	// writeMode lists the flags that make the program write its operands.
+	writeMode []string
+	// target lists the flags whose argument names the file written.
+	target []string
 }
 
 // arity is how many arguments a flag takes: none, one, either, for a flag
-// the implementations disagree on or the table lacks, or attached, getopt's
+// the implementations disagree on or the table lacks, attached, getopt's
 // optional argument, which is the rest of the flag's word and never the next
-// word.
+// word, or two, as jq's --arg NAME VALUE takes. restOrEither is the rest of
+// the flag's word, and with nothing there either, as GNU sed -i[SUFFIX] and
+// BSD sed -i SUFFIX agree only on -i.bak.
 type arity byte
 
 const (
@@ -237,6 +260,8 @@ const (
 	one
 	either
 	attached
+	two
+	restOrEither
 )
 
 var wrappers = map[string]*grammar{
@@ -335,6 +360,10 @@ func marked(rest string) arity {
 		return none
 	case strings.HasPrefix(rest, "::"):
 		return attached
+	case strings.HasPrefix(rest, "=="):
+		return two
+	case strings.HasPrefix(rest, ":?"):
+		return restOrEither
 	case rest[0] == ':' || rest[0] == '=':
 		return one
 	case rest[0] == '?':

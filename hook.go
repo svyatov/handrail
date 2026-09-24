@@ -76,10 +76,17 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 // should hear, which is the matched messages, then whatever handrail had to
 // skip to get there. It stays in the CLI because it is the hook command's own
 // output format, with one caller and nothing to disagree with.
-func agentMessage(rs *rule.Ruleset, matched []*rule.Rule) string {
+func agentMessage(rs *rule.Ruleset, matched []rule.Match) string {
 	var sections []string
-	for _, r := range matched {
-		sections = append(sections, fmt.Sprintf("handrail %s: %s (%s)\n%s", r.Action, r.Name, r.Tier, r.Message))
+	for _, m := range matched {
+		s := fmt.Sprintf("handrail %s: %s (%s)\n%s", m.Action, m.Name, m.Tier, m.Message)
+		if len(m.Files) > 0 {
+			s += "\nMatched files:\n  " + strings.Join(m.Files[:min(len(m.Files), 10)], "\n  ")
+			if len(m.Files) > 10 {
+				s += fmt.Sprintf("\n  and %d more", len(m.Files)-10)
+			}
+		}
+		sections = append(sections, s)
 	}
 	// Loud fail-open: a rule that cannot be parsed is skipped, and the skipping
 	// is named. A guardrail that guards nothing must never look like one that did.

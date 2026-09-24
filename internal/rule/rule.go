@@ -4,6 +4,7 @@ package rule
 import (
 	"errors"
 	"fmt"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -329,7 +330,12 @@ func parseTerm(n *node) (*Term, error) {
 	}
 	// A pattern that cannot compile would never match, which is the silent
 	// failure the format exists to prevent: catch it here, while authoring.
-	switch strings.TrimPrefix(t.Op, "not_") {
+	// The same goes for a path glob or equals value no cleaned path can meet.
+	op := strings.TrimPrefix(t.Op, "not_")
+	if clean := path.Clean(t.Value); t.Field == "path" && (op == "glob" || op == "equals") && clean != t.Value {
+		return nil, fmt.Errorf("line %d: path value %q is not clean, write %q", t.line, t.Value, clean)
+	}
+	switch op {
 	case "matches":
 		re, err := regexp.Compile(t.Value)
 		if err != nil {

@@ -1,0 +1,61 @@
+# Every path is cleaned lexically where it is set, and never joined to cwd.
+
+# A file tool's path: src/../.env is .env.
+exec handrail trust
+stdin read-dotdot.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: root-env'
+
+# test --field path= is cleaned the same way.
+exec handrail test PreToolUse --field path=src/../.env
+stdout '^warn  root-env  project-shared$'
+exec handrail test PreToolUse --field path=secrets/./key
+stdout '^warn  secret-key  project-shared$'
+# Only a leading .. on a relative path survives.
+exec handrail test PreToolUse --field path=../a/../../b
+stdout '^warn  up-two  project-shared$'
+
+# Only glob and equals can never meet a cleaned path: other operators on the
+# same text are valid.
+exec handrail check
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- read-dotdot.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Read",
+  "tool_input": {"file_path": "src/../.env"}
+}
+-- .handrail/root-env.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    equals: .env
+---
+The root .env.
+-- .handrail/secret-key.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    equals: secrets/key
+---
+The secret key.
+-- .handrail/up-two.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    equals: ../../b
+---
+Two levels up.
+-- .handrail/dot-prefix.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    starts_with: ./
+---
+Never true, and still valid.
