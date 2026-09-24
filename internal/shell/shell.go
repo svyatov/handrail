@@ -208,16 +208,16 @@ func ansiC(s string) string {
 			}
 		case '0', '1', '2', '3', '4', '5', '6', '7':
 			n, end := digits(s, i, 3, 8)
-			b.WriteByte(byte(n))
+			b.WriteByte(byte(n & 0xff)) // bash keeps the low eight bits of \777
 			i = end - 1
 			continue
 		case 'x', 'u', 'U':
 			width := [...]int{2, 4, 8}[strings.IndexByte("xuU", s[i])]
 			if n, end := digits(s, i+1, width, 16); end > i+1 {
 				if s[i] == 'x' {
-					b.WriteByte(byte(n))
+					b.WriteByte(byte(n & 0xff))
 				} else {
-					b.WriteRune(rune(n))
+					b.WriteRune(n)
 				}
 				i = end - 1
 				continue
@@ -231,19 +231,19 @@ func ansiC(s string) string {
 
 // digits reads up to maximum digits in base from s[start:], and returns their
 // value and the index after the last one.
-func digits(s string, start, maximum, base int) (n, end int) {
-	end = start
-	for end < len(s) && end-start < maximum {
-		c := s[end]
-		if 'A' <= c && c <= 'F' {
-			c += 'a' - 'A'
+func digits(s string, start, maximum int, base rune) (n rune, end int) {
+	for end = start; end < len(s) && end-start < maximum; end++ {
+		d := base // not a digit
+		switch c := s[end]; {
+		case '0' <= c && c <= '9':
+			d = rune(c - '0')
+		case 'a' <= c|0x20 && c|0x20 <= 'f':
+			d = rune(c|0x20-'a') + 10
 		}
-		d := strings.IndexByte("0123456789abcdef"[:base], c)
-		if d < 0 {
+		if d >= base {
 			break
 		}
 		n = n*base + d
-		end++
 	}
 	return n, end
 }
