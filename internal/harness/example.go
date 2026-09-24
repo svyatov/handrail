@@ -13,48 +13,41 @@ import (
 func FailingExamples(r *rule.Rule) []rule.Example {
 	var failed []rule.Example
 	for _, e := range r.Examples {
-		if r.Selects(ExamplePayloads(r.Event, e)) != (e.Expect == "match") {
+		call := withFields(rule.Payload{Event: r.Event, Kind: e.Kind}, e.Fields, adapters)
+		if r.Selects(call) != (e.Expect == "match") {
 			failed = append(failed, e)
 		}
 	}
 	return failed
 }
 
-// ExamplePayloads is every payload a live call with the Example's fields
-// yields on some harness.
-func ExamplePayloads(event string, e rule.Example) []rule.Payload {
-	return callPayloads(event, e, adapters)
+// WithFields writes fields onto p as this harness carries them, each replacing
+// what p carried under that name, and returns every payload the call then
+// yields on this harness: the call test --field writes, over a capture or
+// over nothing.
+func (a Adapter) WithFields(p rule.Payload, fields []rule.ExampleField) []rule.Payload {
+	return withFields(p, fields, []Adapter{a})
 }
 
-// Payloads is every payload a live call with these fields yields on this
-// harness: the call test --field writes.
-func (a Adapter) Payloads(event string, e rule.Example) []rule.Payload {
-	return callPayloads(event, e, []Adapter{a})
-}
-
-// SetFields writes fields onto p as this harness carries them, each replacing
-// what p carried under that name.
-func (a Adapter) SetFields(p *rule.Payload, fields []rule.ExampleField) {
-	setFields(p, fields, []Adapter{a})
-}
-
-// callPayloads is every payload a live call with these fields yields, read
-// with the knowledge of the Adapters from.
-func callPayloads(event string, e rule.Example, from []Adapter) []rule.Payload {
-	p := rule.Payload{Event: event, Kind: e.Kind}
-	tools, command := setFields(&p, e.Fields, from)
+// withFields is WithFields read with the knowledge of the Adapters from.
+func withFields(p rule.Payload, fields []rule.ExampleField, from []Adapter) []rule.Payload {
+	command := setFields(&p, fields, from)
 	// Codex applies this form itself, so only its knowledge reads the patch.
 	if slices.ContainsFunc(from, func(a Adapter) bool { return a.patchInShell }) && p.Kind == "shell" {
 		if dir, patch, ok := shell.Patch(command); ok {
-			return append([]rule.Payload{p}, patchPayloads(event, tools, dir, patch)...)
+			var tools []string
+			for _, c := range p.Fields()["tool"] {
+				tools = append(tools, c.Spellings...)
+			}
+			return append([]rule.Payload{p}, patchPayloads(p.Event, tools, dir, patch)...)
 		}
 	}
 	return []rule.Payload{p}
 }
 
 // setFields writes fields onto p as the Adapters from carry them, and returns
-// the tool names and the command it wrote.
-func setFields(p *rule.Payload, fields []rule.ExampleField, from []Adapter) (tools []string, command string) {
+// the command it wrote.
+func setFields(p *rule.Payload, fields []rule.ExampleField, from []Adapter) (command string) {
 	// Every name is cleared before any is written, so a command's derived
 	// unreadable merges with a written one whatever their order.
 	for _, f := range fields {
@@ -65,9 +58,8 @@ func setFields(p *rule.Payload, fields []rule.ExampleField, from []Adapter) (too
 		case f.Name == "kind":
 		case f.Name == "tool":
 			for _, a := range from {
-				tools = append(tools, a.toolNames(f.Values[0])...)
+				setTool(p, a.toolNames(f.Values[0]))
 			}
-			setTool(p, tools)
 		case f.Name == "path" && len(f.Values) == 2:
 			p.SetRename(f.Values[0], f.Values[1])
 		default:
@@ -79,5 +71,5 @@ func setFields(p *rule.Payload, fields []rule.ExampleField, from []Adapter) (too
 			}
 		}
 	}
-	return tools, command
+	return command
 }

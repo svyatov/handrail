@@ -24,12 +24,26 @@ exec sh -c 'handrail test PreToolUse --kind shell --field "command=$(cat patch.s
 ! exec sh -c 'handrail test PreToolUse --kind shell --field "command=$(cat patch.sh)" --harness codex'
 stdout '^block  no-secrets-file  global$'
 
+# The same holds for a command written over a capture.
+stdin ls.json
+! exec sh -c 'handrail test PreToolUse --stdin --harness codex --field "command=$(cat patch.sh)"'
+stdout '^block  no-secrets-file  global$'
+stdin ls.json
+exec sh -c 'handrail test PreToolUse --stdin --field "command=$(cat patch.sh)"'
+! stdout 'no-secrets-file'
+
 # A written tool answers to the names that harness gives it.
 exec handrail test PreToolUse --field tool=apply_patch --harness codex
 stdout '^    Edit$'
 exec handrail test PreToolUse --field tool=apply_patch
 ! stdout '^    Edit$'
 
+-- ls.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {"command": "ls"}
+}
 -- patch.sh --
 apply_patch <<'EOF'
 *** Begin Patch

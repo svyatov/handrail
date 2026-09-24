@@ -282,6 +282,16 @@ func (a Adapter) Action(r *rule.Rule) rule.Outcome {
 	return r.Action
 }
 
+// Delivered is the Outcome the harness delivers for the matched rules: the
+// strongest action it delivers among them.
+func (a Adapter) Delivered(matched []rule.Match) rule.Outcome {
+	var o rule.Outcome
+	for _, m := range matched {
+		o = max(o, a.Action(m.Rule))
+	}
+	return o
+}
+
 // Degradations reports where the harness weakens a rule's action, for the
 // rules it is given: pass the Effective ruleset, since a rule that cannot fire
 // cannot be degraded. Sync and doctor print this; the hot path stays quiet.

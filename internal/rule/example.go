@@ -71,7 +71,7 @@ func parseExample(expect string, item *node) (Example, error) {
 		if err != nil {
 			return e, err
 		}
-		if err := checkField(f.key, values); err != nil {
+		if err := checkField(f.key, values, f.val.seq != nil); err != nil {
 			return e, fmt.Errorf("line %d: %w", f.line, err)
 		}
 		if f.key == "kind" {
@@ -101,28 +101,15 @@ func exampleValues(f pair) ([]string, error) {
 		}
 		values = append(values, v.scalar)
 	}
-	// A written list is a list even with one entry, so only a list field
-	// takes one, and a path list is a rename.
-	switch {
-	case !slices.Contains(listFields, f.key):
-		return nil, fmt.Errorf("line %d: %s must be a single value", f.line, f.key)
-	case f.key == "path" && len(values) != 2:
-		return nil, fmt.Errorf("line %d: %w", f.line, errRename)
-	}
 	return values, nil
 }
 
-// listFields are the fields that hold one Candidate per value written, so
-// the only ones a call writes as a list.
-var listFields = []string{"url", "network_grant", "unreadable", "path"}
-
-var errRename = errors.New("a path list is a rename: its source and its destination")
-
 // CheckCall holds fields written for one call on event, as an Example or
-// test --field writes them, to what a live call could carry.
+// test --field writes them, to what a live call could carry. A field written
+// more than once is a list.
 func CheckCall(event string, fields []ExampleField) error {
 	for _, f := range fields {
-		if err := checkField(f.Name, f.Values); err != nil {
+		if err := checkField(f.Name, f.Values, len(f.Values) > 1); err != nil {
 			return err
 		}
 		switch {
@@ -136,9 +123,11 @@ func CheckCall(event string, fields []ExampleField) error {
 }
 
 // checkField reports why a live call could not carry the values written for
-// one field: a list only where a field holds one Candidate per entry, and
-// never a value the Adapter would not present.
-func checkField(name string, values []string) error {
+// one field: a list only where a field holds one Candidate per entry, a path
+// list only as a rename's two paths, and never a value the Adapter would not
+// present. list says the values were written as a list, which one entry can
+// be.
+func checkField(name string, values []string, list bool) error {
 	switch {
 	case name == "domain":
 		return errors.New("domain comes from a written url, so write the url")
@@ -147,10 +136,10 @@ func checkField(name string, values []string) error {
 		return fmt.Errorf("unknown field %q", name)
 	}
 	switch {
-	case len(values) > 1 && !slices.Contains(listFields, name):
+	case list && !slices.Contains([]string{"url", "network_grant", "unreadable", "path"}, name):
 		return fmt.Errorf("%s must be a single value", name)
-	case name == "path" && len(values) > 2:
-		return errRename
+	case list && name == "path" && len(values) != 2:
+		return errors.New("a path list is a rename: its source and its destination")
 	}
 	for _, v := range values {
 		switch {

@@ -59,10 +59,16 @@ exec handrail test PreToolUse --stdin --field url=https://example.com/a
 # each file section of a patch is its own.
 stdin two-files.json
 ! exec handrail test PreToolUse --stdin --harness codex --field path=x
-stderr '^handrail test: the capture yields 2 payloads, and --field and --kind vary one call; write the call with --field alone$'
-stdin two-files.json
-! exec handrail test PreToolUse --stdin --harness codex --kind shell
-stderr 'the capture yields 2 payloads'
+stderr '^handrail test: the capture yields 2 payloads, and --field varies one call; write the call with --field alone$'
+
+# A capture's tool names its kind, so no kind is written over one, which
+# would build a payload the Adapter never builds.
+stdin fetch.json
+! exec handrail test PreToolUse --stdin --kind file_edit
+stderr '^handrail test: a capture''s tool names its kind, so --stdin takes no kind$'
+stdin fetch.json
+! exec handrail test PreToolUse --stdin --field kind=file_edit
+stderr 'takes no kind'
 
 # A written tool over a capture answers to the names the named harness gives it.
 stdin fetch.json

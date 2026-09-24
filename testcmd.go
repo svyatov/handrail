@@ -16,7 +16,9 @@ const testUsage = `Usage: handrail test <event> [--kind kind] [--field key=value
 
 --field takes what a rule's Example takes; repeat it to give a list. With
 --stdin, reads a harness payload as that harness sends it, normalized the way
-the hook path normalizes it. Flags override what the payload carries.
+the hook path normalizes it. A --field then replaces that field of the call,
+which needs a capture that yields one payload; its tool names its kind, so
+--kind does not apply.
 `
 
 // fieldSet collects --field key=value flags as an Example writes its fields: a
@@ -119,41 +121,39 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 
-	// Without a capture, the call is the one an Example with these fields is,
-	// and one that names no kind is a call handrail does not classify.
-	e := rule.Example{Kind: *kind, Fields: fields}
-	if e.Kind == "" && rule.ToolEvent(event) {
-		e.Kind = "other"
-	}
-	payloads := a.Payloads(event, e)
-	if *fromStdin {
-		data, err := io.ReadAll(stdin)
-		if err != nil {
-			fmt.Fprintf(stderr, "handrail test: reading payload: %v\n", err)
+	var payloads []rule.Payload
+	var failures []string
+	if !*fromStdin {
+		// Without a capture, the call is the one an Example with these fields
+		// is, and one that names no kind is a call handrail does not classify.
+		call := rule.Payload{Event: event, Kind: *kind}
+		if call.Kind == "" && rule.ToolEvent(event) {
+			call.Kind = "other"
+		}
+		payloads = a.WithFields(call, fields)
+	} else {
+		// A capture's kind is its tool's, and a kind written over it would
+		// build a payload the Adapter never builds.
+		if *kind != "" {
+			fmt.Fprintln(stderr, "handrail test: a capture's tool names its kind, so --stdin takes no kind")
 			return 1
 		}
-		// The Adapter's own normalization, so a capture read here reads exactly
-		// as it will on the hook path: the kind comes from the tool name, and
-		// the fields come out of the tool input. The cwd it reports is dropped,
+		// The hook path's own reading, so a capture read here reads exactly as
+		// it will there, a broken one included. The cwd it reports is dropped,
 		// because test answers for the ruleset in the working directory rather
 		// than the one the capture was taken under.
-		payloads, _, err = a.Normalize(event, data)
-		if err != nil {
-			fmt.Fprintf(stderr, "handrail test: reading payload: %v\n", err)
+		payloads, _, failures = readCall(a, event, stdin)
+		switch {
+		case len(fields) == 0:
+		case len(payloads) > 1:
+			// Several payloads, such as a patch's, are no one call to vary:
+			// each is its own edit.
+			fmt.Fprintf(stderr, "handrail test: the capture yields %d payloads, and --field varies one call; write the call with --field alone\n", len(payloads))
 			return 1
-		}
-		// Flags win over the capture's payload, so one field can be varied
-		// against it. A capture that yields several, such as a patch, has no
-		// one call to vary: each payload is its own edit.
-		if len(payloads) > 1 && len(fields) > 0 {
-			fmt.Fprintf(stderr, "handrail test: the capture yields %d payloads, and --field and --kind vary one call; write the call with --field alone\n", len(payloads))
-			return 1
-		}
-		for i := range payloads {
-			a.SetFields(&payloads[i], fields)
-			if *kind != "" {
-				payloads[i].Kind = *kind
-			}
+		default:
+			// Flags win over the capture's one payload, and the call is read
+			// again, so a written command yields what the harness makes of it.
+			payloads = a.WithFields(payloads[0], fields)
 		}
 	}
 
@@ -165,9 +165,9 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	// The same call the hook path makes, so what test reports is what hook does.
-	// delivered is the Outcome as hook hands it to the harness, which then
+	// evaluated is the Outcome as hook hands it to the harness, which then
 	// delivers what it can of it.
-	matched, delivered := rs.Evaluate(payloads)
+	matched, evaluated := rs.Evaluate(payloads)
 	out := testOutput{Payloads: []testPayload{}, Matched: []testMatch{}}
 	for _, p := range rs.Yield(payloads) {
 		tp := testPayload{Kind: p.Kind, Fields: p.Fields(), Unreadable: []string{}}
@@ -177,9 +177,6 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		delete(tp.Fields, "unreadable")
 		out.Payloads = append(out.Payloads, tp)
 	}
-	// The Outcome is the strongest action the harness delivers, since that is
-	// what hook does with it.
-	var outcome rule.Outcome
 	for _, r := range matched {
 		action := a.Action(r.Rule)
 		m := testMatch{Rule: r.Name, Tier: r.Tier, Action: action.String(), Message: r.Message}
@@ -187,11 +184,13 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			m.DegradedFrom = new(r.Action.String())
 		}
 		out.Matched = append(out.Matched, m)
-		outcome = max(outcome, action)
 	}
+	// The Outcome reported is the one the harness delivers, since that is what
+	// hook does with the evaluated one.
+	outcome := a.Delivered(matched)
 	out.Outcome = outcome.String()
-	notices := loadNotices(rs, event)
-	out.Human = a.Human(event, agentMessage(rs, matched, notices), strings.Join(notices, "\n"), delivered)
+	failures = append(failures, loadNotices(rs, event)...)
+	out.Human = a.Human(event, agentMessage(rs, matched, failures), strings.Join(failures, "\n"), evaluated)
 
 	if *asJSON {
 		if code := writeJSON(stdout, stderr, out); code != 0 {
