@@ -11,7 +11,7 @@ stderr 'handrail test: unknown event "Nope"'
 
 exec sh -c 'handrail test PreToolUse --field cmd=x; echo code=$?'
 stdout '^code=1$'
-stderr 'unknown canonical field "cmd"'
+stderr 'unknown field "cmd"'
 
 exec sh -c 'handrail test PreToolUse --field command; echo code=$?'
 stdout '^code=1$'
@@ -23,7 +23,7 @@ stderr 'expected key=value'
 # it would get wrong.
 exec sh -c 'handrail test PreToolUse --field command=; echo code=$?'
 stdout '^code=1$'
-stderr 'field "command" needs a value'
+stderr '^handrail test: command needs a value$'
 
 exec sh -c 'handrail test PreToolUse --kind bash; echo code=$?'
 stdout '^code=1$'

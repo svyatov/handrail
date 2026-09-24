@@ -273,6 +273,15 @@ func (d Degradation) String() string {
 	return fmt.Sprintf("%s degraded to %s for %s: %s", d.From, d.To, d.Rule, d.Reason)
 }
 
+// Action is the action the harness delivers for r: the rule's own, or the
+// nearest one it can deliver where it cannot deliver that.
+func (a Adapter) Action(r *rule.Rule) rule.Outcome {
+	if r.Action == rule.Block && a.caps(r.Event).deny == noDenial {
+		return rule.Warn
+	}
+	return r.Action
+}
+
 // Degradations reports where the harness weakens a rule's action, for the
 // rules it is given: pass the Effective ruleset, since a rule that cannot fire
 // cannot be degraded. Sync and doctor print this; the hot path stays quiet.
@@ -280,9 +289,9 @@ func (a Adapter) Degradations(rules []*rule.Rule) []Degradation {
 	var out []Degradation
 	for _, r := range rules {
 		c := a.caps(r.Event)
-		if r.Action == rule.Block && c.deny == noDenial {
+		if to := a.Action(r); to != r.Action {
 			out = append(out, Degradation{
-				Rule: r.Name, From: rule.Block.String(), To: rule.Warn.String(), Reason: a.blockReason(r.Event),
+				Rule: r.Name, From: r.Action.String(), To: to.String(), Reason: a.blockReason(r.Event),
 			})
 		}
 		// The message still reaches the user, on stderr, but the agent is gone by

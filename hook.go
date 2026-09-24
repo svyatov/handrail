@@ -84,26 +84,33 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	rs := rule.Load(cwd)
 	matched, outcome := rs.Evaluate(payloads)
-	// Loud fail-open: a rule that cannot be parsed is skipped, and the skipping
-	// is named. A guardrail that guards nothing must never look like one that
-	// did. A tier trust skipped loses nothing, so its broken files stay quiet.
+	failures = append(failures, loadNotices(rs, event)...)
+	human := strings.Join(failures, "\n")
+	return a.Deliver(event, agentMessage(rs, matched, failures), human, outcome, stdout, stderr)
+}
+
+// loadNotices is what the load itself tells both audiences on event. Loud
+// fail-open: a rule that cannot be parsed is skipped, and the skipping is
+// named. A guardrail that guards nothing must never look like one that did. A
+// tier trust skipped loses nothing, so its broken files stay quiet.
+func loadNotices(rs *rule.Ruleset, event string) []string {
+	var notices []string
 	for _, t := range rs.Tiers {
 		if t.Name == rule.TierGlobal && t.Dir == "" {
-			failures = append(failures, "handrail: no Global tier to read: set HOME or XDG_CONFIG_HOME")
+			notices = append(notices, "handrail: no Global tier to read: set HOME or XDG_CONFIG_HOME")
 		}
 	}
 	for _, p := range rs.Problems {
 		if !p.Untrusted {
-			failures = append(failures, fmt.Sprintf("handrail: skipped the broken rule %s: %s", p.Path, p.Message))
+			notices = append(notices, fmt.Sprintf("handrail: skipped the broken rule %s: %s", p.Path, p.Message))
 		}
 	}
 	if event == "SessionStart" {
 		if notice := examplesNotice(rs.Rules); notice != "" {
-			failures = append(failures, notice)
+			notices = append(notices, notice)
 		}
 	}
-	human := strings.Join(failures, "\n")
-	return a.Deliver(event, agentMessage(rs, matched, failures), human, outcome, stdout, stderr)
+	return notices
 }
 
 // examplesNotice names the rules whose Examples fail, and "" when none do. It

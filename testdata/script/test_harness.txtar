@@ -1,0 +1,28 @@
+# --harness names the harness whose Adapter reads the call, and section 4
+# applies for it: Codex cannot fail closed on UserPromptSubmit, so a block there
+# is delivered as a warn, and the outcome and exit code follow what hook does.
+
+exec handrail test UserPromptSubmit --field prompt=deploy --harness codex
+stdout '^warn  no-deploy  global  degraded from block$'
+stdout '^outcome: warn$'
+
+exec handrail test UserPromptSubmit --field prompt=deploy --harness codex --json
+stdout '"action": "warn"'
+stdout '"degraded_from": "block"'
+stdout '"outcome": "warn"'
+
+# Claude Code can, so the rule blocks there as written.
+! exec handrail test UserPromptSubmit --field prompt=deploy --json
+stdout '"action": "block"'
+stdout '"degraded_from": null'
+stdout '"outcome": "block"'
+
+-- home/.config/handrail/no-deploy.md --
+---
+event: UserPromptSubmit
+action: block
+conditions:
+  - field: prompt
+    contains: deploy
+---
+Deploys go through the release checklist.

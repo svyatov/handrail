@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/svyatov/handrail/internal/harness"
@@ -12,53 +14,63 @@ import (
 
 const testUsage = `Usage: handrail test <event> [--kind kind] [--field key=value]... [--stdin] [--harness name] [--json]
 
-With --stdin, reads a harness payload as that harness sends it, normalized the
-way the hook path normalizes it. Flags override what the payload carries.
+--field takes what a rule's Example takes; repeat it to give a list. With
+--stdin, reads a harness payload as that harness sends it, normalized the way
+the hook path normalizes it. Flags override what the payload carries.
 `
 
-// fieldSet collects repeated --field key=value flags into the synthetic
-// payload's canonical fields.
-type fieldSet map[string]string
+// fieldSet collects --field key=value flags as an Example writes its fields: a
+// repeated key is a list, in the order given.
+type fieldSet []rule.ExampleField
 
-func (f fieldSet) String() string { return "" }
+func (f *fieldSet) String() string { return "" }
 
-func (f fieldSet) Set(s string) error {
+func (f *fieldSet) Set(s string) error {
 	k, v, ok := strings.Cut(s, "=")
 	if !ok {
 		return fmt.Errorf("expected key=value, got %q", s)
 	}
-	if !rule.IsField(k) {
-		return fmt.Errorf("unknown canonical field %q", k)
+	for i := range *f {
+		if (*f)[i].Name == k {
+			(*f)[i].Values = append((*f)[i].Values, v)
+			return nil
+		}
 	}
-	// The Adapter never presents a field it carries empty, so accepting one here
-	// would let test build a payload hook cannot, and answer for a case it would
-	// get wrong: an empty value tests as present, an absent field never matches
-	// in either polarity. Dropping it silently would leave that belief in place.
-	if v == "" {
-		return fmt.Errorf("field %q needs a value; a field carried empty is absent, so omit it", k)
-	}
-	f[k] = v
+	*f = append(*f, rule.ExampleField{Name: k, Values: []string{v}})
 	return nil
 }
 
 type testMatch struct {
-	Rule    string `json:"rule"`
-	Tier    string `json:"tier"`
-	Action  string `json:"action"`
-	Message string `json:"message"`
+	Rule   string `json:"rule"`
+	Tier   string `json:"tier"`
+	Action string `json:"action"`
+	// DegradedFrom is the action the rule file names where the harness
+	// delivers another, else null.
+	DegradedFrom *string `json:"degraded_from"`
+	Message      string  `json:"message"`
+}
+
+// testPayload is one payload the event yields, as handrail read it.
+type testPayload struct {
+	Kind       string                      `json:"kind,omitempty"`
+	Fields     map[string][]rule.Candidate `json:"fields"`
+	Unreadable []string                    `json:"unreadable"`
 }
 
 type testOutput struct {
-	Outcome string      `json:"outcome"`
-	Matched []testMatch `json:"matched"`
+	Outcome  string        `json:"outcome"`
+	Payloads []testPayload `json:"payloads"`
+	Matched  []testMatch   `json:"matched"`
+	// Human is the text hook would show the user, verbatim, and "" for none.
+	Human string `json:"human"`
 }
 
 func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	kind := fs.String("kind", "", "tool kind of the synthetic payload")
-	fields := fieldSet{}
-	fs.Var(fields, "field", "canonical payload field as key=value, repeatable")
+	var fields fieldSet
+	fs.Var(&fields, "field", "canonical payload field as key=value, repeatable")
 	fromStdin := fs.Bool("stdin", false, "read a harness payload JSON from stdin")
 	only := fs.String("harness", "claude", "read the payload as this harness sends it")
 	asJSON := fs.Bool("json", false, "print the result as JSON")
@@ -94,8 +106,25 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			*only, strings.Join(harness.Names(), ", "))
 		return 1
 	}
+	// A call test builds is one an Example could write, so hook never meets a
+	// payload test cannot build, and test never builds one hook never meets.
+	if err := rule.CheckCall(event, fields); err != nil {
+		fmt.Fprintf(stderr, "handrail test: %v\n", err)
+		return 1
+	}
+	for _, f := range fields {
+		if f.Name == "kind" && *kind == "" {
+			*kind = f.Values[0]
+		}
+	}
 
-	payloads := []rule.Payload{{Event: event}}
+	// Without a capture, the call is the one an Example with these fields is,
+	// and one that names no kind is a call handrail does not classify.
+	e := rule.Example{Kind: *kind, Fields: fields}
+	if e.Kind == "" && rule.ToolEvent(event) {
+		e.Kind = "other"
+	}
+	payloads := harness.ExamplePayloads(event, e)
 	if *fromStdin {
 		data, err := io.ReadAll(stdin)
 		if err != nil {
@@ -112,16 +141,13 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "handrail test: reading payload: %v\n", err)
 			return 1
 		}
-	}
-	// Flags win over every payload, so one field can be varied against a
-	// capture. --field already refuses an empty value, so nothing here is
-	// dropped.
-	for i := range payloads {
-		for k, v := range fields {
-			payloads[i].SetField(k, v)
-		}
-		if *kind != "" {
-			payloads[i].Kind = *kind
+		// Flags win over every payload, so one field can be varied against a
+		// capture.
+		for i := range payloads {
+			harness.SetFields(&payloads[i], fields)
+			if *kind != "" {
+				payloads[i].Kind = *kind
+			}
 		}
 	}
 
@@ -133,35 +159,97 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	// The same call the hook path makes, so what test reports is what hook does.
-	matched, outcome := rs.Evaluate(payloads)
-	out := testOutput{Outcome: outcome.String(), Matched: []testMatch{}}
-	for _, r := range matched {
-		out.Matched = append(out.Matched, testMatch{
-			Rule: r.Name, Tier: r.Tier, Action: r.Action.String(), Message: r.Message,
-		})
+	// delivered is the Outcome as hook hands it to the harness, which then
+	// delivers what it can of it.
+	matched, delivered := rs.Evaluate(payloads)
+	out := testOutput{Payloads: []testPayload{}, Matched: []testMatch{}}
+	for _, p := range rs.Yield(payloads) {
+		tp := testPayload{Kind: p.Kind, Fields: p.Fields(), Unreadable: []string{}}
+		for _, c := range tp.Fields["unreadable"] {
+			tp.Unreadable = append(tp.Unreadable, c.Spellings[0])
+		}
+		delete(tp.Fields, "unreadable")
+		out.Payloads = append(out.Payloads, tp)
 	}
+	// The Outcome is the strongest action the harness delivers, since that is
+	// what hook does with it.
+	var outcome rule.Outcome
+	for _, r := range matched {
+		m := testMatch{Rule: r.Name, Tier: r.Tier, Action: a.Action(r.Rule).String(), Message: r.Message}
+		if m.Action != r.Action.String() {
+			m.DegradedFrom = new(r.Action.String())
+		}
+		out.Matched = append(out.Matched, m)
+		outcome = max(outcome, a.Action(r.Rule))
+	}
+	out.Outcome = outcome.String()
+	notices := loadNotices(rs, event)
+	out.Human = a.Human(event, agentMessage(rs, matched, notices), strings.Join(notices, "\n"), delivered)
 
 	if *asJSON {
 		if code := writeJSON(stdout, stderr, out); code != 0 {
 			return code
 		}
 	} else {
-		for _, m := range out.Matched {
-			fmt.Fprintf(stdout, "%s  %s  %s\n", m.Action, m.Rule, m.Tier)
-			for line := range strings.SplitSeq(m.Message, "\n") {
-				if line == "" {
-					fmt.Fprintln(stdout)
-					continue
+		for i, p := range out.Payloads {
+			fmt.Fprintf(stdout, "payload %d of %d", i+1, len(out.Payloads))
+			if p.Kind != "" {
+				fmt.Fprintf(stdout, ": %s", p.Kind)
+			}
+			fmt.Fprintln(stdout)
+			for _, name := range slices.Sorted(maps.Keys(p.Fields)) {
+				for _, c := range p.Fields[name] {
+					switch {
+					case c.Whole:
+						fmt.Fprintf(stdout, "  %s (whole line, positive terms only)\n", name)
+					case len(c.Spellings) == 0:
+						fmt.Fprintf(stdout, "  %s (runs no command)\n", name)
+					default:
+						fmt.Fprintf(stdout, "  %s\n", name)
+					}
+					for _, s := range c.Spellings {
+						for line := range strings.SplitSeq(s, "\n") {
+							fmt.Fprintf(stdout, "    %s\n", line)
+						}
+					}
 				}
-				fmt.Fprintf(stdout, "  %s\n", line)
+			}
+			if len(p.Unreadable) > 0 {
+				fmt.Fprintf(stdout, "  unreadable: %s\n", strings.Join(p.Unreadable, ", "))
 			}
 			fmt.Fprintln(stdout)
 		}
+		for _, m := range out.Matched {
+			fmt.Fprintf(stdout, "%s  %s  %s", m.Action, m.Rule, m.Tier)
+			if m.DegradedFrom != nil {
+				fmt.Fprintf(stdout, "  degraded from %s", *m.DegradedFrom)
+			}
+			fmt.Fprintln(stdout)
+			printIndented(stdout, m.Message)
+			fmt.Fprintln(stdout)
+		}
 		fmt.Fprintf(stdout, "outcome: %s\n", out.Outcome)
+		if out.Human == "" {
+			fmt.Fprintln(stdout, "human: none")
+		} else {
+			fmt.Fprintln(stdout, "human:")
+			printIndented(stdout, out.Human)
+		}
 	}
 
 	if outcome == rule.Block {
 		return 2
 	}
 	return 0
+}
+
+// printIndented writes text two spaces in, keeping its blank lines blank.
+func printIndented(w io.Writer, text string) {
+	for line := range strings.SplitSeq(text, "\n") {
+		if line == "" {
+			fmt.Fprintln(w)
+			continue
+		}
+		fmt.Fprintf(w, "  %s\n", line)
+	}
 }

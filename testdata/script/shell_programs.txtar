@@ -17,7 +17,7 @@ stdout '^warn  read-env  project-shared$'
 exec handrail test PreToolUse --kind shell --field 'command=sed -i s/a/b/ .env'
 stdout '^warn  edit-env  project-shared$'
 exec handrail test PreToolUse --kind shell --field 'command=sed .env'
-! stdout 'env'
+! stdout '-env  project-shared'
 
 # Write: each operand.
 exec handrail test PreToolUse --kind shell --field 'command=rm -rf .env'

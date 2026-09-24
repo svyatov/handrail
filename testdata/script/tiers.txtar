@@ -43,6 +43,8 @@ stdout '"path": ".*/\.config/handrail/only-global\.md"'
 stdout '"errors": \[\]'
 
 -- expected-test --
+payload 1 of 1
+
 warn  only-global  global
   the global only-global message
 
@@ -53,6 +55,7 @@ warn  only-personal  project-personal
   the personal only-personal message
 
 outcome: warn
+human: none
 -- .git/HEAD --
 ref: refs/heads/main
 -- home/.config/handrail/everywhere.md --

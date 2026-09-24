@@ -150,11 +150,12 @@ func domainOf(raw string) (string, bool) {
 
 // SetRename fills path with both files a rename names, source then
 // destination, each its own Candidate, so a not_ term on path fires when either
-// one fails it. An empty one is left out, as SetField leaves it.
+// one fails it. An empty one is left out, as SetField leaves it, and an edit
+// that stays put names its one file once.
 func (p *Payload) SetRename(from, to string) {
 	p.SetField("path", from)
 	src := p.fields["path"]
-	if p.SetField("path", to) {
+	if p.SetField("path", to) && (len(src) == 0 || src[0].spellings[0] != p.fields["path"][0].spellings[0]) {
 		p.fields["path"] = append(src, p.fields["path"]...)
 	}
 }
@@ -179,6 +180,26 @@ func (p *Payload) setCommand(line string) {
 	if !ok {
 		p.SetField("unreadable", "command")
 	}
+}
+
+// Unset drops a field and the unreadable entry SetField derived from it, a
+// url's domain included, so the next SetField replaces what it held rather
+// than adding to it. A command's files need no dropping: setting a command
+// replaces them.
+func (p *Payload) Unset(name string) {
+	if p.fields == nil {
+		return
+	}
+	delete(p.fields, name)
+	switch name {
+	case "url":
+		delete(p.fields, "domain")
+		name = "domain"
+	case "command":
+	default:
+		return
+	}
+	p.fields["unreadable"] = slices.DeleteFunc(p.fields["unreadable"], func(c candidate) bool { return c.spellings[0] == name })
 }
 
 // Has reports whether the payload carries a canonical field. Not carrying it
@@ -214,6 +235,39 @@ func withFiles(payloads []Payload) []Payload {
 	return all
 }
 
+// Yield returns every payload an event's payloads yield, the ones Evaluate
+// reads: each of them, then every file a shell call among them names. A load
+// that lost rules declares unreadable: rules on every payload, the ones passed
+// in included, so a rule that is left can fail closed on the loss.
+func (rs *Ruleset) Yield(payloads []Payload) []Payload {
+	payloads = withFiles(payloads)
+	if rs.Unreadable() {
+		for i := range payloads {
+			payloads[i].SetField("unreadable", "rules")
+		}
+	}
+	return payloads
+}
+
+// Candidate is one Candidate as a report shows it: its Spellings, and whether
+// it is the whole command line, which only positive terms read. One with no
+// Spellings stands for a command line that runs no command.
+type Candidate struct {
+	Spellings []string `json:"spellings"`
+	Whole     bool     `json:"whole,omitempty"`
+}
+
+// Fields returns every field the payload carries, each as its Candidates.
+func (p Payload) Fields() map[string][]Candidate {
+	out := make(map[string][]Candidate, len(p.fields))
+	for name, cands := range p.fields {
+		for _, c := range cands {
+			out[name] = append(out[name], Candidate{Spellings: append([]string{}, c.spellings...), Whole: c.whole})
+		}
+	}
+	return out
+}
+
 // Evaluate runs an event's payloads against the Effective ruleset and answers
 // with both halves of what the event produces: the rules that matched any of
 // its payloads, once each and in delivery order (tier order, then alphabetical
@@ -224,16 +278,8 @@ func withFiles(payloads []Payload) []Payload {
 //
 // Liveness is checked inline rather than over rs.Effective(), because this is
 // the hot path and the selector would allocate a second slice per event.
-//
-// A load that lost rules declares unreadable: rules on every payload, the ones
-// passed in included, so a rule that is left can fail closed on the loss.
 func (rs *Ruleset) Evaluate(payloads []Payload) (matched []Match, outcome Outcome) {
-	payloads = withFiles(payloads)
-	if rs.Unreadable() {
-		for i := range payloads {
-			payloads[i].SetField("unreadable", "rules")
-		}
-	}
+	payloads = rs.Yield(payloads)
 	for _, r := range rs.Rules {
 		if !r.Live() {
 			continue

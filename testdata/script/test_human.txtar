@@ -1,0 +1,43 @@
+# test prints the human line verbatim, as hook would send it.
+
+# A block reaches the human on the channel the denial takes, which carries the
+# whole message.
+! exec handrail test PreToolUse --kind shell --field 'command=rm -rf /'
+stdout '^human:\n  handrail block: no-rm-root \(global\)\n  Never delete the filesystem root\.$'
+! exec handrail test PreToolUse --kind shell --field 'command=rm -rf /' --json
+stdout '"human": "handrail block: no-rm-root \(global\)\\nNever delete the filesystem root\."'
+
+# A warn sends the human nothing.
+exec handrail test PreToolUse --kind shell --field 'command=ls'
+stdout '^warn  shell-note  global$'
+stdout '^human: none$'
+exec handrail test PreToolUse --kind shell --field 'command=ls' --json
+stdout '"human": ""'
+
+# handrail's own failures reach the human, with no rule matched.
+env HOME=
+env XDG_CONFIG_HOME=
+exec handrail test Stop
+stdout '^human:\n  handrail: no Global tier to read: set HOME or XDG_CONFIG_HOME$'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- home/.config/handrail/no-rm-root.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf /
+---
+Never delete the filesystem root.
+-- home/.config/handrail/shell-note.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    equals: ls
+---
+Listing is fine.
