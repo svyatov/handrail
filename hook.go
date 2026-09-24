@@ -72,6 +72,10 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return a.Deliver(event, agentMessage(rs, matched), outcome, stdout, stderr)
 }
 
+// listedFiles is how many matched files a rule's message names before it
+// counts the rest (docs/spec.md section 2, Several edits in one call).
+const listedFiles = 10
+
 // agentMessage is the wire format the hook path delivers: everything the agent
 // should hear, which is the matched messages, then whatever handrail had to
 // skip to get there. It stays in the CLI because it is the hook command's own
@@ -81,9 +85,9 @@ func agentMessage(rs *rule.Ruleset, matched []rule.Match) string {
 	for _, m := range matched {
 		s := fmt.Sprintf("handrail %s: %s (%s)\n%s", m.Action, m.Name, m.Tier, m.Message)
 		if len(m.Files) > 0 {
-			s += "\nMatched files:\n  " + strings.Join(m.Files[:min(len(m.Files), 10)], "\n  ")
-			if len(m.Files) > 10 {
-				s += fmt.Sprintf("\n  and %d more", len(m.Files)-10)
+			s += "\nMatched files:\n  " + strings.Join(m.Files[:min(len(m.Files), listedFiles)], "\n  ")
+			if len(m.Files) > listedFiles {
+				s += fmt.Sprintf("\n  and %d more", len(m.Files)-listedFiles)
 			}
 		}
 		sections = append(sections, s)
