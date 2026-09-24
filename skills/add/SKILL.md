@@ -74,9 +74,10 @@ Never force-push. Rewrite history locally and open a pull request instead.
 **Events**: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`,
 `SessionEnd`, `Stop`, `SubagentStart`, `SubagentStop`. `event:` is required.
 
-- `block` holds on `PreToolUse` and `UserPromptSubmit`; elsewhere it degrades to
-  a warn, and `sync` and `doctor` report where. Codex also degrades a
-  `UserPromptSubmit` block to a warn.
+- `block` holds on `PreToolUse` and `UserPromptSubmit`. On `PostToolUse`,
+  `SessionStart`, `SessionEnd` and `SubagentStart` it is a validation error: use
+  `warn`. Codex degrades a `UserPromptSubmit` block to a warn, and `sync` and
+  `doctor` report it.
 - On `Stop` and `SubagentStop` a `block` means "not done": the agent continues
   once, with the message as its next instruction. A `warn` there tells only the
   human. Narrow these rules with `response` (see [fields.md](fields.md)), or they
