@@ -52,6 +52,11 @@ stderr 'glob-trailing-backslash\.md: line 5: invalid glob: trailing backslash'
 stderr 'glob-empty-class\.md: line 5: invalid glob: empty character class'
 stderr 'glob-class-trailing-backslash\.md: line 5: invalid glob: trailing backslash'
 
+# A path glob or equals value that cleaning would change can never match a
+# cleaned path, in either polarity.
+stderr 'unclean-glob\.md: line 5: path value "\./src/\*\*" is not clean, write "src/\*\*"'
+stderr 'unclean-not-equals\.md: line 5: path value "config/" is not clean, write "config"'
+
 # The YAML subset's own errors: indentation is the whole structure, so getting
 # it wrong is reported rather than guessed at.
 stderr 'empty-frontmatter\.md: line 1: missing required field "event"'
@@ -212,6 +217,22 @@ conditions:
     field: path
 ---
 An any group cannot share its condition with a field test.
+-- .handrail/unclean-glob.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: ./src/**
+---
+A leading ./ never survives cleaning.
+-- .handrail/unclean-not-equals.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    not_equals: config/
+---
+A trailing slash never survives cleaning.
 -- .handrail/bad-glob.md --
 ---
 event: PreToolUse

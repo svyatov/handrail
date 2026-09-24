@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"path"
 	"slices"
 	"strings"
 
@@ -23,6 +24,9 @@ type Payload struct {
 	// enforces is a matcher's rule, so it belongs to this package rather than to
 	// each Adapter that fills a payload in.
 	fields map[string][]candidate
+	// files are the files command names, which a shell call yields as payloads
+	// of their own.
+	files []shell.File
 }
 
 // candidate is one thing the call does, as one field sees it, written every
@@ -61,6 +65,10 @@ func (p *Payload) SetField(name, value string) bool {
 	switch name {
 	case "command":
 		p.setCommand(value)
+	case "path":
+		// Cleaned where it is set, never joined to cwd, so src/../.env is .env
+		// to a rule however the call spelled it.
+		p.fields[name] = []candidate{{spellings: []string{path.Clean(value)}}}
 	case "unreadable":
 		if !slices.ContainsFunc(p.fields[name], func(c candidate) bool { return c.spellings[0] == value }) {
 			p.fields[name] = append(p.fields[name], candidate{spellings: []string{value}})
@@ -75,7 +83,8 @@ func (p *Payload) SetField(name, value string) bool {
 // reader finds. A line that will not parse declares so in unreadable and keeps
 // the whole line for positive terms.
 func (p *Payload) setCommand(line string) {
-	read, ok := shell.Read(line)
+	read, files, ok := shell.Read(line)
+	p.files = files
 	cands := make([]candidate, 0, len(read)+2)
 	cands = append(cands, candidate{spellings: []string{line}, whole: true})
 	for _, spellings := range read {
@@ -96,6 +105,35 @@ func (p *Payload) setCommand(line string) {
 // is the same answer SetField gives when it refuses an empty value.
 func (p Payload) Has(name string) bool { return len(p.fields[name]) > 0 }
 
+// withFiles returns the payloads with every file a shell call names after
+// them, each its own file_edit or file_read payload carrying that one path
+// and the call's own event and tool. Only a shell call yields them: a tool
+// handrail does not classify contributes its command, not its files.
+func withFiles(payloads []Payload) []Payload {
+	all := slices.Clip(payloads) // appending never writes into the caller's array
+	for _, p := range payloads {
+		if p.Kind != "shell" {
+			continue
+		}
+		for _, f := range p.files {
+			fp := Payload{Event: p.Event, Kind: "file_read", fields: map[string][]candidate{"tool": p.fields["tool"]}}
+			if f.Write {
+				fp.Kind = "file_edit"
+			}
+			if f.Unreadable {
+				// As written: an expansion in it may hold a /, so cleaning it
+				// could only invent a path.
+				fp.fields["path"] = []candidate{{spellings: []string{f.Path}}}
+				fp.SetField("unreadable", "path")
+			} else {
+				fp.SetField("path", f.Path)
+			}
+			all = append(all, fp)
+		}
+	}
+	return all
+}
+
 // Evaluate runs an event's payloads against the Effective ruleset and answers
 // with both halves of what the event produces: the rules that matched any of
 // its payloads, once each and in delivery order (tier order, then alphabetical
@@ -106,15 +144,43 @@ func (p Payload) Has(name string) bool { return len(p.fields[name]) > 0 }
 //
 // Liveness is checked inline rather than over rs.Effective(), because this is
 // the hot path and the selector would allocate a second slice per event.
-func (rs *Ruleset) Evaluate(payloads []Payload) (matched []*Rule, outcome Outcome) {
+func (rs *Ruleset) Evaluate(payloads []Payload) (matched []Match, outcome Outcome) {
+	payloads = withFiles(payloads)
 	for _, r := range rs.Rules {
-		if !r.Live() || !slices.ContainsFunc(payloads, r.matches) {
+		if !r.Live() {
 			continue
 		}
-		matched = append(matched, r)
+		m, hit := Match{Rule: r}, false
+		for _, p := range payloads {
+			if !r.matches(p) {
+				continue
+			}
+			hit = true
+			for _, c := range p.fields["path"] {
+				if !slices.Contains(m.Files, c.spellings[0]) {
+					m.Files = append(m.Files, c.spellings[0])
+				}
+			}
+		}
+		if !hit {
+			continue
+		}
+		// One file is the one the message is about, with nothing to list.
+		if len(m.Files) == 1 {
+			m.Files = nil
+		}
+		matched = append(matched, m)
 		outcome = max(outcome, r.Action)
 	}
 	return matched, outcome
+}
+
+// Match is a rule that matched an event. A rule is delivered once however
+// many of the event's payloads it matched, and when they name several files,
+// Files lists them.
+type Match struct {
+	*Rule
+	Files []string
 }
 
 // matches reports whether this rule's matcher selects the payload. Whether the

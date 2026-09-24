@@ -14,22 +14,35 @@ import (
 // source text, then the unquoted form where that differs. A command statement
 // is one Candidate, once more without its leading assignments, and once more
 // for each Wrapper removed; code a listed shell runs adds its own. A redirect
-// to a file is one. ok is false when the line will not parse, and then there
-// are no Candidates, and when the line runs code handrail cannot read, which
-// keeps the Candidates found. A truncated line is not a failure: error
-// recovery keeps the commands before its malformed tail.
-func Read(line string) (cands [][]string, ok bool) {
+// to a file is one. It also returns each file the line names, once. ok is
+// false when the line will not parse, and then there are no Candidates, and
+// when the line runs code handrail cannot read, which keeps the Candidates
+// found. A truncated line is not a failure: error recovery keeps the commands
+// before its malformed tail.
+func Read(line string) (cands [][]string, files []File, ok bool) {
 	var r reader
 	if !r.read(line) {
-		return nil, false
+		return nil, nil, false
 	}
-	return r.cands, !r.gaveUp
+	return r.cands, r.files, !r.gaveUp
+}
+
+// File is one file a command's syntax names: the target of a redirect to a
+// file, or a file a listed program writes or reads.
+type File struct {
+	Path  string
+	Write bool
+	// Unreadable is true when the name holds an expansion, ~user, a glob or a
+	// brace, which only running the shell resolves. Path is then the source
+	// text, a best-effort reading.
+	Unreadable bool
 }
 
 // reader collects the Candidates of one program as the walk meets them.
 type reader struct {
 	text  string // the program's source: the line, or code nested in it
 	cands [][]string
+	files []File
 	// gaveUp is true once the program runs code handrail cannot read.
 	gaveUp bool
 	// fed holds the statements whose standard input comes from outside the
@@ -100,6 +113,9 @@ func (r *reader) code(text string, literal bool) {
 	inner := reader{depth: r.depth + 1}
 	parsed := inner.read(text)
 	r.cands = append(r.cands, inner.cands...)
+	for _, f := range inner.files {
+		r.file(f)
+	}
 	r.gaveUp = r.gaveUp || !literal || !parsed || inner.gaveUp
 }
 
@@ -110,6 +126,14 @@ func (r *reader) add(source, unquoted string) {
 		return
 	}
 	r.cands = append(r.cands, []string{source, unquoted})
+}
+
+// file records a file the program names, once however many wrapping levels
+// name it.
+func (r *reader) file(f File) {
+	if !slices.Contains(r.files, f) {
+		r.files = append(r.files, f)
+	}
 }
 
 // stmt adds a statement that runs a command. A statement that only groups
@@ -177,6 +201,52 @@ func (r *reader) redirect(rd *syntax.Redirect) {
 		n = rd.N.Value
 	}
 	r.add(r.src(rd, rd), n+rd.Op.String()+target)
+	f := r.named(rd.Word)
+	switch rd.Op {
+	case syntax.RdrIn, syntax.DplIn:
+		r.file(f)
+	case syntax.RdrInOut:
+		r.file(f)
+		f.Write = true
+		r.file(f)
+	default:
+		f.Write = true
+		r.file(f)
+	}
+}
+
+// named reads a word that names a file. A name only running the shell
+// resolves keeps its source text and says so.
+func (r *reader) named(w *syntax.Word) File {
+	if !literal(w) || tilde(w) || slices.ContainsFunc(w.Parts, pattern) {
+		return File{Path: r.src(w, w), Unreadable: true}
+	}
+	return File{Path: r.word(w)}
+}
+
+// tilde reports whether a word starts with ~user, which names another user's
+// home directory. A bare ~ is the home directory, kept as written.
+func tilde(w *syntax.Word) bool {
+	lit, ok := w.Parts[0].(*syntax.Lit)
+	return ok && len(lit.Value) > 1 && lit.Value[0] == '~' && lit.Value[1] != '/'
+}
+
+// pattern reports whether an unquoted part holds an unescaped glob or brace
+// character: only quoting and a backslash make them literal.
+func pattern(part syntax.WordPart) bool {
+	lit, ok := part.(*syntax.Lit)
+	if !ok {
+		return false
+	}
+	for i := 0; i < len(lit.Value); i++ {
+		switch lit.Value[i] {
+		case '\\':
+			i++
+		case '*', '?', '[', '{':
+			return true
+		}
+	}
+	return false
 }
 
 // src is the line's text from the start of one node to the end of another. A

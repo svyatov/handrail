@@ -46,6 +46,7 @@ func (r *reader) follow(c *call, i, j int) {
 		return
 	}
 	name := path.Base(c.words[i])
+	r.listed(c, name, i+1, j)
 	switch name {
 	case "sh", "bash", "zsh", "dash", "ksh", "mksh":
 		r.shell(c, i+1, j)
@@ -193,10 +194,11 @@ func literal(w *syntax.Word) bool {
 type grammar struct {
 	// short lists the short flags as getopt does: a letter followed by ':'
 	// takes an argument, one followed by '::' takes the rest of its word if
-	// any, and one followed by '?' may or may not take one.
+	// any, one followed by '?' may or may not take one, and one followed by
+	// ':?' takes the rest of its word, else may or may not take one.
 	short string
 	// long lists the long flags, marked the same way with a trailing '=' or
-	// '?'.
+	// '?', or '==' for two arguments.
 	long string
 	// operands is how many operands come before the command, as timeout's
 	// DURATION does.
@@ -224,12 +226,39 @@ type grammar struct {
 	// splits is true for a program whose script flag's argument is split into
 	// the first words of its command, as env -S's is.
 	splits bool
+
+	// The rest describe a listed file program (docs/spec.md section 1).
+
+	// writes is true for a program that writes its file operands: always, or
+	// only under a writeMode flag where it has one, as sed has -i.
+	writes bool
+	// first is true for a program whose first operand is its pattern or
+	// script, unless a pattern or patternFile flag supplied one.
+	first bool
+	// last is true for a program that writes its last operand, or a target
+	// flag's argument, and reads the others, as cp does.
+	last bool
+	// pattern lists the flags whose argument is the pattern or script, and
+	// patternFile those whose argument is a file holding it, which is read.
+	pattern, patternFile []string
+	// writeMode lists the flags that make the program write its operands.
+	writeMode []string
+	// target lists the flags whose argument names the file written.
+	target []string
+	// input and output list the flags whose argument, the last where a flag
+	// takes two, names a file the program reads or writes, as sort -o does.
+	input, output []string
+	// ends lists the flags after which no operand past the pattern names a
+	// file, as jq --args makes them values.
+	ends []string
 }
 
 // arity is how many arguments a flag takes: none, one, either, for a flag
-// the implementations disagree on or the table lacks, or attached, getopt's
+// the implementations disagree on or the table lacks, attached, getopt's
 // optional argument, which is the rest of the flag's word and never the next
-// word.
+// word, or two, as jq's --arg NAME VALUE takes. restOrEither is the rest of
+// the flag's word, and with nothing there either, as GNU sed -i[SUFFIX] and
+// BSD sed -i SUFFIX agree only on -i.bak.
 type arity byte
 
 const (
@@ -237,24 +266,37 @@ const (
 	one
 	either
 	attached
+	two
+	restOrEither
 )
 
 var wrappers = map[string]*grammar{
+	// timeout: GNU coreutils timeout --help; FreeBSD and macOS timeout(1)
 	"timeout": {short: "fk:ps:v", long: "foreground kill-after= preserve-status signal= verbose help version", operands: 1},
-	"time":    {short: "af:hlo:pqv", long: "append format= output= portability quiet verbose help version"},
-	"nice":    {short: "n:0123456789", long: "adjustment= help version"},
-	"nohup":   {long: "help version"},
-	"stdbuf":  {short: "e:i:o:", long: "error= input= output= help version"},
+	// time: GNU time 1.9 time --help; FreeBSD and macOS time(1)
+	"time": {short: "af:hlo:pqv", long: "append format= output= portability quiet verbose help version"},
+	// nice: GNU coreutils nice --help, with obsolete -N; FreeBSD and macOS nice(1)
+	"nice": {short: "n:0123456789", long: "adjustment= help version"},
+	// nohup: GNU coreutils nohup --help; FreeBSD and macOS nohup(1)
+	"nohup": {long: "help version"},
+	// stdbuf: GNU coreutils stdbuf --help; FreeBSD stdbuf(1)
+	"stdbuf": {short: "e:i:o:", long: "error= input= output= help version"},
+	// command: bash manual, Bash Builtins, command [-pVv]
 	"command": {short: "pvV", stop: []string{"v", "V"}},
+	// builtin: bash manual, Bash Builtins, builtin [shell-builtin [args]]
 	"builtin": {},
-	"noglob":  {},
-	"exec":    {short: "a:cl"},
+	// noglob: zsh manual, Precommand Modifiers
+	"noglob": {},
+	// exec: bash manual, Bourne Shell Builtins, exec [-cl] [-a name]
+	"exec": {short: "a:cl"},
+	// sudo: sudo 1.9 sudo(8)
 	"sudo": {
 		short:   "ABbEeHh?iKklNnPSsVva:c:C:D:g:p:R:r:T:t:U:u:",
 		long:    "askpass auth-type= background bell close-from= chdir= preserve-env edit group= set-home help host= login login-class= remove-timestamp reset-timestamp list no-update non-interactive preserve-groups prompt= chroot= role= stdin shell type= command-timeout= other-user= user= version validate",
 		assigns: true,
 		stop:    []string{"e", "edit"},
 	},
+	// env: GNU coreutils env --help; FreeBSD and macOS env(1)
 	"env": {
 		short:   "0iC:L:P:S:U:u:v",
 		long:    "ignore-environment null unset= chdir= split-string= ignore-signal default-signal block-signal list-signal-handling debug help version",
@@ -262,37 +304,47 @@ var wrappers = map[string]*grammar{
 		script:  []string{"S", "split-string"},
 		splits:  true,
 	},
-	"doas":   {short: "a:C:Lnsu:"},
+	// doas: OpenBSD doas(1); OpenDoas doas(1)
+	"doas": {short: "a:C:Lnsu:"},
+	// setsid: util-linux setsid(1)
 	"setsid": {short: "cfwhV", long: "ctty fork wait help version"},
+	// flock: util-linux flock(1)
 	"flock": {
 		short:    "eE:FhnosuVw:x",
 		long:     "shared exclusive unlock nonblock nb no-fork close wait= timeout= conflict-exit-code= verbose help version",
 		operands: 1,
 		dashC:    true,
 	},
+	// watch: procps-ng watch(1)
 	"watch": {
 		short:  "bcCdeghn:pq:rs:tvwx",
 		long:   "beep color no-color differences exec chgexit errexit help interval= precise equexit= no-rerun shotsdir= no-title version no-wrap",
 		joined: true,
 	},
-	// su is a nested shell: its command is only the script its -c names.
+	// su: util-linux su(1). A nested shell: its command is only the script
+	// its -c names.
 	"su": {
 		short:   "c:fg:G:hlmPps:Vw:",
 		long:    "command= session-command= fast group= supp-group= help login preserve-environment pty shell= version whitelist-environment=",
 		permute: true,
 		script:  []string{"c", "command", "session-command"},
 	},
+	// xargs: GNU findutils xargs --help; FreeBSD and macOS xargs(1)
 	"xargs": {
 		short:    "0a:d:E:e::I:i::J:L:l::n:oP:prR:S:s:tx",
 		long:     "null arg-file= delimiter= eof replace max-lines max-args= max-procs= interactive no-run-if-empty max-chars= verbose exit open-tty process-slot-var= show-limits help version",
 		detaches: true,
 	},
-	"mise exec":   mise,
-	"mise x":      mise,
+	"mise exec": mise,
+	"mise x":    mise,
+	// direnv exec: direnv(1), direnv exec DIR COMMAND
 	"direnv exec": {operands: 1},
-	"devbox run":  {short: "c:e:hlq", long: "config= env= env-file= environment= help list omit-nix-env pure quiet recompute"},
+	// devbox run: Jetify devbox docs, devbox run --help
+	"devbox run": {short: "c:e:hlq", long: "config= env= env-file= environment= help list omit-nix-env pure quiet recompute"},
 }
 
+// mise is mise exec and its alias mise x, from the mise docs and mise exec
+// --help.
 var mise = &grammar{
 	short:   "c:C:E:hj:qvy",
 	long:    "command= jobs= allow-env= allow-net= allow-read= allow-write= deny-all deny-env deny-net deny-read deny-write fresh-env no-deps raw help cd= env= quiet verbose yes locked silent",
@@ -335,6 +387,10 @@ func marked(rest string) arity {
 		return none
 	case strings.HasPrefix(rest, "::"):
 		return attached
+	case strings.HasPrefix(rest, "=="):
+		return two
+	case strings.HasPrefix(rest, ":?"):
+		return restOrEither
 	case rest[0] == ':' || rest[0] == '=':
 		return one
 	case rest[0] == '?':
