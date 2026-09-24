@@ -35,6 +35,10 @@ stdout '^warn  rm-root  global$'
 # A statement that is not a simple command is a Candidate as written.
 exec handrail test PreToolUse --field 'command=[[ -f x ]] && export PATH=/tmp'
 stdout '^warn  export-path  global$'
+exec handrail test PreToolUse --field 'command=export "PATH=/tmp"'
+stdout '^warn  export-path  global$'
+exec handrail test PreToolUse --field 'command=export PATH="/tmp"'
+stdout '^warn  export-path  global$'
 
 # The unquoted Spelling: quotes and extra blanks do not hide the command.
 exec handrail test PreToolUse --field 'command=rm "-rf" /'

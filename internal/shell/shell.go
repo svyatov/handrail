@@ -73,8 +73,15 @@ func (r *reader) stmt(st *syntax.Stmt) {
 		if len(cmd.Assigns) > 0 && len(cmd.Args) > 0 {
 			r.add(r.src(cmd.Args[0], to), strings.Join(words[len(cmd.Assigns):], " "))
 		}
+	case *syntax.DeclClause:
+		words := []string{cmd.Variant.Value}
+		for _, a := range cmd.Args {
+			words = append(words, r.assign(a))
+		}
+		r.add(r.src(from, to), strings.Join(words, " "))
 	default:
-		r.add(r.src(from, to), r.src(from, to))
+		source := r.src(from, to)
+		r.add(source, source)
 	}
 }
 
@@ -114,7 +121,13 @@ func (r *reader) src(from, to syntax.Node) string {
 	return r.line[from.Pos().Offset():end.Offset()]
 }
 
+// assign is an assignment's unquoted form. A declaration's plain word, such as
+// a flag or a quoted "NAME=value", arrives as a naked assignment holding it.
+// An indexed or array assignment stays as written.
 func (r *reader) assign(a *syntax.Assign) string {
+	if a.Naked && a.Name == nil && a.Value != nil {
+		return r.word(a.Value)
+	}
 	if a.Name == nil || a.Index != nil || a.Array != nil || a.Value == nil {
 		return r.src(a, a)
 	}
