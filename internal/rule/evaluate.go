@@ -249,20 +249,20 @@ func (rs *Ruleset) Yield(payloads []Payload) []Payload {
 	return payloads
 }
 
-// Candidate is one Candidate as a report shows it: its Spellings, and whether
-// it is the whole command line, which only positive terms read. One with no
-// Spellings stands for a command line that runs no command.
-type Candidate struct {
+// CandidateView is one Candidate as a report shows it: its Spellings, and
+// whether it is the whole command line, which only positive terms read. One
+// with no Spellings stands for a command line that runs no command.
+type CandidateView struct {
 	Spellings []string `json:"spellings"`
 	Whole     bool     `json:"whole,omitempty"`
 }
 
 // Fields returns every field the payload carries, each as its Candidates.
-func (p Payload) Fields() map[string][]Candidate {
-	out := make(map[string][]Candidate, len(p.fields))
+func (p Payload) Fields() map[string][]CandidateView {
+	out := make(map[string][]CandidateView, len(p.fields))
 	for name, cands := range p.fields {
 		for _, c := range cands {
-			out[name] = append(out[name], Candidate{Spellings: append([]string{}, c.spellings...), Whole: c.whole})
+			out[name] = append(out[name], CandidateView{Spellings: append([]string{}, c.spellings...), Whole: c.whole})
 		}
 	}
 	return out
@@ -274,7 +274,8 @@ func (p Payload) Fields() map[string][]Candidate {
 // within a tier), and the Outcome, the strongest Action among them, or allow
 // when nothing matched. A caller deriving the Outcome for itself would be a
 // second answer to the same question, free to disagree with this one, and test
-// exists to say what hook will do.
+// exists to say what hook will do. What a harness delivers of it is the
+// Adapter's answer, not a second one to this.
 //
 // Liveness is checked inline rather than over rs.Effective(), because this is
 // the hot path and the selector would allocate a second slice per event.

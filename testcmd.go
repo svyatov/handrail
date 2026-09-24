@@ -52,9 +52,9 @@ type testMatch struct {
 
 // testPayload is one payload the event yields, as handrail read it.
 type testPayload struct {
-	Kind       string                      `json:"kind,omitempty"`
-	Fields     map[string][]rule.Candidate `json:"fields"`
-	Unreadable []string                    `json:"unreadable"`
+	Kind       string                          `json:"kind,omitempty"`
+	Fields     map[string][]rule.CandidateView `json:"fields"`
+	Unreadable []string                        `json:"unreadable"`
 }
 
 type testOutput struct {
@@ -175,12 +175,13 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// what hook does with it.
 	var outcome rule.Outcome
 	for _, r := range matched {
-		m := testMatch{Rule: r.Name, Tier: r.Tier, Action: a.Action(r.Rule).String(), Message: r.Message}
-		if m.Action != r.Action.String() {
+		action := a.Action(r.Rule)
+		m := testMatch{Rule: r.Name, Tier: r.Tier, Action: action.String(), Message: r.Message}
+		if action != r.Action {
 			m.DegradedFrom = new(r.Action.String())
 		}
 		out.Matched = append(out.Matched, m)
-		outcome = max(outcome, a.Action(r.Rule))
+		outcome = max(outcome, action)
 	}
 	out.Outcome = outcome.String()
 	notices := loadNotices(rs, event)
