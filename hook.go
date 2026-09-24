@@ -57,10 +57,16 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	} else if payloads, cwd, err = a.Normalize(event, data); err != nil {
 		failures = append(failures, fmt.Sprintf("handrail: could not parse the %s payload: %v", event, err))
 	}
+	// A payload handrail could not take whole is one kind-less payload, which
+	// only a rule naming no kind reaches.
+	if failures != nil {
+		payloads = []rule.Payload{{Event: event}}
+	}
 	// The payload names the directory the event happened in; the process's own is
 	// the fallback for a harness that leaves it out. That is process state rather
 	// than payload, so it is answered here and not in Normalize. A directory
-	// that is not there names no project, whoever named it.
+	// that is not there names no project, whoever named it, but the call was
+	// still read, so it keeps its kind and meets the Global tier.
 	if !filepath.IsAbs(cwd) {
 		cwd, _ = os.Getwd()
 	}
@@ -71,13 +77,10 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		cwd = ""
 		failures = append(failures, fmt.Sprintf("handrail: no working directory, so no project rule was evaluated: %v", err))
 	}
-	// A payload handrail could not take whole, or one with no directory to
-	// place it in, is one kind-less payload, which only a rule naming no kind
-	// reaches.
 	if failures != nil {
-		p := rule.Payload{Event: event}
-		p.SetField("unreadable", "payload")
-		payloads = []rule.Payload{p}
+		for i := range payloads {
+			payloads[i].SetField("unreadable", "payload")
+		}
 	}
 	rs := rule.Load(cwd)
 	matched, outcome := rs.Evaluate(payloads)

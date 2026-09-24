@@ -20,7 +20,7 @@ exec handrail hook claude PreToolUse
 stdout 'handrail warn: gap-payload'
 ! stdout 'handrail warn: any-shell'
 
-# A cwd handrail cannot read would pick the project rules by guesswork.
+# A cwd handrail cannot read fails the payload instead of passing for absent.
 stdin number-cwd.json
 exec handrail hook claude PreToolUse
 stdout 'handrail warn: gap-payload'
@@ -46,19 +46,23 @@ stdout 'handrail warn: any-shell'
 
 # With no working directory no project tier can be located: the event reaches
 # the Global tier alone, and says that it lost the rest. A cwd the payload names
-# and that is not there is none.
+# and that is not there is none. The call itself was read, so it keeps its kind
+# and a Global rule on it still holds.
 mkdir $WORK/home/.config/handrail
 cp global-gap.md $WORK/home/.config/handrail/global-gap.md
 cp global-rules.md $WORK/home/.config/handrail/global-rules.md
+cp global-shell.md $WORK/home/.config/handrail/global-shell.md
 stdin gone-cwd.json
 exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
-stdout 'handrail warn: global-gap \(global\)'
-stdout 'handrail warn: global-rules \(global\)'
-stdout 'no working directory'
-! stdout 'any-shell'
-stdout '^code=0$'
+stderr 'handrail block: global-shell \(global\)'
+stderr 'handrail warn: global-gap \(global\)'
+stderr 'handrail warn: global-rules \(global\)'
+stderr 'no working directory'
+! stderr 'any-shell'
+stdout '^code=2$'
 
 # A file is no directory to work in either.
+rm $WORK/home/.config/handrail/global-shell.md
 stdin file-cwd.json
 exec handrail hook claude PreToolUse
 stdout 'handrail warn: global-gap \(global\)'
@@ -120,3 +124,10 @@ conditions:
     equals: rules
 ---
 handrail could not find every rule.
+-- global-shell.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+---
+No shell calls here.

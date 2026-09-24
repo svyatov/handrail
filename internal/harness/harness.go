@@ -142,7 +142,7 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		return nil, "", errors.New("the payload is null")
 	}
 	// cwd picks the project whose rules apply, so one handrail cannot read
-	// fails the payload rather than letting the process's own stand in for it.
+	// fails the payload, which is declared, rather than passing for absent.
 	var cwd, name string
 	var input map[string]any
 	if raw, ok := env["cwd"]; ok {
