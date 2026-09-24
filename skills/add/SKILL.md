@@ -186,7 +186,9 @@ directories only as its own segment, leading or after a `/`; anywhere else it
 reads as `*`. `**/` matches zero directories too, so `**/*.env` covers a file at
 the repo root, and a trailing `**` matches every depth below. In `[...]` classes
 a leading `^` negates and `!` is an ordinary member, unlike gitignore; `\` makes
-the next character literal.
+the next character literal. A `path` is cleaned before matching (`src/../.env`
+is `.env`), so never write `./`, `//` or an inner `..` in a `path` glob or
+`equals`: `check` rejects it.
 
 **Message**: the markdown body, addressed to the agent, in prose. Say what is
 forbidden and what to do instead. No templating; `{{` stays literal. On a
