@@ -17,6 +17,10 @@ Two documents decide whether a change is acceptable:
 [`GLOSSARY.md`](GLOSSARY.md) defines the vocabulary. Use its words for types and
 identifiers rather than inventing synonyms.
 
+A flag table entry in `internal/shell` names, in a comment beside it, the
+upstream man page or `--help` text it was taken from, so review can check each
+flag against its source.
+
 ## Setup
 
 You need [Go](https://go.dev/dl/) at the version in `go.mod`, currently 1.27.1,
