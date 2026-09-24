@@ -213,9 +213,11 @@ func (p *parser) seq(ind int) (*node, error) {
 			n.seq = append(n.seq, child)
 			continue
 		}
-		// An item with no key is a scalar: a url holds a colon too, but never
-		// one a space follows or that ends the text.
-		if !strings.Contains(body+" ", ": ") {
+		// An item that opens with no key is a scalar: a url's first colon has
+		// no space after it, and a quoted value is one value, colons and all.
+		_, rest, keyed := strings.Cut(body, ":")
+		keyed = keyed && (rest == "" || rest[0] == ' ' || rest[0] == '\t')
+		if body[0] == '\'' || body[0] == '"' || !keyed {
 			s, _, err := parseScalar(body)
 			if err != nil {
 				return nil, p.errf(p.i, "%v", err)

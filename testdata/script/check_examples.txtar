@@ -41,6 +41,10 @@ stderr 'list-fails\.md: line 8: no_match example fails: url=\["https://docs.exam
 ! stderr 'fail-closed\.md'
 ! stderr 'writes-empty\.md'
 
+# A quoted list entry is one value however many colons it holds, and a tab
+# after a key's colon still opens a mapping.
+! stderr 'quoted-rename\.md'
+
 # --json carries each rule's passed count and every failing Example's fields.
 exec sh -c 'handrail check --json; echo code=$?'
 stdout '^code=1$'
@@ -188,3 +192,17 @@ examples:
       content: hello
 ---
 This call empties a file.
+-- .handrail/quoted-rename.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field:	path
+    glob: "notes: *"
+examples:
+  match:
+    - path:
+        - "notes: draft.md"
+        - final.md
+---
+A quoted entry is one value, colon and all.

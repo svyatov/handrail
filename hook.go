@@ -112,7 +112,7 @@ func examplesNotice(rules []*rule.Rule) string {
 	var failing []string
 	for _, r := range rules {
 		if harness.FailingExamples(r) != nil {
-			failing = append(failing, r.Name)
+			failing = append(failing, fmt.Sprintf("%s (%s)", r.Name, r.Tier))
 		}
 	}
 	if len(failing) == 0 {
