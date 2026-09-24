@@ -104,7 +104,8 @@ func IsKind(name string) bool {
 // address. raw.* is a v1 non-goal, so this set is closed.
 func IsField(name string) bool {
 	switch name {
-	case "command", "path", "content", "server", "tool", "prompt", "unreadable":
+	case "command", "path", "content", "removed_content", "writes_empty", "deletes",
+		"server", "tool", "prompt", "unreadable":
 		return true
 	}
 	return false

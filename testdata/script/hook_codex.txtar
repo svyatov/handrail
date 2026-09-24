@@ -22,14 +22,15 @@ stderr 'handrail warn: no-env-edits \(project-shared\)'
 # A shell rule does not reach it: apply_patch is a file edit, whatever it rides in.
 ! stderr 'no-heredocs'
 
-# One patch can touch several files, and the payload has one path field: the
-# fields describe the first file only, so no rule blocks a benign edit for
-# what a later file in the same envelope did.
+# One patch can touch several files, and each file section is its own payload:
+# the credential written into the second file blocks, and the env rule still
+# answers for the first, with no rule reading one file's path against
+# another's content.
 stdin multi-patch.json
 exec sh -c 'handrail hook codex PreToolUse; echo code=$?'
-stdout '^code=0$'
-! stdout 'no-secrets'
-stdout 'handrail warn: no-env-edits'
+stdout '^code=2$'
+stderr 'handrail block: no-secrets'
+stderr 'handrail warn: no-env-edits'
 
 # Codex cannot fail closed on UserPromptSubmit before the model request, so a
 # block there degrades to the strongest thing left: the message, injected.

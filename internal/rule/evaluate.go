@@ -79,6 +79,17 @@ func (p *Payload) SetField(name, value string) bool {
 	return true
 }
 
+// SetRename fills path with both files a rename names, source then
+// destination, each its own Candidate, so a not_ term on path fires when either
+// one fails it. An empty one is left out, as SetField leaves it.
+func (p *Payload) SetRename(from, to string) {
+	p.SetField("path", from)
+	src := p.fields["path"]
+	if p.SetField("path", to) {
+		p.fields["path"] = append(src, p.fields["path"]...)
+	}
+}
+
 // setCommand fills command with the whole line and every Candidate the shell
 // reader finds. A line that will not parse declares so in unreadable and keeps
 // the whole line for positive terms.
