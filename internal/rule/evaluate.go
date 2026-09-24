@@ -150,22 +150,23 @@ func (rs *Ruleset) Evaluate(payloads []Payload) (matched []Match, outcome Outcom
 		if !r.Live() {
 			continue
 		}
-		m, n := Match{Rule: r}, 0
+		m, hit := Match{Rule: r}, false
 		for _, p := range payloads {
 			if !r.matches(p) {
 				continue
 			}
-			n++
+			hit = true
 			for _, c := range p.fields["path"] {
 				if !slices.Contains(m.Files, c.spellings[0]) {
 					m.Files = append(m.Files, c.spellings[0])
 				}
 			}
 		}
-		if n == 0 {
+		if !hit {
 			continue
 		}
-		if n == 1 {
+		// One file is the one the message is about, with nothing to list.
+		if len(m.Files) == 1 {
 			m.Files = nil
 		}
 		matched = append(matched, m)
@@ -175,8 +176,8 @@ func (rs *Ruleset) Evaluate(payloads []Payload) (matched []Match, outcome Outcom
 }
 
 // Match is a rule that matched an event. A rule is delivered once however
-// many of the event's payloads it matched, and when it matched several, Files
-// names the paths among them.
+// many of the event's payloads it matched, and when they name several files,
+// Files lists them.
 type Match struct {
 	*Rule
 	Files []string

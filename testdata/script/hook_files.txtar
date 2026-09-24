@@ -15,6 +15,12 @@ exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
 stdout '^code=2$'
 ! stderr 'Matched files'
 
+# Two spellings of one file are one file, so there is nothing to list.
+stdin two-spellings.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: env-reads'
+! stdout 'Matched files'
+
 -- .git/HEAD --
 ref: refs/heads/main
 -- twelve.json --
@@ -23,6 +29,21 @@ ref: refs/heads/main
   "tool_name": "Bash",
   "tool_input": {"command": "echo x >a.env >b.env >c.env >d.env >e.env >f.env >g.env >h.env >i.env >j.env >k.env >l.env"}
 }
+-- two-spellings.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {"command": "cat src/../.env ./.env"}
+}
+-- .handrail/env-reads.md --
+---
+event: PreToolUse
+kind: file_read
+conditions:
+  - field: path
+    glob: "*.env"
+---
+Reads a .env file.
 -- one.json --
 {
   "hook_event_name": "PreToolUse",
