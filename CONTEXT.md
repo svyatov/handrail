@@ -96,7 +96,7 @@ _Avoid_: tool type, tool category
 What an Adapter declares its harness supports: which events exist, which can block, which can carry a human-visible message, context injection, transcript access, and fail-open behavior. Drives degradation.
 
 **Degradation**:
-Substituting the nearest action that keeps a rule's promise when a harness lacks a capability it needs: a block falls to warn, then skip; an ask rises to block, because its promise is that the call does not proceed without a human. Reported at sync time, never silently.
+Substituting the nearest action that keeps a rule's promise when one harness lacks a capability the other has: a block falls to warn, then skip; an ask rises to block, because its promise is that the call does not proceed without a human. Reported at sync time, never silently.
 
 **Trust**:
 handrail's own per-repo, path-once grant that lets a repo's Project-shared rules take effect. Distinct from any harness's workspace trust. Global and genuinely local Project-personal tiers never need it.
