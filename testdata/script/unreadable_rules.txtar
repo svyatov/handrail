@@ -1,0 +1,81 @@
+# Rules handrail lost at event time are declared as unreadable: rules, so a
+# rule that is left can fail closed on the loss, and the loss is told to the
+# agent and to the human alike. None of it blocks by itself.
+
+# A rule file that will not parse is skipped, named on both channels, and the
+# rules around it see the loss.
+exec handrail trust
+cp broken.md .handrail/broken.md
+stdin bash.json
+exec handrail hook claude PreToolUse
+stdout '"additionalContext": ".*handrail: skipped the broken rule .*/\.handrail/broken\.md: line 2: unknown event'
+stdout '"systemMessage": ".*handrail: skipped the broken rule .*/\.handrail/broken\.md'
+stdout 'handrail warn: gap-rules \(project-shared\)'
+! stderr .
+rm .handrail/broken.md
+
+# Nothing lost, nothing declared, nothing told.
+stdin bash.json
+exec handrail hook claude PreToolUse
+! stdout .
+
+# With no home and no absolute XDG_CONFIG_HOME, the Global tier has no
+# directory to be read from.
+env HOME=
+env XDG_CONFIG_HOME=relative/path
+stdin bash.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '"additionalContext": ".*handrail: no Global tier to read: set HOME or XDG_CONFIG_HOME'
+stdout '"systemMessage": ".*handrail: no Global tier to read: set HOME or XDG_CONFIG_HOME'
+stdout 'handrail warn: gap-rules \(project-shared\)'
+stdout '^code=0$'
+
+# A clone's committed rules count for nothing until trusted, so a broken one
+# there loses nothing: the hook path says only what it says of any untrusted
+# tier, and the user's own rule sees no loss.
+env HOME=$WORK/home
+env XDG_CONFIG_HOME=$WORK/home/.config
+cd clone
+stdin ../bash.json
+exec handrail hook claude PreToolUse
+! stdout 'broken'
+! stdout 'gap-rules'
+! stdout 'systemMessage'
+stdout 'run handrail trust'
+
+# check still validates it, because it validates every tier.
+! exec handrail check
+stderr 'broken\.md: line 2: unknown event'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- bash.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- broken.md --
+---
+event: Nope
+---
+A rule a newer binary would read.
+-- .handrail/gap-rules.md --
+---
+event: PreToolUse
+conditions:
+  - field: unreadable
+    equals: rules
+---
+handrail lost some rules.
+-- clone/.git/HEAD --
+ref: refs/heads/main
+-- clone/.handrail/broken.md --
+---
+event: Nope
+---
+A committed rule nobody trusted yet.
+-- clone/.handrail/local/gap-rules.md --
+---
+event: PreToolUse
+conditions:
+  - field: unreadable
+    equals: rules
+---
+handrail lost some rules.

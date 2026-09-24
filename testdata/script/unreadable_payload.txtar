@@ -1,0 +1,133 @@
+# A harness payload handrail cannot read is still an event: it yields one
+# payload carrying unreadable: payload and no kind, which only a kind-less rule
+# reaches. handrail itself never blocks it.
+exec handrail trust
+
+stdin garbage
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: gap-payload \(project-shared\)'
+stdout 'could not parse the PreToolUse payload'
+! stdout 'handrail warn: any-shell'
+! stderr .
+
+# JSON that is not an object is no payload either.
+stdin null
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: gap-payload'
+
+stdin string-input.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: gap-payload'
+! stdout 'handrail warn: any-shell'
+
+# A cwd handrail cannot read fails the payload instead of passing for absent.
+stdin number-cwd.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: gap-payload'
+! stdout 'handrail warn: any-shell'
+
+# stdin that will not read at all: a directory opens and then fails to read.
+exec sh -c 'handrail hook claude PreToolUse < .; echo code=$?'
+stdout 'handrail warn: gap-payload'
+stdout 'could not read the PreToolUse payload'
+stdout '^code=0$'
+
+# A rule that blocks on the gap is the user's choice, and it holds.
+stdin garbage
+exec sh -c 'handrail hook claude UserPromptSubmit; echo code=$?'
+stderr 'handrail block: block-payload \(project-shared\)'
+stdout '^code=2$'
+
+# A payload read cleanly carries no such value.
+stdin bash.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: any-shell'
+! stdout 'gap-payload'
+
+# With no working directory no project tier can be located: the event reaches
+# the Global tier alone, and says that it lost the rest. A cwd the payload names
+# and that is not there is none. The call itself was read, so it keeps its kind
+# and a Global rule on it still holds.
+mkdir $WORK/home/.config/handrail
+cp global-gap.md $WORK/home/.config/handrail/global-gap.md
+cp global-rules.md $WORK/home/.config/handrail/global-rules.md
+cp global-shell.md $WORK/home/.config/handrail/global-shell.md
+stdin gone-cwd.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stderr 'handrail block: global-shell \(global\)'
+stderr 'handrail warn: global-gap \(global\)'
+stderr 'handrail warn: global-rules \(global\)'
+stderr 'no working directory'
+! stderr 'any-shell'
+stdout '^code=2$'
+
+# A file is no directory to work in either.
+rm $WORK/home/.config/handrail/global-shell.md
+stdin file-cwd.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: global-gap \(global\)'
+stdout 'no working directory'
+! stdout 'broken rule'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- garbage --
+not json at all
+-- null --
+null
+-- string-input.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": "rm -rf /"}
+-- bash.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- gone-cwd.json --
+{"hook_event_name": "PreToolUse", "cwd": "/nonexistent/handrail-gone", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- number-cwd.json --
+{"hook_event_name": "PreToolUse", "cwd": 5, "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- file-cwd.json --
+{"hook_event_name": "PreToolUse", "cwd": "/etc/hosts", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- .handrail/gap-payload.md --
+---
+event: PreToolUse
+conditions:
+  - field: unreadable
+    equals: payload
+---
+handrail could not read this call.
+-- .handrail/block-payload.md --
+---
+event: UserPromptSubmit
+action: block
+conditions:
+  - field: unreadable
+    equals: payload
+---
+handrail could not read this prompt.
+-- .handrail/any-shell.md --
+---
+event: PreToolUse
+kind: shell
+---
+A shell call.
+-- global-gap.md --
+---
+event: PreToolUse
+conditions:
+  - field: unreadable
+    equals: payload
+---
+handrail could not read this call.
+-- global-rules.md --
+---
+event: PreToolUse
+conditions:
+  - field: unreadable
+    equals: rules
+---
+handrail could not find every rule.
+-- global-shell.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+---
+No shell calls here.

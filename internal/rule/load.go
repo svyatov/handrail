@@ -14,6 +14,10 @@ import (
 type Problem struct {
 	Path    string
 	Message string
+	// Untrusted marks a problem in a tier trust skipped, whose rules would
+	// count for nothing had they parsed: check reports it, the hook path does
+	// not.
+	Untrusted bool
 }
 
 // The three tiers, in precedence order: most specific wins. Tiers are
@@ -28,7 +32,7 @@ const (
 // it contributed, and whether trust let it contribute at all.
 type Tier struct {
 	Name    string
-	Dir     string // "" when the machine says nowhere, which only Global can
+	Dir     string // "" when nothing names one: no home for Global, no working directory for the Project tiers
 	Count   int    // rules this tier contributed
 	Trusted bool   // trust gates the Project-shared tier; the user's own two carry it
 	Skipped bool   // this tier held something and went untrusted, so none of it counts
@@ -59,13 +63,31 @@ func (rs *Ruleset) Effective() []*Rule {
 	return out
 }
 
+// Unreadable reports whether the load lost rules an event should have been
+// evaluated against: a tier with no directory to read, or a rule file skipped
+// in a tier whose rules count.
+func (rs *Ruleset) Unreadable() bool {
+	return slices.ContainsFunc(rs.Tiers, func(t Tier) bool { return t.Dir == "" }) ||
+		slices.ContainsFunc(rs.Problems, func(p Problem) bool { return !p.Untrusted })
+}
+
 // Load parses every tier that applies to cwd: Global from the XDG config dir,
 // Project-shared at the project root, Project-personal under it. Rules come
 // back in delivery order, tier by tier and alphabetical within a tier, each
-// tagged with its tier and with the higher-tier rule that shadows it.
+// tagged with its tier and with the higher-tier rule that shadows it. An empty
+// cwd is no working directory, where only the Global tier can be located.
 func Load(cwd string) *Ruleset {
-	root := RepoRoot(cwd)
+	var root string
+	if cwd != "" {
+		root = RepoRoot(cwd)
+	}
 	rs := &Ruleset{Root: root}
+	inRoot := func(dir func(string) string) string {
+		if root == "" {
+			return ""
+		}
+		return dir(root)
+	}
 
 	// An untrusted tier is read and then dropped, not left unread: strict
 	// validation is what check promises for every tier, and .handrail/ existing
@@ -73,6 +95,9 @@ func Load(cwd string) *Ruleset {
 	gather := func(t Tier, skipLocal bool) {
 		if t.Dir != "" {
 			rules, problems := load(t.Dir, skipLocal)
+			for i := range problems {
+				problems[i].Untrusted = !t.Trusted
+			}
 			rs.Problems = append(rs.Problems, problems...)
 			if t.Trusted {
 				for _, r := range rules {
@@ -91,8 +116,8 @@ func Load(cwd string) *Ruleset {
 	// A user-level hook entry means any repo on the machine is enforced, so a
 	// clone's committed rules wait for an explicit grant. The user's own two
 	// tiers are never gated.
-	gather(Tier{Name: TierProjectShared, Dir: sharedDir(root), Trusted: isTrusted(root)}, true)
-	gather(Tier{Name: TierProjectPersonal, Dir: LocalDir(root), Trusted: true}, false)
+	gather(Tier{Name: TierProjectShared, Dir: inRoot(sharedDir), Trusted: isTrusted(root)}, true)
+	gather(Tier{Name: TierProjectPersonal, Dir: inRoot(LocalDir), Trusted: true}, false)
 
 	// Identity is the basename, so the highest tier holding a name carries the
 	// effective rule and every lower one is shadowed by it, wholesale.
