@@ -36,12 +36,13 @@ func (r *reader) program(c *call, g *grammar, i, j int) {
 		}
 		write := g.writes && (len(g.writeMode) == 0 || rd.write)
 		for n, k := range ops {
-			if c.words[k] == "-" { // standard input or output, no file
-				continue
-			}
 			f := r.named(c.args[k])
 			f.Write = write && (!g.last || !rd.targeted && n == len(ops)-1)
-			r.file(f)
+			// A lone - is standard input to a program reading it, and a file
+			// named - to one writing it, as rm -- - and cp x - are.
+			if f.Write || c.words[k] != "-" {
+				r.file(f)
+			}
 		}
 		for _, f := range rd.flagged {
 			r.file(f)
@@ -60,7 +61,7 @@ func (r *reader) unread(c *call, write bool, i, j int) {
 			dashes = w == "--"
 			continue
 		}
-		if w != "-" {
+		if write || w != "-" {
 			f := r.named(c.args[k])
 			f.Write, f.Unreadable = write, true
 			r.file(f)
