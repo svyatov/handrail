@@ -44,12 +44,13 @@ tasks:
         print "coverage " $3 "% is under the {{.GATE}}% gate"; exit 1 } }'
 
   lint:
-    desc: golangci-lint, the formatter check CI runs separately, the paths the skills quote from the code, and the flag tables' source comments
+    desc: golangci-lint, the formatter check CI runs separately, the paths the skills quote from the code, the flag tables' source comments, and no em or en dash
     cmds:
       - golangci-lint run
       - golangci-lint fmt --diff
       - scripts/check-doc-paths.sh
       - scripts/check-flag-sources.sh
+      - scripts/check-dashes.sh
 
   release-check:
     desc: Validate .goreleaser.yml, the pinned version, and the changelog section the release body is cut from, so a bad release fails here rather than on a tag
