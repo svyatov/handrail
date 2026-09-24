@@ -73,14 +73,11 @@ type Term struct {
 	line  int
 }
 
-// events holds the six core events, in the order sync writes hook entries for
-// them. The hook path pays for every byte of startup work, so this is an array
-// of constants: static data the linker lays out, with no init to run.
+// events holds the six core events. Which of them a harness has, and what a
+// hook can do on each, is its Adapter's event table. The hook path pays for
+// every byte of startup work, so this is an array of constants: static data the
+// linker lays out, with no init to run.
 var events = [...]string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop"}
-
-// Events lists the six core events. Only sync needs the list, and it gets a
-// copy so no caller can reorder the array IsEvent reads.
-func Events() []string { return slices.Clone(events[:]) }
 
 // IsEvent reports whether name is one of the six core events.
 func IsEvent(name string) bool { return slices.Contains(events[:], name) }

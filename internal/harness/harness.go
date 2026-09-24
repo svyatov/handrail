@@ -17,22 +17,53 @@ type Adapter struct {
 	Name string
 	// Quirks are the behaviours a user should know about but handrail cannot
 	// change. Reported next to the degradations, for the same reason.
-	Quirks       []string
-	title        string // how the harness names itself in a report
-	dir          string // user-level directory, under the home directory
-	homeEnv      string // the variable that relocates that directory, if the harness has one
-	file         string // the one config file sync writes inside it
-	blocksPrompt bool   // whether a denial on UserPromptSubmit is honoured
+	Quirks  []string
+	title   string // how the harness names itself in a report
+	dir     string // user-level directory, under the home directory
+	homeEnv string // the variable that relocates that directory, if the harness has one
+	file    string // the one config file sync writes inside it
+	// events is what a hook can do on each event, in the order sync writes
+	// hook entries for them. Delivery, sync and the degradation report all
+	// read it, so a capability is written down once per harness.
+	events []eventCaps
 }
+
+// eventCaps is one row of an Adapter's event table.
+type eventCaps struct {
+	name   string
+	deny   denial // how a block is delivered, or noDenial where it cannot be
+	inject bool   // whether the harness puts a hook's output in front of the agent
+}
+
+// denial is how a harness hears a block on one event. The zero value is the
+// event with no denial to give, where a block degrades to a warning.
+type denial int
+
+const (
+	noDenial denial = iota
+	exitTwo         // exit 2, with the reason on stderr
+)
 
 // Both harnesses read the same Claude-shaped hook config and speak the same
 // payload and decision protocol: Codex's hooks engine is Claude-compatible by
 // design, down to the tool names on the wire (developers.openai.com/codex/hooks).
 // The differences are the file it lives in and where blocking stops.
+//
+// Events that run after the fact or outside a decision point have no denial to
+// give, and Codex cannot fail closed on a prompt before the model request.
+// SessionEnd injects nothing on either: the session is over and the JSON is
+// discarded, so a warning there reaches the user or nobody.
 var adapters = []Adapter{
 	{
 		Name: "claude", title: "Claude Code", dir: ".claude", homeEnv: "CLAUDE_CONFIG_DIR", file: "settings.json",
-		blocksPrompt: true,
+		events: []eventCaps{
+			{name: "PreToolUse", deny: exitTwo, inject: true},
+			{name: "PostToolUse", inject: true},
+			{name: "UserPromptSubmit", deny: exitTwo, inject: true},
+			{name: "SessionStart", inject: true},
+			{name: "SessionEnd"},
+			{name: "Stop", deny: exitTwo, inject: true},
+		},
 		Quirks: []string{
 			"hook errors and timeouts fail open, so a broken guardrail never stops the session",
 			"disableAllHooks and cloud sessions bypass handrail entirely",
@@ -40,6 +71,14 @@ var adapters = []Adapter{
 	},
 	{
 		Name: "codex", title: "Codex CLI", dir: ".codex", homeEnv: "CODEX_HOME", file: "hooks.json",
+		events: []eventCaps{
+			{name: "PreToolUse", deny: exitTwo, inject: true},
+			{name: "PostToolUse", inject: true},
+			{name: "UserPromptSubmit", inject: true},
+			{name: "SessionStart", inject: true},
+			{name: "SessionEnd"},
+			{name: "Stop", deny: exitTwo, inject: true},
+		},
 		Quirks: []string{
 			"hook errors and timeouts fail open, so a broken guardrail never stops the session",
 			"non-managed hooks need a one-time trust review, and --dangerously-bypass-hook-trust skips that review rather than the hooks",
@@ -199,17 +238,15 @@ func set(p *rule.Payload, name string, input map[string]any, keys ...string) {
 	}
 }
 
-// canBlock reports whether the harness honours a denial on this event. Events
-// that run after the fact or outside a decision point have no denial to give,
-// and Codex cannot fail closed on a prompt before the model request.
-func (a Adapter) canBlock(event string) bool {
-	switch event {
-	case "PreToolUse", "Stop":
-		return true
-	case "UserPromptSubmit":
-		return a.blocksPrompt
+// caps reads event's row of the Adapter's event table. An event the table
+// lacks has no row, and so can neither block nor inject.
+func (a Adapter) caps(event string) eventCaps {
+	for _, c := range a.events {
+		if c.name == event {
+			return c
+		}
 	}
-	return false
+	return eventCaps{}
 }
 
 // blockReason says why a denial cannot be honoured, for the degradation report.
@@ -220,11 +257,6 @@ func (a Adapter) blockReason(event string) string {
 	}
 	return a.title + " has no denial to give on " + event
 }
-
-// canInject reports whether the harness puts a hook's output in front of the
-// agent on this event. SessionEnd is the one that does not: the session is over
-// and the JSON is discarded, so a warning there reaches the user or nobody.
-func canInject(event string) bool { return event != "SessionEnd" }
 
 type hookOutput struct {
 	HookSpecificOutput hookSpecific `json:"hookSpecificOutput"`
@@ -248,7 +280,8 @@ func (a Adapter) Deliver(event, message string, outcome rule.Outcome, stdout, st
 	// denial; on SessionEnd, which has no decision control and whose JSON output
 	// the harness discards, it is the only way left to reach the user, which is
 	// what a warning degrades to where context injection does not exist.
-	if (outcome == rule.Block && a.canBlock(event)) || !canInject(event) {
+	c := a.caps(event)
+	if (outcome == rule.Block && c.deny == exitTwo) || !c.inject {
 		// A failed write leaves nobody to tell, but the outcome still stands: a
 		// block that cannot state its reason is still a block.
 		_, _ = io.WriteString(stderr, message+"\n")
