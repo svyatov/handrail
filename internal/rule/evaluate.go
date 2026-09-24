@@ -1,13 +1,16 @@
 package rule
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // Payload is the canonical event payload a matcher is evaluated against: the
 // envelope fields a matcher can select on, plus the per-kind normalized fields.
 // The zero value is a valid empty payload, so an Adapter that fails to
 // normalize can return one.
 //
-// Fill one, then read it: Evaluate takes a Payload by value, and a copy shares
+// Fill one, then read it: Evaluate reads each Payload by value, and a copy shares
 // the map its fields live in, so a SetField on the copy would write through to
 // the original once that map exists and be dropped while it does not. Nothing
 // does that today, and this is the sentence saying not to start.
@@ -46,19 +49,20 @@ func (p *Payload) SetField(name, value string) bool {
 // which is the same answer SetField refuses to write.
 func (p Payload) Field(name string) string { return p.fields[name] }
 
-// Evaluate runs the payload against the Effective ruleset and answers with both
-// halves of what an event produces: the rules that matched, in delivery order
-// (tier order, then alphabetical within a tier), and the Outcome, the
-// strongest Action among them, or allow when nothing matched. A caller
+// Evaluate runs an event's payloads against the Effective ruleset and answers
+// with both halves of what the event produces: the rules that matched any of
+// its payloads, once each and in delivery order (tier order, then alphabetical
+// within a tier), and the Outcome, the strongest Action among them, or allow
+// when nothing matched. A caller
 // deriving the Outcome for itself would be a second answer to the same
 // question, free to disagree with this one, and test exists to say what hook
 // will do.
 //
 // Liveness is checked inline rather than over rs.Effective(), because this is
 // the hot path and the selector would allocate a second slice per event.
-func (rs *Ruleset) Evaluate(p Payload) (matched []*Rule, outcome Outcome) {
+func (rs *Ruleset) Evaluate(payloads []Payload) (matched []*Rule, outcome Outcome) {
 	for _, r := range rs.Rules {
-		if !r.Live() || !r.matches(p) {
+		if !r.Live() || !slices.ContainsFunc(payloads, r.matches) {
 			continue
 		}
 		matched = append(matched, r)

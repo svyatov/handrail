@@ -119,12 +119,12 @@ type hookInput struct {
 	Prompt    string         `json:"prompt"`
 }
 
-// Normalize turns a harness payload for event into the canonical payload the
-// matcher evaluates, and reports the cwd tier discovery should start from.
-func (a Adapter) Normalize(event string, data []byte) (rule.Payload, string, error) {
+// Normalize turns a harness payload for event into the canonical payloads the
+// matcher evaluates, one today, and reports the cwd tier discovery should start from.
+func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, error) {
 	var in hookInput
 	if err := json.Unmarshal(data, &in); err != nil {
-		return rule.Payload{}, "", err
+		return nil, "", err
 	}
 	p := rule.Payload{Event: event, Kind: classify(in.ToolName)}
 	switch p.Kind {
@@ -150,7 +150,7 @@ func (a Adapter) Normalize(event string, data []byte) (rule.Payload, string, err
 		}
 	}
 	p.SetField("prompt", in.Prompt)
-	return p, in.CWD, nil
+	return []rule.Payload{p}, in.CWD, nil
 }
 
 // classify assigns the canonical tool kind. An event without a tool has no kind,

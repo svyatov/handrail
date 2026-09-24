@@ -95,7 +95,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	payload := rule.Payload{Event: event}
+	payloads := []rule.Payload{{Event: event}}
 	if *fromStdin {
 		data, err := io.ReadAll(stdin)
 		if err != nil {
@@ -107,19 +107,22 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		// the fields come out of the tool input. The cwd it reports is dropped,
 		// because test answers for the ruleset in the working directory rather
 		// than the one the capture was taken under.
-		payload, _, err = a.Normalize(event, data)
+		payloads, _, err = a.Normalize(event, data)
 		if err != nil {
 			fmt.Fprintf(stderr, "handrail test: reading payload: %v\n", err)
 			return 1
 		}
 	}
-	// Flags win over the payload, so one field can be varied against a capture.
-	// --field already refuses an empty value, so nothing here is dropped.
-	for k, v := range fields {
-		payload.SetField(k, v)
-	}
-	if *kind != "" {
-		payload.Kind = *kind
+	// Flags win over every payload, so one field can be varied against a
+	// capture. --field already refuses an empty value, so nothing here is
+	// dropped.
+	for i := range payloads {
+		for k, v := range fields {
+			payloads[i].SetField(k, v)
+		}
+		if *kind != "" {
+			payloads[i].Kind = *kind
+		}
 	}
 
 	// test is an authoring-time surface, so it is strict like check: the loud
@@ -130,7 +133,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	// The same call the hook path makes, so what test reports is what hook does.
-	matched, outcome := rs.Evaluate(payload)
+	matched, outcome := rs.Evaluate(payloads)
 	out := testOutput{Outcome: outcome.String(), Matched: []testMatch{}}
 	for _, r := range matched {
 		out.Matched = append(out.Matched, testMatch{

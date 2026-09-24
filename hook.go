@@ -55,7 +55,7 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		return failOpen("handrail: could not read the %s payload, so no rule was evaluated: %v", event, err)
 	}
-	payload, cwd, err := a.Normalize(event, data)
+	payloads, cwd, err := a.Normalize(event, data)
 	if err != nil {
 		return failOpen("handrail: could not parse the %s payload, so no rule was evaluated: %v", event, err)
 	}
@@ -68,7 +68,7 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 	rs := rule.Load(cwd)
-	matched, outcome := rs.Evaluate(payload)
+	matched, outcome := rs.Evaluate(payloads)
 	return a.Deliver(event, agentMessage(rs, matched), outcome, stdout, stderr)
 }
 
