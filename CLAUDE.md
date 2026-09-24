@@ -16,7 +16,7 @@ CI calls these same tasks, so a local pass means what a green check means.
 ## Two constraints the build enforces
 
 - One third-party runtime dependency, `mvdan.cc/sh/v3` (ADR 0011). `depguard` allows
-  only the stdlib, this module and `mvdan.cc/sh/v3` outside `_test.go`, and denies
+  only the stdlib, this module and `mvdan.cc/sh/v3/syntax` outside `_test.go`, and denies
   `os/exec`; `github.com/rogpeppe/go-internal` is the sole test-only one.
 - `os.Exit` only in `main.go`, so `run()` returns an exit code and stays testable.
   `forbidigo` enforces it.
