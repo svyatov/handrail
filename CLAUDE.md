@@ -1,8 +1,9 @@
 # handrail
 
-`docs/spec.md` is the behavioural source of truth, about 100 KB: list its sections with
-`grep -n '^#' docs/spec.md` and read only the range a ticket names. `GLOSSARY.md` defines
-the vocabulary.
+`docs/spec.md` is the behavioural source of truth, about 100 KB, one bullet per line and
+up to 4 KB each, so a 30-line range runs 15-40 KB. Each bullet opens with its field or
+bold term: find it with ``grep -n '^- [`*]*<term>' docs/spec.md`` and read those lines
+alone. `GLOSSARY.md` defines the vocabulary.
 
 ## Commands
 
