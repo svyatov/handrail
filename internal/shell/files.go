@@ -34,6 +34,9 @@ func (r *reader) program(c *call, g *grammar, i, j int) {
 		if g.first && !rd.supplied && len(ops) > 0 {
 			ops = ops[1:]
 		}
+		if rd.ends > 0 {
+			ops = slices.DeleteFunc(slices.Clone(ops), func(k int) bool { return k > rd.ends })
+		}
 		write := g.writes && (len(g.writeMode) == 0 || rd.write)
 		for n, k := range ops {
 			f := r.named(c.args[k])
@@ -77,6 +80,9 @@ type reading struct {
 	supplied bool   // a flag supplied the pattern or script
 	write    bool   // a flag set write mode
 	targeted bool   // a flag named the file written
+	// ends is the word of a flag after which no operand names a file, or 0,
+	// which is never a flag's word: the program's name comes first.
+	ends int
 }
 
 // fork copies a reading for a second way of reading the same flag.
@@ -136,19 +142,20 @@ func (s *fileScan) long(k int, rd *reading) int {
 	case !found:
 		s.unknown = true
 	case attached:
-		s.apply(rd, full, s.part(k, value))
+		s.apply(rd, k, full, s.part(k, value))
 		return k + 1
 	case a == one:
-		s.apply(rd, full, s.whole(k+1))
+		s.apply(rd, k, full, s.whole(k+1))
 		return k + 2
 	case a == two:
+		s.apply(rd, k, full, s.whole(k+2))
 		return k + 3
 	case a == either:
 		fork := rd.fork()
-		s.apply(&fork, full, s.whole(k+1))
+		s.apply(&fork, k, full, s.whole(k+1))
 		s.from(k+2, fork)
 	}
-	s.apply(rd, full, nil)
+	s.apply(rd, k, full, nil)
 	return k + 1
 }
 
@@ -165,24 +172,24 @@ func (s *fileScan) cluster(k int, rd *reading) int {
 			s.unknown = true
 			return k + 1
 		case a == attached:
-			s.apply(rd, full, s.part(k, rest))
+			s.apply(rd, k, full, s.part(k, rest))
 			return k + 1
 		case (a == one || a == restOrEither) && rest != "":
-			s.apply(rd, full, s.part(k, rest))
+			s.apply(rd, k, full, s.part(k, rest))
 			return k + 1
 		case a == one:
-			s.apply(rd, full, s.whole(k+1))
+			s.apply(rd, k, full, s.whole(k+1))
 			return k + 2
 		case a == either && rest != "":
 			fork := rd.fork()
-			s.apply(&fork, full, s.part(k, rest))
+			s.apply(&fork, k, full, s.part(k, rest))
 			s.from(k+1, fork)
 		case a == either || a == restOrEither:
 			fork := rd.fork()
-			s.apply(&fork, full, s.whole(k+1))
+			s.apply(&fork, k, full, s.whole(k+1))
 			s.from(k+2, fork)
 		}
-		s.apply(rd, full, nil)
+		s.apply(rd, k, full, nil)
 	}
 	return k + 1
 }
@@ -204,10 +211,17 @@ func (s *fileScan) part(k int, rest string) *File {
 	return &File{Path: rest, Unreadable: s.r.named(s.c.args[k]).Unreadable}
 }
 
-// apply takes a flag's effect, if it has one, with the file its argument
-// names, if any.
-func (s *fileScan) apply(rd *reading, full string, f *File) {
+// apply takes the effect of the flag at word k, if it has one, with the file
+// its argument names, if any.
+func (s *fileScan) apply(rd *reading, k int, full string, f *File) {
 	switch {
+	case slices.Contains(s.g.input, full) || slices.Contains(s.g.output, full):
+		if f != nil {
+			f.Write = slices.Contains(s.g.output, full)
+			rd.flagged = append(rd.flagged, *f)
+		}
+	case slices.Contains(s.g.ends, full):
+		rd.ends = k
 	case slices.Contains(s.g.pattern, full):
 		rd.supplied = true
 	case slices.Contains(s.g.patternFile, full):
@@ -301,7 +315,7 @@ var programs = map[string]*grammar{
 	// mkdir: GNU coreutils 9.12 mkdir.c; FreeBSD mkdir.c; macOS file_cmds mkdir(1)
 	"mkdir": {short: "m:pvZ", long: "mode= parents verbose context help version", writes: true},
 	// touch: GNU coreutils 9.12 touch.c; FreeBSD touch.c; macOS file_cmds touch(1)
-	"touch": {short: "A:acd:fhmr:t:", long: "time= no-create date= reference= no-dereference help version", writes: true},
+	"touch": {short: "A:acd:fhmr:t:", long: "time= no-create date= reference= no-dereference help version", writes: true, input: []string{"r", "reference"}},
 	// tee: GNU coreutils 9.12 tee.c; FreeBSD tee.c; macOS shell_cmds tee(1)
 	"tee": {short: "aip", long: "append ignore-interrupts output-error help version", writes: true},
 	// cp: GNU coreutils 9.12 cp.c; FreeBSD cp.c; macOS file_cmds cp(1)
@@ -340,11 +354,11 @@ var programs = map[string]*grammar{
 	// tail: GNU coreutils 9.12 tail.c (with obsolete -N); FreeBSD tail.c; macOS text_cmds tail(1)
 	"tail": {short: "0123456789b:c:Ffln:qrs:vz", long: "blocks= bytes= debug follow lines= max-unchanged-stats= pid= quiet retry silent sleep-interval= verbose zero-terminated help version"},
 	// sort: GNU coreutils 9.12 sort.c; FreeBSD sort.c; macOS text_cmds sort(1)
-	"sort": {short: "bcCdfghik:mMno:rRsS:t:T:uVy?z", long: "batch-size= buffer-size= check compress-program= debug dictionary-order field-separator= files0-from= general-numeric-sort heapsort human-numeric-sort ignore-case ignore-leading-blanks ignore-nonprinting key= merge mergesort mmap month-sort numeric-sort output= parallel= qsort radixsort random-sort random-source= reverse sort= stable temporary-directory= unique version-sort zero-terminated help version"},
+	"sort": {short: "bcCdfghik:mMno:rRsS:t:T:uVy?z", long: "batch-size= buffer-size= check compress-program= debug dictionary-order field-separator= files0-from= general-numeric-sort heapsort human-numeric-sort ignore-case ignore-leading-blanks ignore-nonprinting key= merge mergesort mmap month-sort numeric-sort output= parallel= qsort radixsort random-sort random-source= reverse sort= stable temporary-directory= unique version-sort zero-terminated help version", input: []string{"files0-from", "random-source"}, output: []string{"o", "output"}},
 	// uniq: GNU coreutils 9.12 uniq.c; FreeBSD uniq.c; macOS text_cmds uniq(1)
 	"uniq": {short: "0123456789cdD?f:is:uw:z", long: "count repeated all-repeated group ignore-case unique skip-fields= skip-chars= check-chars= zero-terminated help version"},
 	// wc: GNU coreutils 9.12 wc.c; FreeBSD wc.c and libxo xo_parse_args; macOS text_cmds wc(1)
-	"wc": {short: "clLmw", long: "bytes chars lines words debug files0-from= max-line-length total= libxo= help version"},
+	"wc": {short: "clLmw", long: "bytes chars lines words debug files0-from= max-line-length total= libxo= help version", input: []string{"files0-from"}},
 	// cut: GNU coreutils 9.12 cut.c; FreeBSD cut.c; macOS text_cmds cut(1)
 	"cut": {short: "b:c:d:f:F:nO:swz", long: "bytes= characters= fields= delimiter= no-partial whitespace-delimited only-delimited output-delimiter= complement zero-terminated help version"},
 	// paste: GNU coreutils 9.12 paste.c; FreeBSD paste.c; macOS text_cmds paste(1)
@@ -354,19 +368,19 @@ var programs = map[string]*grammar{
 	// tr: GNU coreutils 9.12 tr.c; FreeBSD tr.c; macOS text_cmds tr(1)
 	"tr": {short: "AcCdstu", long: "complement delete squeeze-repeats truncate-set1 help version"},
 	// file: file/file (darwinsys) src/file_opts.h and OPTSTRING; macOS file(1)
-	"file": {short: "0bcCdDe:Ef:F:hiIklLm:M:nNpP:rsSvzZ", long: "apple brief checking-printout compile debug dereference exclude= exclude-quiet= extension files-from= help keep-going list magic-file= mime mime-encoding mime-type no-buffer no-dereference no-pad no-sandbox parameter= preserve-date print0 raw separator= special-files uncompress uncompress-noreport version"},
+	"file": {short: "0bcCdDe:Ef:F:hiIklLm:M:nNpP:rsSvzZ", long: "apple brief checking-printout compile debug dereference exclude= exclude-quiet= extension files-from= help keep-going list magic-file= mime mime-encoding mime-type no-buffer no-dereference no-pad no-sandbox parameter= preserve-date print0 raw separator= special-files uncompress uncompress-noreport version", input: []string{"f", "files-from", "m", "magic-file", "M"}},
 	// stat: GNU coreutils 9.12 stat --help; FreeBSD and macOS stat(1)
 	"stat": {short: "c:Ff?hHlLnqrst?x", long: "cached= dereference file-system format= printf= terse help version"},
 	// diff: GNU diffutils 3.12 src/diff.c; FreeBSD and macOS diff(1)
-	"diff": {short: "0123456789aA:bBcC:dD:eEfF:hHiI:lL:nNpPqrsS:tTuU:vwW:x:X:yZ", long: "algorithm= binary brief changed-group-format= color context ed exclude= exclude-from= expand-tabs forward-ed from-file= help horizon-lines= ifdef= ignore-all-space ignore-blank-lines ignore-case ignore-file-name-case ignore-matching-lines= ignore-space-change ignore-tab-expansion ignore-trailing-space inhibit-hunk-merge initial-tab label= left-column line-format= minimal new-file new-group-format= new-line-format= no-dereference no-ignore-file-name-case normal old-group-format= old-line-format= paginate palette= rcs recursive report-identical-files sdiff-merge-assist show-c-function show-function-line= side-by-side speed-large-files starting-file= strip-trailing-cr suppress-blank-empty suppress-common-lines tabsize= text to-file= unchanged-group-format= unchanged-line-format= unidirectional-new-file unified version width="},
+	"diff": {short: "0123456789aA:bBcC:dD:eEfF:hHiI:lL:nNpPqrsS:tTuU:vwW:x:X:yZ", long: "algorithm= binary brief changed-group-format= color context ed exclude= exclude-from= expand-tabs forward-ed from-file= help horizon-lines= ifdef= ignore-all-space ignore-blank-lines ignore-case ignore-file-name-case ignore-matching-lines= ignore-space-change ignore-tab-expansion ignore-trailing-space inhibit-hunk-merge initial-tab label= left-column line-format= minimal new-file new-group-format= new-line-format= no-dereference no-ignore-file-name-case normal old-group-format= old-line-format= paginate palette= rcs recursive report-identical-files sdiff-merge-assist show-c-function show-function-line= side-by-side speed-large-files starting-file= strip-trailing-cr suppress-blank-empty suppress-common-lines tabsize= text to-file= unchanged-group-format= unchanged-line-format= unidirectional-new-file unified version width=", input: []string{"from-file", "to-file", "X", "exclude-from"}},
 	// cmp: GNU diffutils 3.12 src/cmp.c; FreeBSD and macOS cmp(1)
 	"cmp": {short: "bchi:ln:svxz", long: "bytes= ignore-initial= print-bytes print-chars quiet silent verbose help version"},
 	// comm: GNU coreutils 9.12 comm --help; FreeBSD and macOS comm(1)
 	"comm": {short: "123iz", long: "check-order nocheck-order output-delimiter= total zero-terminated help version"},
 	// awk: gawk 5.3.2 main.c, mawk init.c and onetrue awk main.c, unioned
-	"awk": {short: "abcCd::D::e:E:f:F:ghi:Il:kL::MnNo::Op::Pr?sStv:VW:YZ:", long: "assign= bignum characters-as-bytes copyright csv debug dump dump-variables exec= field-separator= file= gen-pot help include= interactive lint lint-old load= locale= non-decimal-data no-optimize optimize parsedebug persist posix pretty-print profile random= re-interval sandbox source= sprintf= trace traditional usage use-lc-numeric version", first: true, pattern: []string{"e", "source"}, patternFile: []string{"f", "file", "E", "exec"}},
+	"awk": {short: "abcCd::D::e:E:f:F:ghi:Il:kL::MnNo::Op::Pr?sStv:VW:YZ:", long: "assign= bignum characters-as-bytes copyright csv debug dump dump-variables exec= field-separator= file= gen-pot help include= interactive lint lint-old load= locale= non-decimal-data no-optimize optimize parsedebug persist posix pretty-print profile random= re-interval sandbox source= sprintf= trace traditional usage use-lc-numeric version", first: true, pattern: []string{"e", "source"}, patternFile: []string{"f", "file", "E", "exec"}, input: []string{"i", "include"}},
 	// gawk: gawk 5.3.2 main.c optlist and optab
-	"gawk": {short: "bcCd::D::e:E:f:F:ghi:Il:kL::MnNo::Op::PrsStv:VW:YZ:", long: "assign= bignum characters-as-bytes copyright csv debug dump-variables exec= field-separator= file= gen-pot help include= lint lint-old load= locale= non-decimal-data no-optimize optimize parsedebug persist posix pretty-print profile re-interval sandbox source= trace traditional use-lc-numeric version", first: true, pattern: []string{"e", "source"}, patternFile: []string{"f", "file", "E", "exec"}},
+	"gawk": {short: "bcCd::D::e:E:f:F:ghi:Il:kL::MnNo::Op::PrsStv:VW:YZ:", long: "assign= bignum characters-as-bytes copyright csv debug dump-variables exec= field-separator= file= gen-pot help include= lint lint-old load= locale= non-decimal-data no-optimize optimize parsedebug persist posix pretty-print profile re-interval sandbox source= trace traditional use-lc-numeric version", first: true, pattern: []string{"e", "source"}, patternFile: []string{"f", "file", "E", "exec"}, input: []string{"i", "include"}},
 	// mawk: mawk(1) (invisible-island) and mawk-snapshots init.c
 	"mawk": {short: "f:F:r?v:W:", long: "dump exec= help interactive lint lint-old non-decimal-data posix random= re-interval sprintf= traditional usage version", first: true, patternFile: []string{"f", "exec"}},
 	// nawk: onetrue awk main.c (FreeBSD contrib/one-true-awk); macOS awk(1)
@@ -374,11 +388,11 @@ var programs = map[string]*grammar{
 	// strings: GNU binutils strings.c; FreeBSD elftoolchain strings.c; macOS cctools strings(1)
 	"strings": {short: "0123456789ade:fhHn:ost:T:U:vVw", long: "all bytes= data encoding= help include-all-whitespace output-separator= print-file-name radix= target= unicode= version"},
 	// hexdump: util-linux text-utils/hexdump.c; FreeBSD and macOS hexdump(1)
-	"hexdump": {short: "bcCde:f:hL::n:os:vVxX", long: "canonical color format= format-file= help length= no-squeezing one-byte-char one-byte-hex one-byte-octal skip= two-bytes-decimal two-bytes-hex two-bytes-octal version"},
+	"hexdump": {short: "bcCde:f:hL::n:os:vVxX", long: "canonical color format= format-file= help length= no-squeezing one-byte-char one-byte-hex one-byte-octal skip= two-bytes-decimal two-bytes-hex two-bytes-octal version", input: []string{"f", "format-file"}},
 	// od: GNU coreutils 9.12 od.c; FreeBSD and macOS od(1)
 	"od": {short: "A:aBbcDdeFfHhIij:LlN:OoS:st:vw::Xx", long: "address-radix= endian= format= output-duplicates read-bytes= skip-bytes= strings traditional width help version"},
 	// base64: GNU coreutils 9.12 base64 --help; FreeBSD bintrans.c; macOS base64(1)
-	"base64": {short: "b:dDhi?o:w:", long: "break= decode ignore-garbage input= output= wrap= help version"},
+	"base64": {short: "b:dDhi?o:w:", long: "break= decode ignore-garbage input= output= wrap= help version", input: []string{"i", "input"}, output: []string{"o", "output"}},
 	// nl: GNU coreutils 9.12 nl --help; FreeBSD and macOS nl(1)
 	"nl": {short: "b:d:f:h:i:l:n:ps:v:w:", long: "body-numbering= footer-numbering= header-numbering= join-blank-lines= line-increment= no-renumber number-format= number-separator= number-width= section-delimiter= starting-line-number= help version"},
 	// tac: GNU coreutils 9.12 tac --help
@@ -418,6 +432,8 @@ var programs = map[string]*grammar{
 		long:        "null-input raw-input slurp compact-output raw-output raw-output0 join-output ascii-output sort-keys color-output monochrome-output tab indent= unbuffered stream stream-errors seq from-file= arg== argjson== slurpfile== rawfile== args jsonargs exit-status binary version build-configuration help run-tests= debug-dump-disasm debug-trace",
 		first:       true,
 		patternFile: []string{"f", "from-file"},
+		input:       []string{"rawfile", "slurpfile", "run-tests"},
+		ends:        []string{"args", "jsonargs"},
 	},
 	// grep, egrep, fgrep: GNU grep src/grep.c; FreeBSD and macOS grep.c
 	"grep":  grep,
@@ -430,6 +446,7 @@ var programs = map[string]*grammar{
 		first:       true,
 		pattern:     []string{"e", "regexp"},
 		patternFile: []string{"f", "file"},
+		input:       []string{"ignore-file"},
 	},
 	// git's global options, before the subcommand: git-scm.com/docs/git; git.c
 	// handle_options. Its -C and --work-tree name a directory it reads.
@@ -448,8 +465,10 @@ var programs = map[string]*grammar{
 	// git diff: git-scm.com/docs/git-diff and diff-options; git diff.c and
 	// builtin/diff.c; git diff --no-index --help-all
 	"git diff": {
-		short: "0123B::C::DG:I:M::O:RS:U::WX::abhl:pqsuwz",
-		long:  "patch no-patch unified raw patch-with-raw patch-with-stat numstat shortstat dirstat cumulative dirstat-by-file check summary name-only name-status stat stat-width= stat-name-width= stat-graph-width= stat-count= compact-summary no-compact-summary binary full-index no-full-index color no-color ws-error-highlight= abbrev no-abbrev src-prefix= dst-prefix= line-prefix= no-prefix default-prefix inter-hunk-context= output-indicator-new= output-indicator-old= output-indicator-context= break-rewrites find-renames irreversible-delete find-copies find-copies-harder no-find-copies-harder no-renames rename-empty no-rename-empty follow no-follow minimal ignore-all-space ignore-space-change ignore-space-at-eol ignore-cr-at-eol ignore-blank-lines ignore-matching-lines= no-ignore-matching-lines indent-heuristic no-indent-heuristic patience histogram diff-algorithm= anchored= word-diff word-diff-regex= color-words color-moved no-color-moved color-moved-ws= no-color-moved-ws relative no-relative text no-text exit-code no-exit-code quiet no-quiet ext-diff no-ext-diff textconv no-textconv ignore-submodules submodule ita-invisible-in-index ita-visible-in-index pickaxe-all pickaxe-regex rotate-to= skip-to= find-object= diff-filter= max-depth= output= cached staged merge-base no-index base ours theirs",
+		short:  "0123B::C::DG:I:M::O:RS:U::WX::abhl:pqsuwz",
+		long:   "patch no-patch unified raw patch-with-raw patch-with-stat numstat shortstat dirstat cumulative dirstat-by-file check summary name-only name-status stat stat-width= stat-name-width= stat-graph-width= stat-count= compact-summary no-compact-summary binary full-index no-full-index color no-color ws-error-highlight= abbrev no-abbrev src-prefix= dst-prefix= line-prefix= no-prefix default-prefix inter-hunk-context= output-indicator-new= output-indicator-old= output-indicator-context= break-rewrites find-renames irreversible-delete find-copies find-copies-harder no-find-copies-harder no-renames rename-empty no-rename-empty follow no-follow minimal ignore-all-space ignore-space-change ignore-space-at-eol ignore-cr-at-eol ignore-blank-lines ignore-matching-lines= no-ignore-matching-lines indent-heuristic no-indent-heuristic patience histogram diff-algorithm= anchored= word-diff word-diff-regex= color-words color-moved no-color-moved color-moved-ws= no-color-moved-ws relative no-relative text no-text exit-code no-exit-code quiet no-quiet ext-diff no-ext-diff textconv no-textconv ignore-submodules submodule ita-invisible-in-index ita-visible-in-index pickaxe-all pickaxe-regex rotate-to= skip-to= find-object= diff-filter= max-depth= output= cached staged merge-base no-index base ours theirs",
+		input:  []string{"O"},
+		output: []string{"output"},
 	},
 }
 
@@ -465,4 +484,5 @@ var grep = &grammar{
 	first:       true,
 	pattern:     []string{"e", "regexp"},
 	patternFile: []string{"f", "file"},
+	input:       []string{"exclude-from"},
 }

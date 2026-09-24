@@ -245,6 +245,12 @@ type grammar struct {
 	writeMode []string
 	// target lists the flags whose argument names the file written.
 	target []string
+	// input and output list the flags whose argument, the last where a flag
+	// takes two, names a file the program reads or writes, as sort -o does.
+	input, output []string
+	// ends lists the flags after which no operand past the pattern names a
+	// file, as jq --args makes them values.
+	ends []string
 }
 
 // arity is how many arguments a flag takes: none, one, either, for a flag
