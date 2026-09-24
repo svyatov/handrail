@@ -213,6 +213,17 @@ func (p *parser) seq(ind int) (*node, error) {
 			n.seq = append(n.seq, child)
 			continue
 		}
+		// An item with no key is a scalar: a url holds a colon too, but never
+		// one a space follows or that ends the text.
+		if !strings.Contains(body+" ", ": ") {
+			s, _, err := parseScalar(body)
+			if err != nil {
+				return nil, p.errf(p.i, "%v", err)
+			}
+			n.seq = append(n.seq, &node{isScalar: true, scalar: s, line: p.i + 1 + frontmatterOffset})
+			p.i++
+			continue
+		}
 		// Rewrite "- key: value" as a plain mapping line at the column where
 		// the item's own keys align, then parse the item as that mapping.
 		col := cur + 1 + (len(t) - 1 - len(body))

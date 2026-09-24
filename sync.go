@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/svyatov/handrail/internal/harness"
@@ -101,7 +102,8 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1
 	}
-	if failed {
+	// A failing Example changes nothing sync writes, so it is reported after.
+	if reportExamples(slices.Concat(rs.Rules, rs.Untrusted), stderr) || failed {
 		return 1
 	}
 	return 0

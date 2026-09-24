@@ -5,20 +5,39 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"slices"
 	"text/tabwriter"
 
+	"github.com/svyatov/handrail/internal/harness"
 	"github.com/svyatov/handrail/internal/rule"
 )
 
+// checkRule is one rule in docs/spec.md section 6's check shape. Trial,
+// DroppedBy and DemotedFrom hold their zero values until trial rules, the
+// add-only shared tier and the supply check land.
 type checkRule struct {
-	Rule       string  `json:"rule"`
-	Tier       string  `json:"tier"`
-	Event      string  `json:"event"`
-	Kind       string  `json:"kind"`
-	Action     string  `json:"action"`
-	Enabled    bool    `json:"enabled"`
-	ShadowedBy *string `json:"shadowed_by"`
-	Path       string  `json:"path"`
+	Rule        string        `json:"rule"`
+	Tier        string        `json:"tier"`
+	Event       string        `json:"event"`
+	Kind        string        `json:"kind"`
+	Action      string        `json:"action"`
+	Enabled     bool          `json:"enabled"`
+	Trial       bool          `json:"trial"`
+	ShadowedBy  *string       `json:"shadowed_by"`
+	DroppedBy   *string       `json:"dropped_by"`
+	DemotedFrom *string       `json:"demoted_from"`
+	Path        string        `json:"path"`
+	Examples    checkExamples `json:"examples"`
+}
+
+type checkExamples struct {
+	Passed int            `json:"passed"`
+	Failed []checkExample `json:"failed"`
+}
+
+type checkExample struct {
+	Expect string         `json:"expect"`
+	Fields map[string]any `json:"fields"`
 }
 
 type checkError struct {
@@ -49,6 +68,7 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	var examplesFailed bool
 	if *asJSON {
 		out := checkOutput{
 			Rules:  make([]checkRule, 0, len(rs.Rules)),
@@ -59,6 +79,16 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 			if r.ShadowedBy != nil {
 				shadowedBy = &r.ShadowedBy.Path
 			}
+			failing := harness.FailingExamples(r)
+			examplesFailed = examplesFailed || len(failing) > 0
+			examples := checkExamples{Passed: len(r.Examples) - len(failing), Failed: []checkExample{}}
+			for _, e := range failing {
+				fields := make(map[string]any, len(e.Fields))
+				for _, f := range e.Fields {
+					fields[f.Name] = f.Value()
+				}
+				examples.Failed = append(examples.Failed, checkExample{Expect: e.Expect, Fields: fields})
+			}
 			out.Rules = append(out.Rules, checkRule{
 				Rule:       r.Name,
 				Tier:       r.Tier,
@@ -68,10 +98,19 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 				Enabled:    r.Enabled,
 				ShadowedBy: shadowedBy,
 				Path:       r.Path,
+				Examples:   examples,
 			})
 		}
 		for _, p := range rs.Problems {
 			out.Errors = append(out.Errors, checkError{Path: p.Path, Message: p.Message})
+		}
+		// An untrusted tier's rules are not in the effective ruleset, so a
+		// failing Example there has no rule entry to sit on.
+		for _, r := range rs.Untrusted {
+			for _, e := range harness.FailingExamples(r) {
+				examplesFailed = true
+				out.Errors = append(out.Errors, checkError{Path: r.Path, Message: exampleFailure(e)})
+			}
 		}
 		if code := writeJSON(stdout, stderr, out); code != 0 {
 			return code
@@ -84,12 +123,31 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 		for _, p := range rs.Problems {
 			fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
 		}
+		examplesFailed = reportExamples(slices.Concat(rs.Rules, rs.Untrusted), stderr)
 	}
 
-	if len(rs.Problems) > 0 {
+	if examplesFailed || len(rs.Problems) > 0 {
 		return 1
 	}
 	return 0
+}
+
+// reportExamples runs every rule's Examples, names each failing one on stderr,
+// and reports whether any failed.
+func reportExamples(rules []*rule.Rule, stderr io.Writer) bool {
+	failed := false
+	for _, r := range rules {
+		for _, e := range harness.FailingExamples(r) {
+			fmt.Fprintf(stderr, "handrail: %s: %s\n", r.Path, exampleFailure(e))
+			failed = true
+		}
+	}
+	return failed
+}
+
+// exampleFailure names a failing Example the way a rule file problem is named.
+func exampleFailure(e rule.Example) string {
+	return fmt.Sprintf("line %d: %s example fails: %s", e.Line, e.Expect, e)
 }
 
 // printRuleset renders the effective ruleset annotated with tier, shadowing,

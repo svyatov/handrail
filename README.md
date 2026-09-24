@@ -72,7 +72,7 @@ Starting from nothing, the sequence is:
 
 | Command | Does |
 |---|---|
-| `check` | Validate every tier and print the effective ruleset, annotated with tier, shadowing, and disabling. |
+| `check` | Validate every tier, run each rule's Examples, and print the effective ruleset, annotated with tier, shadowing, and disabling. |
 | `test <event>` | Dry-run one event against the rules. Exit 2 when the outcome is block. |
 | `sync` | Write handrail's hook entries into every detected harness. The plugin runs this for you after a fresh install. |
 | `trust` | Grant this repo's committed `.handrail/` rules permission to take effect. |

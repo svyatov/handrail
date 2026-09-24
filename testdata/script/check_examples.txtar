@@ -1,0 +1,190 @@
+# A rule carries its own proof: check runs every Example against its rule
+# alone, and a failing one exits 1 without being a validation error.
+
+# An untrusted shared tier's Examples run like any other tier's, and a failure
+# there exits 1, while its rules stay out of the effective ruleset.
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=1$'
+stderr 'run handrail trust'
+stderr 'drifted\.md: line 11: match example fails: command="sudo rm -rf /"'
+! stdout drifted
+exec sh -c 'handrail check --json; echo code=$?'
+stdout '^code=1$'
+stdout '"path": ".*/drifted\.md",\n +"message": "line 11: match example fails: command=\\"sudo rm -rf /\\""'
+
+exec handrail trust
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=1$'
+stdout '^project-shared +drifted +PreToolUse +shell +block +enabled$'
+stderr 'drifted\.md: line 11: match example fails: command="sudo rm -rf /"'
+! stderr 'passing\.md'
+stderr 'list-fails\.md: line 8: no_match example fails: url=\["https://docs.example/" "https://evil.example/"\]'
+
+# A url list is one Candidate per entry, and each derives its domain.
+! stderr 'domains\.md'
+
+# A path list is a rename, source and destination, and a written path is
+# cleaned as a live one is.
+! stderr 'renames\.md'
+
+# An Example has no harness, so a tool name carries every Spelling an Adapter
+# gives it: Claude Code's Agent answers to Task.
+! stderr 'former-names\.md'
+
+# A shell Example yields the file payloads a live shell call yields, the edits
+# of a patch heredoc Codex intercepts included; without kind: shell it takes
+# the rule's kind and yields none.
+! stderr 'env-files\.md'
+
+# An Example derives unreadable as a live call does, merged with a written
+# one, and every value is text: equals: true needs no quotes.
+! stderr 'fail-closed\.md'
+! stderr 'writes-empty\.md'
+
+# --json carries each rule's passed count and every failing Example's fields.
+exec sh -c 'handrail check --json; echo code=$?'
+stdout '^code=1$'
+stdout '"examples": \{\n +"passed": 1,\n +"failed": \[\n +\{\n +"expect": "match",\n +"fields": \{\n +"command": "sudo rm -rf /"\n +\}'
+stdout '"passed": 2,\n +"failed": \[\]'
+stdout '"url": \[\n +"https://docs.example/",'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/drifted.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf ~
+examples:
+  match:
+    - command: rm -rf ~
+    - command: sudo rm -rf /
+---
+Never delete recursively from the filesystem root.
+-- .handrail/passing.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: rm -rf /
+examples:
+  match:
+    - command: cd /tmp && rm -rf /
+  no_match:
+    - command: rm -rf ./build
+---
+Never delete recursively from the filesystem root.
+-- .handrail/domains.md --
+---
+event: PreToolUse
+kind: network
+conditions:
+  - field: domain
+    equals: evil.example
+examples:
+  match:
+    - url:
+        - https://docs.example/
+        - https://EVIL.example:8443/x
+  no_match:
+    - url: https://docs.example/
+---
+Not that host.
+-- .handrail/renames.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    glob: "secrets/**"
+examples:
+  match:
+    - path:
+        - secrets/key
+        - public/key
+  no_match:
+    - path: secrets/../public/key
+---
+Keep keys where they are.
+-- .handrail/former-names.md --
+---
+event: PreToolUse
+conditions:
+  - field: tool
+    equals: Task
+examples:
+  match:
+    - tool: Agent
+  no_match:
+    - tool: Bash
+---
+Task was the old name for Agent.
+-- .handrail/env-files.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    glob: "**/.env"
+examples:
+  match:
+    - kind: shell
+      command: "cd app && apply_patch <<'EOF'\n*** Begin Patch\n*** Add File: .env\n+KEY=1\n*** End Patch\nEOF"
+    - kind: shell
+      command: echo KEY=1 > .env
+  no_match:
+    - command: echo KEY=1 > .env
+    - command: "apply_patch <<'EOF'\n*** Begin Patch\n*** Add File: .env\n+KEY=1\n*** End Patch\nEOF"
+---
+Leave .env files alone.
+-- .handrail/list-fails.md --
+---
+event: PreToolUse
+conditions:
+  - field: domain
+    equals: evil.example
+examples:
+  no_match:
+    - url:
+        - https://docs.example/
+        - https://evil.example/
+---
+Not that host.
+-- .handrail/fail-closed.md --
+---
+event: PreToolUse
+action: block
+conditions:
+  - field: unreadable
+    equals: command
+examples:
+  match:
+    - command: bash -c "$X"
+    - unreadable:
+        - path
+        - command
+  no_match:
+    - command: bash -c 'ls'
+      unreadable: path
+---
+handrail could not read this command.
+-- .handrail/writes-empty.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: writes_empty
+    equals: true
+examples:
+  match:
+    - path: notes.txt
+      writes_empty: true
+  no_match:
+    - path: notes.txt
+      content: hello
+---
+This call empties a file.

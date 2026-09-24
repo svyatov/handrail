@@ -97,8 +97,32 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			failures = append(failures, fmt.Sprintf("handrail: skipped the broken rule %s: %s", p.Path, p.Message))
 		}
 	}
+	if event == "SessionStart" {
+		if notice := examplesNotice(rs.Rules); notice != "" {
+			failures = append(failures, notice)
+		}
+	}
 	human := strings.Join(failures, "\n")
 	return a.Deliver(event, agentMessage(rs, matched, failures), human, outcome, stdout, stderr)
+}
+
+// examplesNotice names the rules whose Examples fail, and "" when none do. It
+// carries no Example's text: the rule file is where that is read, by check.
+func examplesNotice(rules []*rule.Rule) string {
+	var failing []string
+	for _, r := range rules {
+		if harness.FailingExamples(r) != nil {
+			failing = append(failing, r.Name)
+		}
+	}
+	if len(failing) == 0 {
+		return ""
+	}
+	count := fmt.Sprintf("%d rules fail their", len(failing))
+	if len(failing) == 1 {
+		count = "1 rule fails its"
+	}
+	return fmt.Sprintf("handrail: %s Examples: %s; run handrail check", count, strings.Join(failing, ", "))
 }
 
 // listedFiles is how many matched files a rule's message names before it
