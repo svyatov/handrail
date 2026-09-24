@@ -20,7 +20,7 @@ type Payload struct {
 	// fields is unexported so that SetField is the only way in. The rule it
 	// enforces is a matcher's rule, so it belongs to this package rather than to
 	// each Adapter that fills a payload in.
-	fields map[string]string
+	fields map[string][]string
 }
 
 // SetField writes a canonical field unless the value is empty, and reports
@@ -39,15 +39,15 @@ func (p *Payload) SetField(name, value string) bool {
 		return false
 	}
 	if p.fields == nil {
-		p.fields = make(map[string]string)
+		p.fields = make(map[string][]string)
 	}
-	p.fields[name] = value
+	p.fields[name] = []string{value}
 	return true
 }
 
-// Field reads a canonical field. Empty means the payload does not carry it,
-// which is the same answer SetField refuses to write.
-func (p Payload) Field(name string) string { return p.fields[name] }
+// Field reads a canonical field's values. None means the payload does not
+// carry it, which is the same answer SetField refuses to write.
+func (p Payload) Field(name string) []string { return p.fields[name] }
 
 // Evaluate runs an event's payloads against the Effective ruleset and answers
 // with both halves of what the event produces: the rules that matched any of
@@ -95,27 +95,35 @@ func (r *Rule) matches(p Payload) bool {
 	return true
 }
 
-// matches applies one operator to one field. A condition against a field the
-// payload does not carry never matches, in either polarity: "path does not end
-// with .env" says nothing about a shell command that has no path at all.
+// matches applies one operator to every value of one field, and matches when
+// some value meets it in the term's polarity: ADR 0024's reading, where
+// not_starts_with: git fires on a call that is not only git. A condition
+// against a field the payload does not carry has no value to meet it, so it
+// never matches, in either polarity: "path does not end with .env" says nothing
+// about a shell command that has no path at all.
 func (t *Term) matches(p Payload) bool {
-	v, ok := p.fields[t.Field]
-	if !ok {
-		return false
-	}
 	op, negated := strings.CutPrefix(t.Op, "not_")
-	var hit bool
+	for _, v := range p.fields[t.Field] {
+		if t.hit(op, v) != negated {
+			return true
+		}
+	}
+	return false
+}
+
+// hit applies the operator, without its polarity, to one value.
+func (t *Term) hit(op, v string) bool {
 	switch op {
 	case "matches", "glob":
-		hit = t.re.MatchString(v)
+		return t.re.MatchString(v)
 	case "contains":
-		hit = strings.Contains(v, t.Value)
+		return strings.Contains(v, t.Value)
 	case "equals":
-		hit = v == t.Value
+		return v == t.Value
 	case "starts_with":
-		hit = strings.HasPrefix(v, t.Value)
+		return strings.HasPrefix(v, t.Value)
 	case "ends_with":
-		hit = strings.HasSuffix(v, t.Value)
+		return strings.HasSuffix(v, t.Value)
 	}
-	return hit != negated
+	return false
 }

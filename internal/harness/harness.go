@@ -138,7 +138,7 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		// states outright: "Bash and apply_patch use tool_input.command". Left
 		// unread, every path and content condition would silently never fire on
 		// that harness's only editing tool.
-		if patch, ok := in.ToolInput["command"].(string); ok && p.Field("path") == "" {
+		if patch, ok := in.ToolInput["command"].(string); ok && len(p.Field("path")) == 0 {
 			unwrapPatch(&p, patch)
 		}
 	case "file_read":
