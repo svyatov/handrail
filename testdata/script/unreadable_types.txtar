@@ -1,0 +1,157 @@
+# A canonical key carrying a value of a type handrail does not expect is a
+# field it could not read, so it declares the field in unreadable and leaves it
+# absent: no not_ condition fires against a value handrail invented.
+exec handrail trust
+
+stdin number-command.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: gap-command \(project-shared\)'
+! stdout 'handrail warn: not-git'
+! stderr .
+
+# The first key the call carries is the source, so a non-string file_path is
+# not read past to notebook_path.
+stdin object-path.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: gap-path \(project-shared\)'
+! stdout 'handrail warn: notebook'
+
+stdin null-model.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: gap-model \(project-shared\)'
+
+# The envelope's own keys are canonical keys too.
+stdin list-prompt.json
+exec handrail hook claude UserPromptSubmit
+stdout 'handrail warn: gap-prompt \(project-shared\)'
+
+# A tool name handrail cannot read classifies as nothing, so only a kind-less
+# rule reaches the call.
+stdin number-tool.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: gap-tool \(project-shared\)'
+! stdout 'handrail warn: not-git'
+
+stdin bad-grants.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: gap-network-grant \(project-shared\)'
+stdout 'handrail warn: gap-unsandboxed \(project-shared\)'
+
+# One entry of the wrong type is a grant handrail could not read, and the
+# entries beside it are still read.
+stdin bad-grant-entry.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: gap-network-grant \(project-shared\)'
+! stdout 'gap-unsandboxed'
+
+# A patch envelope is the source of path and content on Codex's apply_patch.
+stdin number-patch.json
+exec handrail hook codex PreToolUse
+stdout 'handrail warn: gap-path \(project-shared\)'
+
+# A string value is read as before and declares nothing.
+stdin string-command.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: not-git'
+! stdout 'handrail warn: gap'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- number-command.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": 42}}
+-- object-path.json --
+{"hook_event_name": "PreToolUse", "tool_name": "NotebookEdit", "tool_input": {"file_path": {"p": "/x"}, "notebook_path": "/n.ipynb", "new_source": "x"}}
+-- null-model.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_input": {"model": null, "prompt": "go"}}
+-- list-prompt.json --
+{"hook_event_name": "UserPromptSubmit", "prompt": ["rm", "-rf"]}
+-- number-tool.json --
+{"hook_event_name": "PreToolUse", "tool_name": 7, "tool_input": {"command": "ls"}}
+-- bad-grants.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls", "allowed_domains": "example.com", "dangerouslyDisableSandbox": "yes"}}
+-- number-patch.json --
+{"hook_event_name": "PreToolUse", "tool_name": "apply_patch", "tool_input": {"command": 42}}
+-- bad-grant-entry.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls", "allowed_domains": ["example.com", 5]}}
+-- string-command.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- .handrail/not-git.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    not_starts_with: git
+---
+Only git here.
+-- .handrail/notebook.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    ends_with: .ipynb
+---
+A notebook.
+-- .handrail/gap-command.md --
+---
+event: PreToolUse
+action: warn
+conditions:
+  - field: unreadable
+    equals: command
+---
+handrail could not read the command.
+-- .handrail/gap-path.md --
+---
+event: PreToolUse
+action: warn
+conditions:
+  - field: unreadable
+    equals: path
+---
+handrail could not read the path.
+-- .handrail/gap-model.md --
+---
+event: PreToolUse
+action: warn
+conditions:
+  - field: unreadable
+    equals: model
+---
+handrail could not read the model.
+-- .handrail/gap-prompt.md --
+---
+event: UserPromptSubmit
+action: warn
+conditions:
+  - field: unreadable
+    equals: prompt
+---
+handrail could not read the prompt.
+-- .handrail/gap-tool.md --
+---
+event: PreToolUse
+action: warn
+conditions:
+  - field: unreadable
+    equals: tool
+---
+handrail could not read the tool name.
+-- .handrail/gap-network-grant.md --
+---
+event: PreToolUse
+action: warn
+conditions:
+  - field: unreadable
+    equals: network_grant
+---
+handrail could not read the sandbox grants.
+-- .handrail/gap-unsandboxed.md --
+---
+event: PreToolUse
+action: warn
+conditions:
+  - field: unreadable
+    equals: unsandboxed
+---
+handrail could not read the sandbox switch.

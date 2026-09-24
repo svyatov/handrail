@@ -218,8 +218,16 @@ func withFiles(payloads []Payload) []Payload {
 //
 // Liveness is checked inline rather than over rs.Effective(), because this is
 // the hot path and the selector would allocate a second slice per event.
+//
+// A load that lost rules declares unreadable: rules on every payload, the ones
+// passed in included, so a rule that is left can fail closed on the loss.
 func (rs *Ruleset) Evaluate(payloads []Payload) (matched []Match, outcome Outcome) {
 	payloads = withFiles(payloads)
+	if rs.Unreadable() {
+		for i := range payloads {
+			payloads[i].SetField("unreadable", "rules")
+		}
+	}
 	for _, r := range rs.Rules {
 		if !r.Live() {
 			continue

@@ -1,0 +1,82 @@
+# Input built to break the reader is declared in unreadable, and never turned
+# into a block handrail invented: every rule here only warns, so any exit 2
+# would be handrail's own.
+exec handrail trust
+
+# JSON nested past the decoder's depth is a payload that will not parse.
+exec sh -c 'printf "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"x\":" > deep.json; head -c 20000 /dev/zero | tr "\\0" "[" >> deep.json; head -c 20000 /dev/zero | tr "\\0" "]" >> deep.json; printf "}}" >> deep.json'
+stdin deep.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout 'handrail warn: gap \(project-shared\)'
+stdout 'exceeded max depth'
+stdout '^code=0$'
+
+# A byte outside any string that is not UTF-8 breaks the envelope.
+exec sh -c 'printf "{\"hook_event_name\":\"PreToolUse\",\377\"tool_name\":\"Bash\"}" > bad-envelope.json'
+stdin bad-envelope.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout 'handrail warn: gap \(project-shared\)'
+stdout '^code=0$'
+
+# Inside a string, a byte that is not UTF-8 is read as the replacement
+# character, so the command around it is still read and still reached.
+exec sh -c 'printf "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"rm -rf /\377\"}}" > bad-string.json'
+stdin bad-string.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout 'handrail warn: rm \(project-shared\)'
+! stdout 'handrail warn: gap'
+stdout '^code=0$'
+
+# A command a megabyte long is read whole, and its last statement reached.
+exec sh -c 'printf "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo " > huge.json; head -c 1000000 /dev/zero | tr "\\0" a >> huge.json; printf "; rm -rf /\"}}" >> huge.json'
+stdin huge.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout 'handrail warn: rm \(project-shared\)'
+! stdout 'handrail warn: gap'
+stdout '^code=0$'
+
+# Shells nested past four re-parses stop being read, and say so.
+stdin nested.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout 'handrail warn: gap \(project-shared\)'
+stdout '^code=0$'
+
+# A command handrail cannot parse at all is declared, not blocked, and its
+# whole line still meets a positive term.
+stdin unparsable.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout 'handrail warn: gap \(project-shared\)'
+stdout 'handrail warn: rm \(project-shared\)'
+stdout '^code=0$'
+
+# A value of the wrong type is declared, not blocked.
+stdin non-string.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout 'handrail warn: gap \(project-shared\)'
+stdout '^code=0$'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- nested.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "sh -c 'sh -c \"sh -c \\\"sh -c \\\\\\\"sh -c ls\\\\\\\"\\\"\"'"}}
+-- unparsable.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "rm -rf / )"}}
+-- non-string.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": ["rm", "-rf", "/"]}}
+-- .handrail/gap.md --
+---
+event: PreToolUse
+conditions:
+  - field: unreadable
+    matches: .
+---
+handrail could not read part of this call.
+-- .handrail/rm.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: rm -rf /
+---
+Not from the filesystem root.

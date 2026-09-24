@@ -4,6 +4,7 @@ package harness
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/url"
 	"path"
@@ -126,25 +127,38 @@ func Names() []string {
 	return names
 }
 
-// hookInput is the part of a hook payload a matcher can address. Everything
-// else is left where it came from: v1 conditions cannot reach the raw payload,
-// so carrying it along would buy nothing on the hot path.
-type hookInput struct {
-	CWD       string         `json:"cwd"`
-	ToolName  string         `json:"tool_name"`
-	ToolInput map[string]any `json:"tool_input"`
-	Prompt    string         `json:"prompt"`
-}
-
 // Normalize turns a harness payload for event into the canonical payloads the
 // matcher evaluates, one per edit a patch makes, and reports the cwd tier
-// discovery should start from.
+// discovery should start from. The envelope is read untyped, so a canonical
+// key holding a value of the wrong type costs its own field and not the whole
+// payload; only an envelope that is not an object, or a tool input that is
+// not one, fails it.
 func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, error) {
-	var in hookInput
-	if err := json.Unmarshal(data, &in); err != nil {
+	var env map[string]any
+	if err := json.Unmarshal(data, &env); err != nil {
 		return nil, "", err
 	}
-	p := rule.Payload{Event: event, Kind: classify(in.ToolName)}
+	if env == nil {
+		return nil, "", errors.New("the payload is null")
+	}
+	var in struct {
+		CWD       string
+		ToolName  string
+		ToolInput map[string]any
+	}
+	in.CWD, _ = env["cwd"].(string)
+	if raw, ok := env["tool_input"]; ok {
+		if in.ToolInput, ok = raw.(map[string]any); !ok {
+			return nil, "", errors.New("tool_input is not an object")
+		}
+	}
+	p := rule.Payload{Event: event}
+	if raw, ok := env["tool_name"]; ok {
+		if in.ToolName, ok = raw.(string); !ok {
+			p.SetField("unreadable", "tool")
+		}
+	}
+	p.Kind = classify(in.ToolName)
 	tools := a.toolNames(in.ToolName)
 	setTool(&p, tools)
 	// Read by key presence, on any tool, and from the tool input alone: the
@@ -179,14 +193,23 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		// Claude Code's shells ask their sandbox for more under these keys.
 		// WebSearch's allowed_domains filters results instead, and it is not
 		// a shell.
-		grants, _ := in.ToolInput["allowed_domains"].([]any)
-		for _, g := range grants {
-			if s, ok := g.(string); ok {
+		if raw, ok := in.ToolInput["allowed_domains"]; ok {
+			grants, ok := raw.([]any)
+			for _, g := range grants {
+				s, isString := g.(string)
+				ok = ok && isString
 				p.SetField("network_grant", s)
 			}
+			if !ok {
+				p.SetField("unreadable", "network_grant")
+			}
 		}
-		if off, _ := in.ToolInput["dangerouslyDisableSandbox"].(bool); off {
-			p.SetField("unsandboxed", "true")
+		if raw, ok := in.ToolInput["dangerouslyDisableSandbox"]; ok {
+			if off, ok := raw.(bool); !ok {
+				p.SetField("unreadable", "unsandboxed")
+			} else if off {
+				p.SetField("unsandboxed", "true")
+			}
 		}
 		// Codex applies a patch heredoc sent through the shell itself, after
 		// this hook and with no second one, so this is the only place its
@@ -209,7 +232,11 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		// states outright: "Bash and apply_patch use tool_input.command". Left
 		// unread, every path and content condition would silently never fire on
 		// that harness's only editing tool.
-		if patch, ok := in.ToolInput["command"].(string); ok && !p.Has("path") {
+		if raw, ok := in.ToolInput["command"]; ok && !p.Has("path") {
+			patch, ok := raw.(string)
+			if !ok {
+				p.SetField("unreadable", "path")
+			}
 			if edits := patchPayloads(event, tools, "", patch); len(edits) > 0 {
 				return edits, in.CWD, nil
 			}
@@ -221,7 +248,7 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 			p.SetField("server", server)
 		}
 	}
-	p.SetField("prompt", in.Prompt)
+	set(&p, "prompt", env, "prompt")
 	return append([]rule.Payload{p}, edits...), in.CWD, nil
 }
 
@@ -382,10 +409,21 @@ func patchHeader(line string) (verb, file string, ok bool) {
 // field. A key the call omits and a key it carries empty are the same answer,
 // so both fall through to the next key and, failing every key, leave the field
 // absent. Which of those two a key is, and what an empty one means, is
-// rule.Payload.SetField's answer rather than this Adapter's.
+// rule.Payload.SetField's answer rather than this Adapter's. A key carrying
+// anything but a string, null included, is the source the call chose, so it
+// declares the field unreadable rather than falling through to the next key.
 func set(p *rule.Payload, name string, input map[string]any, keys ...string) {
 	for _, k := range keys {
-		if s, ok := input[k].(string); ok && p.SetField(name, s) {
+		v, present := input[k]
+		if !present {
+			continue
+		}
+		s, ok := v.(string)
+		if !ok {
+			p.SetField("unreadable", name)
+			return
+		}
+		if p.SetField(name, s) {
 			return
 		}
 	}
@@ -412,6 +450,7 @@ func (a Adapter) blockReason(event string) string {
 }
 
 type hookOutput struct {
+	SystemMessage      string       `json:"systemMessage,omitempty"`
 	HookSpecificOutput hookSpecific `json:"hookSpecificOutput"`
 }
 
@@ -425,7 +464,9 @@ type hookSpecific struct {
 // else proceeds and injects the message into the agent's context. Both
 // harnesses document the same two channels, exit 2 with a stderr reason and a
 // hookSpecificOutput.additionalContext object, so one implementation serves.
-func (a Adapter) Deliver(event, message string, outcome rule.Outcome, stdout, stderr io.Writer) int {
+// human is what the user sees on systemMessage; on the stderr path it is
+// already part of message, which reaches the user there.
+func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, stdout, stderr io.Writer) int {
 	if message == "" {
 		return 0
 	}
@@ -441,7 +482,7 @@ func (a Adapter) Deliver(event, message string, outcome rule.Outcome, stdout, st
 		return 2
 	}
 
-	out := hookOutput{hookSpecific{HookEventName: event, AdditionalContext: message}}
+	out := hookOutput{human, hookSpecific{HookEventName: event, AdditionalContext: message}}
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
 	// Rule messages are prose, so HTML escaping would only mangle them.
