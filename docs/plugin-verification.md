@@ -33,7 +33,7 @@ findings below.
 | 4 | Managed binary at the wrong version | Reinstalled at the pinned version |
 | 5 | Managed binary at the pinned version | Nothing downloaded, exit 0, no output |
 | 6 | Plugin installed from a marketplace | `scripts/bootstrap.sh` survives the copy into the plugin cache and the SessionStart hook fires |
-| 7 | `/handrail:add` from a plain-language description | A rule file that `check` accepts, `test` matches against its own incident, and `advise` reports on |
+| 7 | `/handrail:add` from a plain-language description | A rule file that `check` accepts and `test` matches against its own incident |
 | 8 | `/handrail:analyze` in a session containing one explicit correction | The transcript resolves, the correction is proposed with its quote, nothing is written until that rule is approved, and the approved rule passes `check` and matches its own incident under `test` |
 
 ## 2026-08-18, v0.1.0-rc.1 on Claude Code, darwin/arm64
@@ -46,9 +46,9 @@ archive; the others hit the real release.
 - Case 6: the plugin installed from a local marketplace clone, `hooks/hooks.json`
   registered by auto-discovery alone, and the SessionStart hook fired on a
   headless session, installing the binary at mode `755` and syncing all six
-  entries. Case 7 was exercised command by command (`check`, `test`,
-  `advise --json`) rather than through a live session, because the sandboxed
-  session had no credentials.
+  entries. Case 7 was exercised command by command (`check` and `test`)
+  rather than through a live session, because the sandboxed session had no
+  credentials.
 
 Case 8 is **partly verified only**, on both harnesses, and the live half is
 still owed. What was checked, on 2026-08-18 alongside the analyze skill:
@@ -63,9 +63,7 @@ still owed. What was checked, on 2026-08-18 alongside the analyze skill:
 - The command chain the skill drives after approval was run against a sandbox
   `HOME` and a throwaway repo: `check --json` listed the new
   Project-personal rule with `enabled: true` and `shadowed_by: null`,
-  `test PreToolUse --kind shell --field command=...` matched it and exited 2,
-  and `advise --harness claude --json` returned the `Bash(git push --force*)`
-  deny with its scope-widening line.
+  and `test PreToolUse --kind shell --field command=...` matched it and exited 2.
 - Not yet verified: the skill running inside a live session, so the proposal,
   the evidence quote, and the per-rule approval gate are unproven end to end.
   That needs a credentialed session against an isolated `HOME`, the same gap

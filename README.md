@@ -75,7 +75,6 @@ Starting from nothing, the sequence is:
 | `check` | Validate every tier and print the effective ruleset, annotated with tier, shadowing, and disabling. |
 | `test <event>` | Dry-run one event against the rules. Exit 2 when the outcome is block. |
 | `sync` | Write handrail's hook entries into every detected harness. The plugin runs this for you after a fresh install. |
-| `advise [rule]` | Report which rules also translate into a native harness entry, such as a Claude Code permission deny, for you to paste into your own config. |
 | `trust` | Grant this repo's committed `.handrail/` rules permission to take effect. |
 | `import hookify` | Convert upstream hookify rule files into personal rules, reporting anything the format cannot express. |
 | `doctor` | Diagnose the install offline. The first thing to run when nothing fires. |
@@ -131,7 +130,7 @@ Prebuilt binaries cover macOS and Linux on amd64 and arm64. There is no Windows 
 ## Documentation
 
 - [`docs/spec.md`](docs/spec.md) is the behavioural source of truth: the event model, the rule format in full, every operator, and the per-harness capability matrix.
-- [`CONTEXT.md`](CONTEXT.md) defines the vocabulary.
+- [`GLOSSARY.md`](GLOSSARY.md) defines the vocabulary.
 - [`docs/adr/`](docs/adr/) records why each decision went the way it did.
 - [`CHANGELOG.md`](CHANGELOG.md) says what changed in each release.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) says how to set up, test, and send a change.

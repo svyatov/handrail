@@ -1,6 +1,6 @@
 # handrail
 
-`docs/spec.md` is the behavioural source of truth. `CONTEXT.md` defines the vocabulary.
+`docs/spec.md` is the behavioural source of truth. `GLOSSARY.md` defines the vocabulary.
 
 ## Commands
 
@@ -35,11 +35,11 @@ Issues live as GitHub issues in `svyatov/handrail`, managed via the `gh` CLI. Se
 
 ### Triage labels
 
-The five canonical roles, each label string equal to its name. See `docs/agents/triage-labels.md`.
+The seven canonical roles (two category, five state), each label string equal to its name. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context: `GLOSSARY.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
 ### Semantic code navigation
 

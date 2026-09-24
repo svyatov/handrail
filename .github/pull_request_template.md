@@ -22,7 +22,7 @@ change is invisible to the spec.
 ## Vocabulary and decisions
 
 <!--
-CONTEXT.md if this introduces or renames a term. A new docs/adr/ entry if this
+GLOSSARY.md if this introduces or renames a term. A new docs/adr/ entry if this
 settles a question a future reader would otherwise reopen. Say "neither" if
 neither applies.
 -->
@@ -38,7 +38,7 @@ produce here. See docs/adr/0009-testing-strategy.md.
 ## Harness surface
 
 <!--
-Only if this touches sync, an adapter, or the advisor. One row per harness.
+Only if this touches sync or an adapter. One row per harness.
 Delete the whole section otherwise.
 
 | Harness | What changes | Substitution behaviour |
@@ -51,6 +51,6 @@ Delete the whole section otherwise.
 
 <!--
 handrail is pre-1.0, so breaking is allowed and has to be stated. Does this
-change the rule file format, the nine-command surface, an exit code, or the
-JSON contract of check or advise? Say "no" if it does not.
+change the rule file format, the eight-command surface, an exit code, or the
+JSON contract of check or test? Say "no" if it does not.
 -->

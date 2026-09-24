@@ -4,7 +4,7 @@ handrail is a cross-harness guardrail manager: users declare rules once, in one 
 
 Rule semantics assume hostile input, because a prompt-injected agent produces every input a careless agent does and worse. The hook path is best-effort and never a security boundary: every harness has a documented way to switch hooks off (section 4), and handrail detects those it can see rather than claiming to defend them.
 
-Vocabulary is defined in [CONTEXT.md](../CONTEXT.md); every capitalized term below (Rule, Rule tier, Adapter, Candidate, Analyzer, Surveyor, Sync, ...) means what the glossary says. Rationale lives in [docs/adr/](adr/); this spec states the outcome and links the ADR. Research evidence lives in `docs/research/` on the `research/*` branches.
+Vocabulary is defined in [GLOSSARY.md](../GLOSSARY.md); every capitalized term below (Rule, Rule tier, Adapter, Candidate, Analyzer, Surveyor, Sync, ...) means what the glossary says. Rationale lives in [docs/adr/](adr/); this spec states the outcome and links the ADR. Research evidence lives in `docs/research/` on the `research/*` branches.
 
 ## 1. Event model
 
