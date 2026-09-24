@@ -49,6 +49,21 @@ stdin idn.json
 exec handrail test PreToolUse --stdin --harness claude
 stdout '^warn  untrusted-host  '
 
+# A host ending in a number is an IPv4 address to the fetcher, however it is
+# spelled: each of these is 169.254.169.254. Only the dotted-decimal form is
+# read as a domain.
+exec handrail test PreToolUse --field url=http://2852039166/
+stdout '^warn  untrusted-host  '
+exec handrail test PreToolUse --field url=http://0xa9fea9fe/
+stdout '^warn  untrusted-host  '
+exec handrail test PreToolUse --field url=http://169.254.43518/
+stdout '^warn  untrusted-host  '
+exec handrail test PreToolUse --field url=http://0251.0376.0251.0376/
+stdout '^warn  untrusted-host  '
+exec handrail test PreToolUse --field url=http://169.254.169.254./
+stdout '^warn  metadata  '
+! stdout 'untrusted-host'
+
 # A url key fills url on any tool, an MCP one included.
 stdin mcp.json
 exec handrail test PreToolUse --stdin --harness claude
@@ -110,6 +125,14 @@ conditions:
     equals: https://example.com/a
 ---
 Example page.
+-- .handrail/metadata.md --
+---
+event: PreToolUse
+conditions:
+  - field: domain
+    equals: 169.254.169.254
+---
+Metadata.
 -- .handrail/loopback.md --
 ---
 event: PreToolUse

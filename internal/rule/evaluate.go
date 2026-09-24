@@ -126,7 +126,15 @@ func domainOf(raw string) (string, bool) {
 	if _, err := netip.ParseAddr(host); err == nil {
 		return host, true
 	}
-	if host == "" || strings.ContainsFunc(host, func(r rune) bool {
+	// A fetcher reads a host whose last label is a number as an IPv4 address,
+	// however it is spelled (2852039166, 0xa9fea9fe, 169.254.43518), and
+	// netip reads only the dotted-decimal form.
+	last := host[strings.LastIndex(host, ".")+1:]
+	hex, isHex := strings.CutPrefix(last, "0x")
+	if strings.Trim(last, "0123456789") == "" || isHex && strings.Trim(hex, "0123456789abcdef") == "" {
+		return "", false
+	}
+	if strings.ContainsFunc(host, func(r rune) bool {
 		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '.' && r != '-'
 	}) {
 		return "", false
