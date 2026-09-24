@@ -4,6 +4,7 @@
 package shell
 
 import (
+	"slices"
 	"strings"
 
 	"mvdan.cc/sh/v3/syntax"
@@ -11,36 +12,95 @@ import (
 
 // Read parses line and returns its Candidates, each as its Spellings: the
 // source text, then the unquoted form where that differs. A command statement
-// is one Candidate, and once more without its leading assignments; a redirect
+// is one Candidate, once more without its leading assignments, and once more
+// for each Wrapper removed; code a listed shell runs adds its own. A redirect
 // to a file is one. ok is false when the line will not parse, and then there
-// are no Candidates. A truncated line is not a failure: error recovery keeps
-// the commands before its malformed tail.
+// are no Candidates, and when the line runs code handrail cannot read, which
+// keeps the Candidates found. A truncated line is not a failure: error
+// recovery keeps the commands before its malformed tail.
 func Read(line string) (cands [][]string, ok bool) {
+	var r reader
+	if !r.read(line) {
+		return nil, false
+	}
+	return r.cands, !r.gaveUp
+}
+
+// reader collects the Candidates of one program as the walk meets them.
+type reader struct {
+	text  string // the program's source: the line, or code nested in it
+	cands [][]string
+	// gaveUp is true once the program runs code handrail cannot read.
+	gaveUp bool
+	// fed holds the statements whose standard input comes from outside the
+	// call: a pipe, or the pipe or input redirect of a group that holds them.
+	fed map[*syntax.Stmt]bool
+	// depth is how many re-parses deep the program is.
+	depth int
+}
+
+// read parses code and adds its Candidates, and reports whether it parsed.
+func (r *reader) read(code string) bool {
 	// Bash for every command, whatever shell the harness runs, as a declared
 	// approximation (docs/spec.md section 2). Recovery supplies missing closing
 	// tokens, one per open construct, so the bound only has to exceed the
 	// nesting a real command line reaches.
-	f, err := syntax.NewParser(syntax.RecoverErrors(8)).Parse(strings.NewReader(line), "")
+	f, err := syntax.NewParser(syntax.RecoverErrors(8)).Parse(strings.NewReader(code), "")
 	if err != nil {
-		return nil, false
+		return false
 	}
-	r := reader{line: line}
+	r.text, r.fed = code, map[*syntax.Stmt]bool{}
 	syntax.Walk(f, func(n syntax.Node) bool {
 		switch n := n.(type) {
+		case *syntax.BinaryCmd:
+			// A pipeline nests to the left, so each pipe's right side is
+			// every piped statement.
+			if n.Op == syntax.Pipe || n.Op == syntax.PipeAll {
+				r.fed[n.Y] = true
+			}
 		case *syntax.Stmt:
+			// The walk meets a group before the statements it holds, and
+			// each of them reads the group's input.
+			if _, call := n.Cmd.(*syntax.CallExpr); !call && (r.fed[n] || input(n)) {
+				syntax.Walk(n.Cmd, func(m syntax.Node) bool {
+					if st, ok := m.(*syntax.Stmt); ok {
+						r.fed[st] = true
+					}
+					return true
+				})
+			}
 			r.stmt(n)
 		case *syntax.Redirect:
 			r.redirect(n)
 		}
 		return true
 	})
-	return r.cands, true
+	return true
 }
 
-// reader collects the Candidates of one line as the walk meets them.
-type reader struct {
-	line  string
-	cands [][]string
+// input reports whether a statement redirects its standard input.
+func input(st *syntax.Stmt) bool {
+	return slices.ContainsFunc(st.Redirs, func(rd *syntax.Redirect) bool {
+		switch rd.Op {
+		case syntax.RdrIn, syntax.RdrInOut, syntax.DplIn, syntax.Hdoc, syntax.DashHdoc, syntax.WordHdoc:
+			return rd.N == nil || rd.N.Value == "0"
+		}
+		return false
+	})
+}
+
+// code reads code a listed shell or Wrapper runs, as $() contents are read.
+// Code the call does not hold literally is read best-effort, each expansion as
+// its source text, and declared. Re-parsing stops after four levels.
+func (r *reader) code(text string, literal bool) {
+	if r.depth == 4 {
+		r.gaveUp = true
+		return
+	}
+	inner := reader{depth: r.depth + 1}
+	parsed := inner.read(text)
+	r.cands = append(r.cands, inner.cands...)
+	r.gaveUp = r.gaveUp || !literal || !parsed || inner.gaveUp
 }
 
 // add records one Candidate, with one Spelling where both are the same.
@@ -72,11 +132,16 @@ func (r *reader) stmt(st *syntax.Stmt) {
 			words = append(words, r.word(w))
 		}
 		r.add(r.src(from, to), strings.Join(words, " "))
+		if len(cmd.Args) == 0 {
+			return
+		}
 		// Each leading assignment prefix is its own level, so a rule reads the
 		// command with it and without it.
-		if len(cmd.Assigns) > 0 && len(cmd.Args) > 0 {
+		if len(cmd.Assigns) > 0 {
 			r.add(r.src(cmd.Args[0], to), strings.Join(words[len(cmd.Assigns):], " "))
 		}
+		c := &call{st: st, args: cmd.Args, words: words[len(cmd.Assigns):], to: to, seen: map[int]bool{0: true}}
+		r.follow(c, 0, len(c.args))
 	case *syntax.DeclClause:
 		words := []string{cmd.Variant.Value}
 		for _, a := range cmd.Args {
@@ -120,9 +185,9 @@ func (r *reader) redirect(rd *syntax.Redirect) {
 func (r *reader) src(from, to syntax.Node) string {
 	end := to.End()
 	if end.IsRecovered() {
-		return r.line[from.Pos().Offset():]
+		return r.text[from.Pos().Offset():]
 	}
-	return r.line[from.Pos().Offset():end.Offset()]
+	return r.text[from.Pos().Offset():end.Offset()]
 }
 
 // assign is an assignment's unquoted form. A declaration's plain word, such as
@@ -157,18 +222,30 @@ func (r *reader) word(w *syntax.Word) string {
 				b.WriteString(p.Value)
 			}
 		case *syntax.DblQuoted:
-			for _, inner := range p.Parts {
-				if lit, ok := inner.(*syntax.Lit); ok {
-					b.WriteString(unescape(lit.Value, "$`\"\\\n"))
-				} else {
-					b.WriteString(r.src(inner, inner))
-				}
-			}
+			s, _ := r.dquoted(p.Parts, "$`\"\\\n")
+			b.WriteString(s)
 		default:
 			b.WriteString(r.src(p, p))
 		}
 	}
 	return b.String()
+}
+
+// dquoted is the unquoted form of the parts of a double-quoted string or a
+// heredoc body, where a backslash quotes only the characters in special, and
+// reports whether it holds no expansion.
+func (r *reader) dquoted(parts []syntax.WordPart, special string) (string, bool) {
+	var b strings.Builder
+	literal := true
+	for _, part := range parts {
+		if lit, ok := part.(*syntax.Lit); ok {
+			b.WriteString(unescape(lit.Value, special))
+		} else {
+			b.WriteString(r.src(part, part))
+			literal = false
+		}
+	}
+	return b.String(), literal
 }
 
 // unescape removes the backslashes bash removes. Unquoted, a backslash quotes
