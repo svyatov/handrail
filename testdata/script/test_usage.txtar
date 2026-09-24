@@ -11,7 +11,7 @@ stderr 'handrail test: unknown event "Nope"'
 
 exec sh -c 'handrail test PreToolUse --field cmd=x; echo code=$?'
 stdout '^code=1$'
-stderr 'unknown canonical field "cmd"'
+stderr 'unknown field "cmd"'
 
 exec sh -c 'handrail test PreToolUse --field command; echo code=$?'
 stdout '^code=1$'
@@ -23,7 +23,7 @@ stderr 'expected key=value'
 # it would get wrong.
 exec sh -c 'handrail test PreToolUse --field command=; echo code=$?'
 stdout '^code=1$'
-stderr 'field "command" needs a value'
+stderr '^handrail test: command needs a value$'
 
 exec sh -c 'handrail test PreToolUse --kind bash; echo code=$?'
 stdout '^code=1$'
@@ -65,10 +65,14 @@ exec sh -c 'handrail test PreToolUse --stdin --field command="rm -rf build"; ech
 stdout '^code=0$'
 stdout '^outcome: allow$'
 
+# A capture that is not the payload reads as the hook path reads it: one
+# kind-less call declaring unreadable: payload, with the failure named.
 stdin not-json.txt
 exec sh -c 'handrail test PreToolUse --stdin; echo code=$?'
-stdout '^code=1$'
-stderr 'handrail test: reading payload'
+stdout '^code=0$'
+stdout '^payload 1 of 1$'
+stdout '^  unreadable: payload$'
+stdout '^human:\n  handrail: could not parse the PreToolUse payload: '
 
 -- .git/HEAD --
 ref: refs/heads/main

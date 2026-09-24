@@ -1,0 +1,72 @@
+# --harness names the harness whose Adapter reads the call, and section 4
+# applies for it: Codex cannot fail closed on UserPromptSubmit, so a block there
+# is delivered as a warn, and the outcome and exit code follow what hook does.
+
+exec handrail test UserPromptSubmit --field prompt=deploy --harness codex
+stdout '^warn  no-deploy  global  degraded from block$'
+stdout '^outcome: warn$'
+
+exec handrail test UserPromptSubmit --field prompt=deploy --harness codex --json
+stdout '"action": "warn"'
+stdout '"degraded_from": "block"'
+stdout '"outcome": "warn"'
+
+# Claude Code can, so the rule blocks there as written.
+! exec handrail test UserPromptSubmit --field prompt=deploy --json
+stdout '"action": "block"'
+stdout '"degraded_from": null'
+stdout '"outcome": "block"'
+
+# A written call is read by the named harness's Adapter alone. Codex applies a
+# patch heredoc sent through the shell itself; Claude Code runs it as a program.
+exec sh -c 'handrail test PreToolUse --kind shell --field "command=$(cat patch.sh)"'
+! stdout 'no-secrets-file'
+! exec sh -c 'handrail test PreToolUse --kind shell --field "command=$(cat patch.sh)" --harness codex'
+stdout '^block  no-secrets-file  global$'
+
+# The same holds for a command written over a capture.
+stdin ls.json
+! exec sh -c 'handrail test PreToolUse --stdin --harness codex --field "command=$(cat patch.sh)"'
+stdout '^block  no-secrets-file  global$'
+stdin ls.json
+exec sh -c 'handrail test PreToolUse --stdin --field "command=$(cat patch.sh)"'
+! stdout 'no-secrets-file'
+
+# A written tool answers to the names that harness gives it.
+exec handrail test PreToolUse --field tool=apply_patch --harness codex
+stdout '^    Edit$'
+exec handrail test PreToolUse --field tool=apply_patch
+! stdout '^    Edit$'
+
+-- ls.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {"command": "ls"}
+}
+-- patch.sh --
+apply_patch <<'EOF'
+*** Begin Patch
+*** Add File: secrets.yml
++key: 1
+*** End Patch
+EOF
+-- home/.config/handrail/no-secrets-file.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: path
+    equals: secrets.yml
+---
+Keep secrets out of the tree.
+-- home/.config/handrail/no-deploy.md --
+---
+event: UserPromptSubmit
+action: block
+conditions:
+  - field: prompt
+    contains: deploy
+---
+Deploys go through the release checklist.

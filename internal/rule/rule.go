@@ -235,7 +235,7 @@ func (r *Rule) checkEvent(kindLine int) error {
 	if r.Event == "" {
 		return nil
 	}
-	tool := toolEvent(r.Event)
+	tool := ToolEvent(r.Event)
 	if r.Kind != "" && !tool {
 		return fmt.Errorf("line %d: kind applies only to PreToolUse and PostToolUse", kindLine)
 	}
@@ -248,13 +248,8 @@ func (r *Rule) checkEvent(kindLine int) error {
 	}
 	for i := range r.Examples {
 		e := &r.Examples[i]
-		for _, f := range e.Fields {
-			switch {
-			case f.Name == "kind" && !tool:
-				return fmt.Errorf("line %d: kind applies only to PreToolUse and PostToolUse", e.Line)
-			case f.Name != "kind" && !carries(r.Event, f.Name):
-				return fmt.Errorf("line %d: %s never carries %s", e.Line, r.Event, f.Name)
-			}
+		if err := CheckCall(r.Event, e.Fields); err != nil {
+			return fmt.Errorf("line %d: %w", e.Line, err)
 		}
 		if e.Kind == "" {
 			e.Kind = r.Kind
@@ -263,9 +258,9 @@ func (r *Rule) checkEvent(kindLine int) error {
 	return nil
 }
 
-// toolEvent reports whether event is about a tool call, the only events that
+// ToolEvent reports whether event is about a tool call, the only events that
 // carry a kind.
-func toolEvent(event string) bool { return event == "PreToolUse" || event == "PostToolUse" }
+func ToolEvent(event string) bool { return event == "PreToolUse" || event == "PostToolUse" }
 
 // carries is the per-event field table: whether a payload of event can hold
 // field on either harness. unreadable is on every event, since any read can
@@ -277,7 +272,7 @@ func carries(event, field string) bool {
 	case event == "UserPromptSubmit":
 		return field == "prompt"
 	}
-	return toolEvent(event) && field != "prompt"
+	return ToolEvent(event) && field != "prompt"
 }
 
 // parseFrontmatter reads a markdown file's YAML frontmatter as a mapping, and

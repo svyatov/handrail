@@ -15,8 +15,14 @@ exec sh -c 'handrail test PreToolUse; echo code=$?'
 stdout '^warn  any-kind  project-shared$'
 ! stdout 'shell-only'
 
+# Without --kind, the call is one handrail does not classify.
+exec handrail test PreToolUse --field tool=Frobnicate
+stdout '^warn  other-only  project-shared$'
+exec handrail test PreToolUse --kind shell --field tool=Frobnicate
+! stdout 'other-only'
+
 # The event has to match too.
-exec sh -c 'handrail test Stop --kind shell; echo code=$?'
+exec sh -c 'handrail test PostToolUse --kind shell; echo code=$?'
 stdout '^outcome: allow$'
 
 -- .git/HEAD --
@@ -27,6 +33,12 @@ event: PreToolUse
 kind: shell
 ---
 Only shell tool calls.
+-- .handrail/other-only.md --
+---
+event: PreToolUse
+kind: other
+---
+Only calls handrail does not classify.
 -- .handrail/any-kind.md --
 ---
 event: PreToolUse

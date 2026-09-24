@@ -469,6 +469,26 @@ type hookSpecific struct {
 	AdditionalContext string `json:"additionalContext"`
 }
 
+// toStderr reports whether Deliver sends an event's message on exit 2, the
+// harness's own channel. On an event that can block it is the denial; on
+// SessionEnd, which has no decision control and whose JSON output the harness
+// discards, it is the only way left to reach the user, which is what a warning
+// degrades to where context injection does not exist.
+func (a Adapter) toStderr(event string, outcome rule.Outcome) bool {
+	c := a.caps(event)
+	return (outcome == rule.Block && c.deny == exitTwo) || !c.inject
+}
+
+// Human is the text the user is shown when Deliver sends message and human
+// for event, and "" when nothing reaches them. human is part of message, so
+// no message means no human line either.
+func (a Adapter) Human(event, message, human string, outcome rule.Outcome) string {
+	if a.toStderr(event, outcome) {
+		return message
+	}
+	return human
+}
+
 // Deliver writes message in the harness's protocol and returns the exit code:
 // a block is exit 2 with the message as the denial reason on stderr, anything
 // else proceeds and injects the message into the agent's context. Both
@@ -480,12 +500,7 @@ func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, std
 	if message == "" {
 		return 0
 	}
-	// Exit 2 is the harness's own channel. On an event that can block it is the
-	// denial; on SessionEnd, which has no decision control and whose JSON output
-	// the harness discards, it is the only way left to reach the user, which is
-	// what a warning degrades to where context injection does not exist.
-	c := a.caps(event)
-	if (outcome == rule.Block && c.deny == exitTwo) || !c.inject {
+	if a.toStderr(event, outcome) {
 		// A failed write leaves nobody to tell, but the outcome still stands: a
 		// block that cannot state its reason is still a block.
 		_, _ = io.WriteString(stderr, message+"\n")

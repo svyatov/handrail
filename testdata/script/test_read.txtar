@@ -1,0 +1,137 @@
+# test shows, per payload, how handrail read the call: each field's Candidates,
+# each Candidate's Spellings under it, and anything it could not read.
+
+# The whole line is marked, since only positive terms read it. A command whose
+# source differs from its unquoted form lists both Spellings.
+exec handrail test PreToolUse --kind shell --field 'command=cd /tmp && rm "-rf" /'
+cmp stdout compound.txt
+
+# A file the shell call names is a payload of its own.
+exec handrail test PreToolUse --kind shell --field 'command=cat .env'
+stdout '^payload 2 of 2: file_read$'
+stdout '^  path\n    \.env$'
+
+# What handrail could not read is named on its payload.
+exec handrail test PreToolUse --kind shell --field 'command=bash -c "$X"'
+stdout '^  unreadable: command$'
+
+# A line that runs no command is a Candidate with no Spelling.
+exec handrail test PreToolUse --kind shell --field 'command=# ls'
+stdout '^  command \(runs no command\)$'
+
+# --json carries the same reading, with unreadable pulled out of the fields.
+exec handrail test PreToolUse --kind shell --field 'command=bash -c "$X"' --json
+cmp stdout unreadable.json
+
+# --stdin reads a capture as the named harness sends it: Codex's apply_patch is
+# one payload per file section, each answering to every name the tool has.
+stdin two-files.json
+! exec handrail test PreToolUse --stdin --harness codex
+cmp stdout two-files.txt
+
+# Claude Code reads the same patch, but documents no other name for the tool.
+stdin two-files.json
+! exec handrail test PreToolUse --stdin
+stdout '^payload 2 of 2: file_edit$'
+stdout '^    apply_patch$'
+! stdout '^    Edit$'
+
+-- two-files.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Update File: config/.env\n@@\n+PORT=3000\n*** Add File: secrets.yml\n+api_key: sk-live-1\n*** End Patch\n"}
+}
+-- two-files.txt --
+payload 1 of 2: file_edit
+  content
+    PORT=3000
+  path
+    config/.env
+  tool
+    apply_patch
+    Edit
+    Write
+
+payload 2 of 2: file_edit
+  content
+    api_key: sk-live-1
+  path
+    secrets.yml
+  tool
+    apply_patch
+    Edit
+    Write
+
+block  secret-key  global
+  Keep keys out of files.
+
+outcome: block
+human:
+  handrail block: secret-key (global)
+  Keep keys out of files.
+-- home/.config/handrail/secret-key.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: content
+    contains: sk-live-
+---
+Keep keys out of files.
+-- unreadable.json --
+{
+  "outcome": "allow",
+  "payloads": [
+    {
+      "kind": "shell",
+      "fields": {
+        "command": [
+          {
+            "spellings": [
+              "bash -c \"$X\""
+            ],
+            "whole": true
+          },
+          {
+            "spellings": [
+              "bash -c \"$X\"",
+              "bash -c $X"
+            ]
+          },
+          {
+            "spellings": [
+              "$X"
+            ]
+          }
+        ]
+      },
+      "unreadable": [
+        "command"
+      ]
+    }
+  ],
+  "matched": [],
+  "human": ""
+}
+-- compound.txt --
+payload 1 of 3: shell
+  command (whole line, positive terms only)
+    cd /tmp && rm "-rf" /
+  command
+    cd /tmp
+  command
+    rm "-rf" /
+    rm -rf /
+
+payload 2 of 3: file_read
+  path
+    /tmp
+
+payload 3 of 3: file_edit
+  path
+    /
+
+outcome: allow
+human: none

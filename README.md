@@ -35,10 +35,19 @@ handrail test PreToolUse --kind shell --field command='git push --force origin m
 ```
 
 ```text
+payload 1 of 1: shell
+  command (whole line, positive terms only)
+    git push --force origin main
+  command
+    git push --force origin main
+
 block  no-force-push  project-personal
   Never force-push a shared branch. Rewrite locally and open a new pull request.
 
 outcome: block
+human:
+  handrail block: no-force-push (project-personal)
+  Never force-push a shared branch. Rewrite locally and open a new pull request.
 ```
 
 ## Where to start

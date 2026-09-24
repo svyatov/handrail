@@ -1,0 +1,152 @@
+# --field takes what an Example takes, and a repeated --field gives a list.
+
+# Each url is its own Candidate, so the first one is still there after the second.
+exec handrail test PreToolUse --field url=https://example.com/a --field url=https://evil.test/b
+stdout '^warn  example-domain  global$'
+stdout '^warn  evil-domain  global$'
+
+# A field an Example cannot write is a usage error, with the Example's words.
+! exec handrail test PreToolUse --field domain=example.com
+stderr '^handrail test: domain comes from a written url, so write the url$'
+! exec handrail test PreToolUse --field command=ls --field command=pwd
+stderr '^handrail test: command must be a single value$'
+! exec handrail test PreToolUse --field path=a --field path=b --field path=c
+stderr '^handrail test: a path list is a rename: its source and its destination$'
+! exec handrail test PreToolUse --field writes_empty=false
+stderr '^handrail test: writes_empty can only be true$'
+! exec handrail test PreToolUse --field unreadable=nope
+stderr '^handrail test: unknown unreadable value "nope"$'
+! exec handrail test PreToolUse --field network_grant=:443
+stderr '^handrail test: network_grant needs a value$'
+! exec handrail test UserPromptSubmit --field command=ls
+stderr '^handrail test: UserPromptSubmit never carries command$'
+! exec handrail test PreToolUse --field kind=bash
+stderr '^handrail test: unknown kind "bash"$'
+! exec handrail test Stop --field kind=shell
+stderr '^handrail test: kind applies only to PreToolUse and PostToolUse$'
+
+# --kind is the same field, held to the same terms.
+! exec handrail test UserPromptSubmit --kind shell --field prompt=hi
+stderr '^handrail test: kind applies only to PreToolUse and PostToolUse$'
+! exec handrail test PreToolUse --kind shell --field kind=file_edit
+stderr '^handrail test: kind must be a single value$'
+
+# kind is a field an Example writes, so --field takes it.
+exec handrail test PreToolUse --field kind=shell --field command=ls
+stdout '^warn  shell-call  global$'
+
+# A rename's path is both files, source then destination.
+exec handrail test PreToolUse --kind file_edit --field path=.env --field path=notes.txt
+stdout '^warn  env-path  global$'
+
+# Over a capture, a written field replaces what the capture carried, a field
+# that holds a list included, and the domain read from a replaced url goes too.
+stdin fetch.json
+exec handrail test PreToolUse --stdin
+stdout '^warn  example-domain  global$'
+stdin fetch.json
+exec handrail test PreToolUse --stdin --field url=https://evil.test/b
+stdout '^warn  evil-domain  global$'
+! stdout 'example-domain  global'
+stdin numeric-host.json
+exec handrail test PreToolUse --stdin
+stdout '^  unreadable: domain$'
+stdin numeric-host.json
+exec handrail test PreToolUse --stdin --field url=https://example.com/a
+! stdout 'unreadable'
+
+# A capture that yields several payloads has no one call a flag could vary:
+# each file section of a patch is its own.
+stdin two-files.json
+! exec handrail test PreToolUse --stdin --harness codex --field path=x
+stderr '^handrail test: the capture yields 2 payloads, and --field varies one call; write the call with --field alone$'
+
+# A capture's tool names its kind, so no kind is written over one, which
+# would build a payload the Adapter never builds.
+stdin fetch.json
+! exec handrail test PreToolUse --stdin --kind file_edit
+stderr '^handrail test: a capture''s tool names its kind, so --stdin takes no kind$'
+stdin fetch.json
+! exec handrail test PreToolUse --stdin --field kind=file_edit
+stderr 'takes no kind'
+
+# A written tool over a capture answers to the names the named harness gives it.
+stdin fetch.json
+exec handrail test PreToolUse --stdin --field tool=apply_patch
+stdout '^    apply_patch$'
+! stdout '^    Edit$'
+
+# A written field is read, so the capture's unreadable entry for it goes.
+stdin number-path.json
+exec handrail test PreToolUse --stdin
+stdout '^  unreadable: path$'
+stdin number-path.json
+exec handrail test PreToolUse --stdin --field path=notes.txt
+! stdout 'unreadable'
+
+# A replaced command takes its files and its unreadable with it.
+stdin unreadable-shell.json
+exec handrail test PreToolUse --stdin --field command=ls
+! stdout 'unreadable'
+! stdout 'file_read'
+
+-- home/.config/handrail/example-domain.md --
+---
+event: PreToolUse
+conditions:
+  - field: domain
+    equals: example.com
+---
+Names example.com.
+-- unreadable-shell.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {"command": "cat .env; bash -c \"$X\""}
+}
+-- number-path.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Read",
+  "tool_input": {"file_path": 5}
+}
+-- two-files.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Update File: config/.env\n@@\n+PORT=3000\n*** Add File: secrets.yml\n+api_key: sk-live-1\n*** End Patch\n"}
+}
+-- numeric-host.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "WebFetch",
+  "tool_input": {"url": "http://2852039166/", "prompt": "summarize"}
+}
+-- fetch.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "WebFetch",
+  "tool_input": {"url": "https://example.com/a", "prompt": "summarize"}
+}
+-- home/.config/handrail/shell-call.md --
+---
+event: PreToolUse
+kind: shell
+---
+A shell call.
+-- home/.config/handrail/env-path.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    equals: .env
+---
+Names .env.
+-- home/.config/handrail/evil-domain.md --
+---
+event: PreToolUse
+conditions:
+  - field: domain
+    equals: evil.test
+---
+Names evil.test.

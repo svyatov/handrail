@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -66,20 +67,15 @@ func parseExample(expect string, item *node) (Example, error) {
 			return e, fmt.Errorf("line %d: duplicate field %q", f.line, f.key)
 		}
 		seen[f.key] = true
-		switch {
-		case f.key == "domain":
-			return e, fmt.Errorf("line %d: domain comes from a written url, so write the url", f.line)
-		case f.key == "kind":
-			if !IsKind(f.val.scalar) {
-				return e, fmt.Errorf("line %d: unknown kind %q", f.line, f.val.scalar)
-			}
-			e.Kind = f.val.scalar
-		case !IsField(f.key):
-			return e, fmt.Errorf("line %d: unknown example field %q", f.line, f.key)
-		}
 		values, err := exampleValues(f)
 		if err != nil {
 			return e, err
+		}
+		if err := checkField(f.key, values, f.val.seq != nil); err != nil {
+			return e, fmt.Errorf("line %d: %w", f.line, err)
+		}
+		if f.key == "kind" {
+			e.Kind = values[0]
 		}
 		e.Fields = append(e.Fields, ExampleField{Name: f.key, Values: values})
 	}
@@ -89,37 +85,75 @@ func parseExample(expect string, item *node) (Example, error) {
 	return e, nil
 }
 
-// exampleValues reads one written field as the values a live call could carry
-// in it: a list only where a field holds one Candidate per entry, and never a
-// value the Adapter would not present.
+// exampleValues reads one written field's YAML as its values: a scalar, or a
+// list of scalars.
 func exampleValues(f pair) ([]string, error) {
-	values := []string{f.val.scalar}
 	switch {
-	case f.val.seq != nil && slices.Contains([]string{"url", "network_grant", "unreadable", "path"}, f.key):
-		values = values[:0]
-		for _, v := range f.val.seq {
-			if !v.isScalar {
-				return nil, fmt.Errorf("line %d: %s entries must be single values", v.line, f.key)
-			}
-			values = append(values, v.scalar)
-		}
-		if f.key == "path" && len(values) != 2 {
-			return nil, fmt.Errorf("line %d: a path list is a rename: its source and its destination", f.line)
-		}
-	case !f.val.isScalar:
+	case f.val.isScalar:
+		return []string{f.val.scalar}, nil
+	case f.val.seq == nil:
 		return nil, fmt.Errorf("line %d: %s must be a single value", f.line, f.key)
+	}
+	var values []string
+	for _, v := range f.val.seq {
+		if !v.isScalar {
+			return nil, fmt.Errorf("line %d: %s entries must be single values", v.line, f.key)
+		}
+		values = append(values, v.scalar)
+	}
+	return values, nil
+}
+
+// CheckCall holds fields written for one call on event, as an Example or
+// test --field writes them, to what a live call could carry. A field written
+// more than once is a list.
+func CheckCall(event string, fields []ExampleField) error {
+	for _, f := range fields {
+		if err := checkField(f.Name, f.Values, len(f.Values) > 1); err != nil {
+			return err
+		}
+		switch {
+		case f.Name == "kind" && !ToolEvent(event):
+			return errors.New("kind applies only to PreToolUse and PostToolUse")
+		case f.Name != "kind" && !carries(event, f.Name):
+			return fmt.Errorf("%s never carries %s", event, f.Name)
+		}
+	}
+	return nil
+}
+
+// checkField reports why a live call could not carry the values written for
+// one field: a list only where a field holds one Candidate per entry, a path
+// list only as a rename's two paths, and never a value the Adapter would not
+// present. list says the values were written as a list, which one entry can
+// be.
+func checkField(name string, values []string, list bool) error {
+	switch {
+	case name == "domain":
+		return errors.New("domain comes from a written url, so write the url")
+	case name == "kind":
+	case !IsField(name):
+		return fmt.Errorf("unknown field %q", name)
+	}
+	switch {
+	case list && !slices.Contains([]string{"url", "network_grant", "unreadable", "path"}, name):
+		return fmt.Errorf("%s must be a single value", name)
+	case list && name == "path" && len(values) != 2:
+		return errors.New("a path list is a rename: its source and its destination")
 	}
 	for _, v := range values {
 		switch {
-		case v == "" || f.key == "network_grant" && grant(v) == "":
-			return nil, fmt.Errorf("line %d: %s needs a value", f.line, f.key)
-		case (f.key == "writes_empty" || f.key == "deletes" || f.key == "unsandboxed") && v != "true":
-			return nil, fmt.Errorf("line %d: %s can only be true", f.line, f.key)
-		case f.key == "unreadable" && !IsField(v) && v != "payload" && v != "rules":
-			return nil, fmt.Errorf("line %d: unknown unreadable value %q", f.line, v)
+		case v == "" || name == "network_grant" && grant(v) == "":
+			return fmt.Errorf("%s needs a value", name)
+		case name == "kind" && !IsKind(v):
+			return fmt.Errorf("unknown kind %q", v)
+		case (name == "writes_empty" || name == "deletes" || name == "unsandboxed") && v != "true":
+			return fmt.Errorf("%s can only be true", name)
+		case name == "unreadable" && !IsField(v) && v != "payload" && v != "rules":
+			return fmt.Errorf("unknown unreadable value %q", v)
 		}
 	}
-	return values, nil
+	return nil
 }
 
 // String is the Example's fields as a report names them, each quoted, a list
