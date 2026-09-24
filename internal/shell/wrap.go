@@ -209,9 +209,9 @@ type grammar struct {
 	permute bool
 	// stop lists the short and long flags that make the program run no
 	// command, as command -v looks one up.
-	stop string
+	stop []string
 	// script lists the flags whose argument is a script, as env -S's is.
-	script string
+	script []string
 	// joined is true for a program that joins its command's words and passes
 	// them to sh -c, as watch does.
 	joined bool
@@ -245,7 +245,7 @@ var wrappers = map[string]*grammar{
 	"nice":    {short: "n:0123456789", long: "adjustment= help version"},
 	"nohup":   {long: "help version"},
 	"stdbuf":  {short: "e:i:o:", long: "error= input= output= help version"},
-	"command": {short: "pvV", stop: "v V"},
+	"command": {short: "pvV", stop: []string{"v", "V"}},
 	"builtin": {},
 	"noglob":  {},
 	"exec":    {short: "a:cl"},
@@ -253,13 +253,13 @@ var wrappers = map[string]*grammar{
 		short:   "ABbEeHh?iKklNnPSsVva:c:C:D:g:p:R:r:T:t:U:u:",
 		long:    "askpass auth-type= background bell close-from= chdir= preserve-env edit group= set-home help host= login login-class= remove-timestamp reset-timestamp list no-update non-interactive preserve-groups prompt= chroot= role= stdin shell type= command-timeout= other-user= user= version validate",
 		assigns: true,
-		stop:    "e edit",
+		stop:    []string{"e", "edit"},
 	},
 	"env": {
 		short:   "0iC:L:P:S:U:u:v",
 		long:    "ignore-environment null unset= chdir= split-string= ignore-signal default-signal block-signal list-signal-handling debug help version",
 		assigns: true,
-		script:  "S split-string",
+		script:  []string{"S", "split-string"},
 		splits:  true,
 	},
 	"doas":   {short: "a:C:Lnsu:"},
@@ -275,13 +275,12 @@ var wrappers = map[string]*grammar{
 		long:   "beep color no-color differences exec chgexit errexit help interval= precise equexit= no-rerun shotsdir= no-title version no-wrap",
 		joined: true,
 	},
-	// su is a listed shell rather than a Wrapper: it runs no command of its
-	// own, only the code its -c names.
+	// su is a nested shell: its command is only the script its -c names.
 	"su": {
 		short:   "c:fg:G:hlmPps:Vw:",
 		long:    "command= session-command= fast group= supp-group= help login preserve-environment pty shell= version whitelist-environment=",
 		permute: true,
-		script:  "c command session-command",
+		script:  []string{"c", "command", "session-command"},
 	},
 	"xargs": {
 		short:    "0a:d:E:e::I:i::J:L:l::n:oP:prR:S:s:tx",
@@ -298,7 +297,7 @@ var mise = &grammar{
 	short:   "c:C:E:hj:qvy",
 	long:    "command= jobs= allow-env= allow-net= allow-read= allow-write= deny-all deny-env deny-net deny-read deny-write fresh-env no-deps raw help cd= env= quiet verbose yes locked silent",
 	permute: true,
-	script:  "c command",
+	script:  []string{"c", "command"},
 }
 
 // lookup finds a flag in the table by its short letter, or by its long name
@@ -376,10 +375,10 @@ func (s *scan) from(k int) {
 	case strings.HasPrefix(w, "--"):
 		name, value, attached := strings.Cut(w[2:], "=")
 		a, full := s.flag(name, true)
-		if s.g.is(s.g.stop, full) {
+		if slices.Contains(s.g.stop, full) {
 			return
 		}
-		if s.g.is(s.g.script, full) {
+		if slices.Contains(s.g.script, full) {
 			s.script(k, value, attached)
 		}
 		if a != none && !attached {
@@ -402,10 +401,10 @@ func (s *scan) from(k int) {
 func (s *scan) cluster(k int, w string) {
 	for i := 1; i < len(w); i++ {
 		a, full := s.flag(w[i:i+1], false)
-		if s.g.is(s.g.stop, full) {
+		if slices.Contains(s.g.stop, full) {
 			return
 		}
-		if s.g.is(s.g.script, full) {
+		if slices.Contains(s.g.script, full) {
 			s.script(k, w[i+1:], i < len(w)-1)
 		}
 		if a == none {
@@ -434,11 +433,6 @@ func (s *scan) flag(name string, long bool) (arity, string) {
 		s.r.gaveUp = true
 	}
 	return a, full
-}
-
-// is reports whether a flag's full name is in a list of flags.
-func (g *grammar) is(list, full string) bool {
-	return full != "" && slices.Contains(strings.Fields(list), full)
 }
 
 // script reads a flag's argument as code: the rest of word k when attached,

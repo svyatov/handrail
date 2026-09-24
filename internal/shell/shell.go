@@ -28,7 +28,7 @@ func Read(line string) (cands [][]string, ok bool) {
 
 // reader collects the Candidates of one program as the walk meets them.
 type reader struct {
-	line  string
+	text  string // the program's source: the line, or code nested in it
 	cands [][]string
 	// gaveUp is true once the program runs code handrail cannot read.
 	gaveUp bool
@@ -49,7 +49,7 @@ func (r *reader) read(code string) bool {
 	if err != nil {
 		return false
 	}
-	r.line, r.fed = code, map[*syntax.Stmt]bool{}
+	r.text, r.fed = code, map[*syntax.Stmt]bool{}
 	syntax.Walk(f, func(n syntax.Node) bool {
 		switch n := n.(type) {
 		case *syntax.BinaryCmd:
@@ -185,9 +185,9 @@ func (r *reader) redirect(rd *syntax.Redirect) {
 func (r *reader) src(from, to syntax.Node) string {
 	end := to.End()
 	if end.IsRecovered() {
-		return r.line[from.Pos().Offset():]
+		return r.text[from.Pos().Offset():]
 	}
-	return r.line[from.Pos().Offset():end.Offset()]
+	return r.text[from.Pos().Offset():end.Offset()]
 }
 
 // assign is an assignment's unquoted form. A declaration's plain word, such as
