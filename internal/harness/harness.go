@@ -141,42 +141,39 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 	if env == nil {
 		return nil, "", errors.New("the payload is null")
 	}
-	var in struct {
-		CWD       string
-		ToolName  string
-		ToolInput map[string]any
-	}
-	in.CWD, _ = env["cwd"].(string)
+	var name string
+	var input map[string]any
+	cwd, _ := env["cwd"].(string)
 	if raw, ok := env["tool_input"]; ok {
-		if in.ToolInput, ok = raw.(map[string]any); !ok {
+		if input, ok = raw.(map[string]any); !ok {
 			return nil, "", errors.New("tool_input is not an object")
 		}
 	}
 	p := rule.Payload{Event: event}
 	if raw, ok := env["tool_name"]; ok {
-		if in.ToolName, ok = raw.(string); !ok {
+		if name, ok = raw.(string); !ok {
 			p.SetField("unreadable", "tool")
 		}
 	}
-	p.Kind = classify(in.ToolName)
-	tools := a.toolNames(in.ToolName)
+	p.Kind = classify(name)
+	tools := a.toolNames(name)
 	setTool(&p, tools)
 	// Read by key presence, on any tool, and from the tool input alone: the
 	// envelope's model is the session's, and its agent_type on a tool event
 	// names the subagent calling rather than one the call asks for.
-	set(&p, "agent_type", in.ToolInput, a.agentTypeKey)
-	set(&p, "agent_prompt", in.ToolInput, a.agentPromptKey)
-	set(&p, "model", in.ToolInput, "model")
-	set(&p, "url", in.ToolInput, "url")
-	switch in.ToolName {
+	set(&p, "agent_type", input, a.agentTypeKey)
+	set(&p, "agent_prompt", input, a.agentPromptKey)
+	set(&p, "model", input, "model")
+	set(&p, "url", input, "url")
+	switch name {
 	case "Monitor":
-		if ws, ok := in.ToolInput["ws"].(map[string]any); ok {
+		if ws, ok := input["ws"].(map[string]any); ok {
 			set(&p, "url", ws, "url")
 		}
 	case "webrun":
 		// Most refs name a search result rather than a page; only an absolute
 		// http or https URL is a destination.
-		open, _ := in.ToolInput["open"].([]any)
+		open, _ := input["open"].([]any)
 		for _, o := range open {
 			ref, _ := o.(map[string]any)
 			if s, ok := ref["ref_id"].(string); ok {
@@ -189,22 +186,24 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 	var edits []rule.Payload
 	switch p.Kind {
 	case "shell":
-		set(&p, "command", in.ToolInput, "command")
+		set(&p, "command", input, "command")
 		// Claude Code's shells ask their sandbox for more under these keys.
 		// WebSearch's allowed_domains filters results instead, and it is not
 		// a shell.
-		if raw, ok := in.ToolInput["allowed_domains"]; ok {
-			grants, ok := raw.([]any)
+		if raw, ok := input["allowed_domains"]; ok {
+			grants, readable := raw.([]any)
 			for _, g := range grants {
-				s, isString := g.(string)
-				ok = ok && isString
-				p.SetField("network_grant", s)
+				if s, ok := g.(string); ok {
+					p.SetField("network_grant", s)
+				} else {
+					readable = false
+				}
 			}
-			if !ok {
+			if !readable {
 				p.SetField("unreadable", "network_grant")
 			}
 		}
-		if raw, ok := in.ToolInput["dangerouslyDisableSandbox"]; ok {
+		if raw, ok := input["dangerouslyDisableSandbox"]; ok {
 			if off, ok := raw.(bool); !ok {
 				p.SetField("unreadable", "unsandboxed")
 			} else if off {
@@ -214,17 +213,17 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		// Codex applies a patch heredoc sent through the shell itself, after
 		// this hook and with no second one, so this is the only place its
 		// edits are seen. Claude Code runs the same line as a program.
-		if line, ok := in.ToolInput["command"].(string); ok && a.patchInShell {
+		if line, ok := input["command"].(string); ok && a.patchInShell {
 			if dir, patch, ok := shell.Patch(line); ok {
 				edits = patchPayloads(event, tools, dir, patch)
 			}
 		}
 	case "file_edit":
-		set(&p, "path", in.ToolInput, "file_path", "notebook_path")
-		set(&p, "content", in.ToolInput, textKeys[:]...)
-		set(&p, "removed_content", in.ToolInput, "old_string")
+		set(&p, "path", input, "file_path", "notebook_path")
+		set(&p, "content", input, textKeys[:]...)
+		set(&p, "removed_content", input, "old_string")
 		writesEmpty(&p, slices.ContainsFunc(textKeys[:], func(k string) bool {
-			_, ok := in.ToolInput[k].(string)
+			_, ok := input[k].(string)
 			return ok
 		}))
 		// Codex passes apply_patch as a shell-like tool, so the whole edit
@@ -232,24 +231,24 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		// states outright: "Bash and apply_patch use tool_input.command". Left
 		// unread, every path and content condition would silently never fire on
 		// that harness's only editing tool.
-		if raw, ok := in.ToolInput["command"]; ok && !p.Has("path") {
+		if raw, ok := input["command"]; ok && !p.Has("path") {
 			patch, ok := raw.(string)
 			if !ok {
 				p.SetField("unreadable", "path")
 			}
 			if edits := patchPayloads(event, tools, "", patch); len(edits) > 0 {
-				return edits, in.CWD, nil
+				return edits, cwd, nil
 			}
 		}
 	case "file_read":
-		set(&p, "path", in.ToolInput, "file_path")
+		set(&p, "path", input, "file_path")
 	case "mcp":
-		if server, _, ok := strings.Cut(strings.TrimPrefix(in.ToolName, "mcp__"), "__"); ok {
+		if server, _, ok := strings.Cut(strings.TrimPrefix(name, "mcp__"), "__"); ok {
 			p.SetField("server", server)
 		}
 	}
 	set(&p, "prompt", env, "prompt")
-	return append([]rule.Payload{p}, edits...), in.CWD, nil
+	return append([]rule.Payload{p}, edits...), cwd, nil
 }
 
 // classify assigns the canonical tool kind. An event without a tool has no kind,

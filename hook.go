@@ -44,13 +44,13 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	// handrail's own failures never decide the event: each is declared as
-	// unreadable, where a rule may fail closed on it, and named in the message.
-	// Two different faults, so two different messages: stdin never arrived, or it
-	// arrived and was not the payload. Reporting the second as the first sends the
-	// reader to look at the pipe when the harness's JSON is what to fix.
+	// unreadable, where a rule may fail closed on it, and named on both channels.
 	var failures []string
 	var payloads []rule.Payload
 	var cwd string
+	// Two different faults, so two different messages: stdin never arrived, or it
+	// arrived and was not the payload. Reporting the second as the first sends the
+	// reader to look at the pipe when the harness's JSON is what to fix.
 	data, err := io.ReadAll(stdin)
 	if err != nil {
 		failures = append(failures, fmt.Sprintf("handrail: could not read the %s payload: %v", event, err))
@@ -68,8 +68,9 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		cwd = ""
 		failures = append(failures, fmt.Sprintf("handrail: no working directory, so no project rule was evaluated: %v", err))
 	}
-	// A payload handrail could not take whole is one kind-less payload, which
-	// only a rule naming no kind reaches.
+	// A payload handrail could not take whole, or one with no directory to
+	// place it in, is one kind-less payload, which only a rule naming no kind
+	// reaches.
 	if failures != nil {
 		p := rule.Payload{Event: event}
 		p.SetField("unreadable", "payload")
@@ -99,8 +100,8 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 const listedFiles = 10
 
 // agentMessage is the wire format the hook path delivers: everything the agent
-// should hear, which is the matched messages, then whatever handrail had to
-// skip to get there. It stays in the CLI because it is the hook command's own
+// should hear, which is the matched messages, then handrail's own failures,
+// then the trust notice. It stays in the CLI because it is the hook command's own
 // output format, with one caller and nothing to disagree with.
 func agentMessage(rs *rule.Ruleset, matched []rule.Match, failures []string) string {
 	var sections []string
