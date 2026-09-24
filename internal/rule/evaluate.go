@@ -3,6 +3,8 @@ package rule
 import (
 	"slices"
 	"strings"
+
+	"github.com/svyatov/handrail/internal/shell"
 )
 
 // Payload is the canonical event payload a matcher is evaluated against: the
@@ -20,7 +22,18 @@ type Payload struct {
 	// fields is unexported so that SetField is the only way in. The rule it
 	// enforces is a matcher's rule, so it belongs to this package rather than to
 	// each Adapter that fills a payload in.
-	fields map[string][]string
+	fields map[string][]candidate
+}
+
+// candidate is one thing the call does, as one field sees it, written every
+// way it can be: a Candidate and its Spellings (ADR 0024). One with no
+// Spellings stands for a command line that runs no command: no positive term
+// meets it and every not_ term does.
+type candidate struct {
+	spellings []string
+	// whole marks the whole command line, which positive terms read and a not_
+	// term never does: it always holds an allowed command's text.
+	whole bool
 }
 
 // SetField writes a canonical field unless the value is empty, and reports
@@ -34,20 +47,54 @@ type Payload struct {
 // Presenting the empty string instead would fire every not_contains rule
 // against text nobody wrote, which is the louder mistake and the one that
 // blocks the wrong call.
+//
+// command is read here as a shell program, so the hook path and test read it
+// alike, and unreadable gains an entry rather than being replaced, since each
+// failure adds its own.
 func (p *Payload) SetField(name, value string) bool {
 	if value == "" {
 		return false
 	}
 	if p.fields == nil {
-		p.fields = make(map[string][]string)
+		p.fields = make(map[string][]candidate)
 	}
-	p.fields[name] = []string{value}
+	switch name {
+	case "command":
+		p.setCommand(value)
+	case "unreadable":
+		if !slices.ContainsFunc(p.fields[name], func(c candidate) bool { return c.spellings[0] == value }) {
+			p.fields[name] = append(p.fields[name], candidate{spellings: []string{value}})
+		}
+	default:
+		p.fields[name] = []candidate{{spellings: []string{value}}}
+	}
 	return true
 }
 
-// Field reads a canonical field's values. None means the payload does not
-// carry it, which is the same answer SetField refuses to write.
-func (p Payload) Field(name string) []string { return p.fields[name] }
+// setCommand fills command with the whole line and every Candidate the shell
+// reader finds. A line that will not parse declares so in unreadable and keeps
+// the whole line for positive terms.
+func (p *Payload) setCommand(line string) {
+	read, ok := shell.Read(line)
+	cands := make([]candidate, 0, len(read)+2)
+	cands = append(cands, candidate{spellings: []string{line}, whole: true})
+	for _, spellings := range read {
+		cands = append(cands, candidate{spellings: spellings})
+	}
+	// bash runs the lines before a syntax error, so a line handrail read no
+	// command from is one an allowlist cannot vouch for.
+	if len(read) == 0 {
+		cands = append(cands, candidate{})
+	}
+	p.fields["command"] = cands
+	if !ok {
+		p.SetField("unreadable", "command")
+	}
+}
+
+// Has reports whether the payload carries a canonical field. Not carrying it
+// is the same answer SetField gives when it refuses an empty value.
+func (p Payload) Has(name string) bool { return len(p.fields[name]) > 0 }
 
 // Evaluate runs an event's payloads against the Effective ruleset and answers
 // with both halves of what the event produces: the rules that matched any of
@@ -79,35 +126,57 @@ func (r *Rule) matches(p Payload) bool {
 	if r.Kind != "" && r.Kind != p.Kind {
 		return false
 	}
-	for _, c := range r.Conditions {
-		hit := false
-		for i := range c.Terms {
-			if c.Terms[i].matches(p) {
-				hit = true
-				break
-			}
+	return r.choose(p, make([]*candidate, 0, len(r.fields)))
+}
+
+// choose picks one Candidate for each field the rule names, in turn, and
+// matches when some choice satisfies every condition: terms on one field read
+// the same Candidate, and terms on different fields choose independently (ADR
+// 0024). A field the payload does not carry is chosen as nil, which no term
+// meets, in either polarity: "path does not end with .env" says nothing about
+// a shell command that has no path at all.
+func (r *Rule) choose(p Payload, chosen []*candidate) bool {
+	if len(chosen) == len(r.fields) {
+		return r.satisfied(chosen)
+	}
+	cands := p.fields[r.fields[len(chosen)]]
+	if len(cands) == 0 {
+		return r.choose(p, append(chosen, nil))
+	}
+	for i := range cands {
+		if r.choose(p, append(chosen, &cands[i])) {
+			return true
 		}
-		if !hit {
+	}
+	return false
+}
+
+// satisfied reports whether every condition has a term the chosen Candidates
+// meet.
+func (r *Rule) satisfied(chosen []*candidate) bool {
+	for _, c := range r.Conditions {
+		if !slices.ContainsFunc(c.Terms, func(t Term) bool { return t.meets(chosen[t.slot]) }) {
 			return false
 		}
 	}
 	return true
 }
 
-// matches applies one operator to every value of one field, and matches when
-// some value meets it in the term's polarity: ADR 0024's reading, where
-// not_starts_with: git fires on a call that is not only git. A condition
-// against a field the payload does not carry has no value to meet it, so it
-// never matches, in either polarity: "path does not end with .env" says nothing
-// about a shell command that has no path at all.
-func (t *Term) matches(p Payload) bool {
+// meets reports whether one Candidate meets the term. A positive term is met
+// when any Spelling matches; a not_ term when none does, which is the
+// allowlist reading: not_starts_with: git fires on git status; rm -rf /,
+// because rm -rf / is a Candidate with no Spelling starting with git.
+func (t *Term) meets(c *candidate) bool {
 	op, negated := strings.CutPrefix(t.Op, "not_")
-	for _, v := range p.fields[t.Field] {
-		if t.hit(op, v) != negated {
-			return true
+	if c == nil || negated && c.whole {
+		return false
+	}
+	for _, s := range c.spellings {
+		if t.hit(op, s) {
+			return !negated
 		}
 	}
-	return false
+	return negated
 }
 
 // hit applies the operator, without its polarity, to one value.

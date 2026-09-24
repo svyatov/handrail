@@ -1,0 +1,132 @@
+# A command is a shell program: a condition asks its question of every command
+# the program runs, so a compound command cannot hide the act a rule names.
+
+exec handrail test PreToolUse --field 'command=cd /tmp && rm -rf /'
+stdout '^warn  rm-root  global$'
+
+exec handrail test PreToolUse --field 'command=echo $(rm -rf /)'
+stdout '^warn  rm-root  global$'
+
+exec handrail test PreToolUse --field 'command=(rm -rf /) && echo ok'
+stdout '^warn  rm-root  global$'
+
+exec handrail test PreToolUse --field 'command=if true; then rm -rf /; fi'
+stdout '^warn  rm-root  global$'
+
+exec handrail test PreToolUse --field 'command=ls | xargs echo; rm -rf / &'
+stdout '^warn  rm-root  global$'
+
+exec handrail test PreToolUse --field 'command=cat <(rm -rf /)'
+stdout '^warn  rm-root  global$'
+
+# A leading assignment is its own level: the command reads with and without it.
+exec handrail test PreToolUse --field 'command=FOO=1 rm -rf /'
+stdout '^warn  rm-root  global$'
+exec handrail test PreToolUse --field 'command=FOO=1 rm -rf /'
+stdout '^warn  foo-prefix  global$'
+
+exec handrail test PreToolUse --field 'command=a[0]=x; a+="x" rm -rf /'
+stdout '^warn  rm-root  global$'
+
+# A redirect may come first, and the command still starts where it starts.
+exec handrail test PreToolUse --field 'command=>log rm -rf /'
+stdout '^warn  rm-root  global$'
+
+# A statement that is not a simple command is a Candidate as written.
+exec handrail test PreToolUse --field 'command=[[ -f x ]] && export PATH=/tmp'
+stdout '^warn  export-path  global$'
+exec handrail test PreToolUse --field 'command=export "PATH=/tmp"'
+stdout '^warn  export-path  global$'
+exec handrail test PreToolUse --field 'command=export PATH="/tmp"'
+stdout '^warn  export-path  global$'
+
+# The unquoted Spelling: quotes and extra blanks do not hide the command.
+exec handrail test PreToolUse --field 'command=rm "-rf" /'
+stdout '^warn  rm-root  global$'
+exec handrail test PreToolUse --field 'command=rm    -rf   /'
+stdout '^warn  rm-root  global$'
+exec handrail test PreToolUse --field 'command=r\m -r''f'' /'
+stdout '^warn  rm-root  global$'
+# ANSI-C quoting is quoting too, and decodes as bash decodes it.
+exec handrail test PreToolUse --field 'command=r$''\155'' -$''\x72''$''\146'' $''\057'''
+stdout '^warn  rm-root  global$'
+exec handrail test PreToolUse --field 'command=echo $''a\tb\x41é\cA\e\q\''c\u00e9\x4A\18'''
+stdout '^warn  ansi-c  global$'
+
+# The source Spelling keeps what the unquoted one drops.
+exec handrail test PreToolUse --field 'command=echo "a  b"'
+stdout '^warn  quoted-blanks  global$'
+
+# The whole line is a Candidate too, so a pattern across commands still meets it.
+exec handrail test PreToolUse --field 'command=make; rm -rf /'
+stdout '^warn  across  global$'
+
+# A command that runs nothing of the kind stays clear.
+exec handrail test PreToolUse --field 'command=echo rm -rf /'
+! stdout 'rm-root'
+
+# The hook path reads the same way.
+stdin bash.json
+! exec handrail hook claude PreToolUse
+stderr '^handrail block: rm-root-hook \(global\)$'
+
+-- bash.json --
+{"tool_name":"Bash","tool_input":{"command":"cd /tmp && rm -rf /"}}
+-- home/.config/handrail/rm-root.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    starts_with: rm -rf /
+---
+Never delete from the root.
+-- home/.config/handrail/rm-root-hook.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf /
+---
+Never delete from the root.
+-- home/.config/handrail/foo-prefix.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    starts_with: FOO=1 rm
+---
+The assignment prefix is its own level.
+-- home/.config/handrail/ansi-c.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    matches: "^echo a\tbAé\x01\x1b\\\\q'céJ\x018$"
+---
+Every ANSI-C escape bash decodes.
+-- home/.config/handrail/export-path.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    equals: export PATH=/tmp
+---
+A declaration is a statement.
+-- home/.config/handrail/quoted-blanks.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    equals: echo "a  b"
+---
+The source Spelling.
+-- home/.config/handrail/across.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    contains: make; rm
+---
+The whole line.

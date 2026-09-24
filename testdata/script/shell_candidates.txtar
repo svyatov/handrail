@@ -1,0 +1,162 @@
+# How a condition reads the many Candidates of one command (ADR 0024).
+
+# A not_ term matches when some Candidate has no Spelling that meets it, so an
+# allowlist cannot be walked past with a second command...
+exec handrail test PreToolUse --field 'command=git status; rm -rf /'
+stdout '^warn  git-only  global$'
+# ...and stays quiet when every command is allowed, because the whole line,
+# which always holds an allowed command's text, is never read by a not_ term.
+exec handrail test PreToolUse --field 'command=git status && git log'
+! stdout 'git-only'
+# A statement that only groups others is not a command of its own.
+exec handrail test PreToolUse --field 'command=if git status; then (git log) && git diff; fi'
+! stdout 'git-only'
+
+# Terms on one field bind to one Candidate: the exception excepts the command
+# the rule found, not any command in the same program.
+exec handrail test PreToolUse --field 'command=git status'
+stdout '^warn  git-but-not-push  global$'
+exec handrail test PreToolUse --field 'command=git push; ls'
+! stdout 'git-but-not-push'
+
+# A redirect to a file is its own Candidate, so an allowlist names the
+# redirects it accepts. fd duplication and the device files name no file.
+exec handrail test PreToolUse --field 'command=git log > out.txt'
+stdout '^warn  git-only  global$'
+exec handrail test PreToolUse --field 'command=git log 2>/dev/null 2>&1 <&-'
+! stdout 'git-only'
+exec handrail test PreToolUse --field 'command=git log <<< hi'
+! stdout 'git-only'
+# Only a literal descriptor is fd duplication: a quoted or expanded target is a file.
+exec handrail test PreToolUse --field 'command=git status >&"important.txt"'
+stdout '^warn  git-only  global$'
+exec handrail test PreToolUse --field 'command=git status >&$F'
+stdout '^warn  git-only  global$'
+exec handrail test PreToolUse --field 'command=git log >"out file"'
+stdout '^warn  redirect-unquoted  global$'
+
+# A truncated command keeps the commands before its malformed tail, and is not
+# a give-up.
+exec handrail test PreToolUse --field 'command=rm -rf / &&'
+stdout '^warn  rm-root  global$'
+! stdout 'fail-closed'
+exec handrail test PreToolUse --field 'command=if true; then rm -rf /'
+stdout '^warn  rm-root  global$'
+# A command the parser had to close runs to the end of the line.
+exec handrail test PreToolUse --field 'command=cd /; rm -rf / "tail'
+stdout '^warn  rm-root  global$'
+stdout '^warn  open-tail  global$'
+
+# A command that will not parse yields no commands and declares it. The whole
+# line stays for positive terms, and a not_ term on command matches.
+exec handrail test PreToolUse --field 'command=git status; )'
+stdout '^warn  fail-closed  global$'
+stdout '^warn  git-only  global$'
+exec handrail test PreToolUse --field 'command=rm -rf / )'
+stdout '^warn  rm-root  global$'
+
+# A line that runs no command at all is one no allowlist vouches for.
+exec handrail test PreToolUse --field 'command=# git status'
+stdout '^warn  git-only  global$'
+! stdout 'fail-closed'
+
+# unreadable is a condition field on every event.
+exec handrail test UserPromptSubmit --field prompt=hi --field unreadable=rules
+stdout '^warn  prompt-gap  global$'
+
+# A condition on a field the payload does not carry never matches, in either
+# polarity, and an any group still reads its other terms.
+exec handrail test PreToolUse --field 'command=git status'
+! stdout 'no-gap'
+stdout '^warn  path-or-git  global$'
+
+# The reader never expands, reads a file or runs anything.
+exec handrail test PreToolUse --field 'command=echo "$HOME" * $(touch ran)'
+stdout '^warn  unexpanded  global$'
+! exists ran
+
+-- home/.config/handrail/git-only.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    not_starts_with: git
+---
+Only git here.
+-- home/.config/handrail/git-but-not-push.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    starts_with: git
+  - field: command
+    not_contains: push
+---
+Any git but push.
+-- home/.config/handrail/redirect-unquoted.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    equals: '>out file'
+---
+A redirect's unquoted Spelling.
+-- home/.config/handrail/rm-root.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    starts_with: rm -rf /
+---
+Never delete from the root.
+-- home/.config/handrail/open-tail.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    equals: rm -rf / "tail
+---
+The source Spelling of a command the parser closed.
+-- home/.config/handrail/fail-closed.md --
+---
+event: PreToolUse
+conditions:
+  - field: unreadable
+    equals: command
+---
+handrail could not read this command.
+-- home/.config/handrail/prompt-gap.md --
+---
+event: UserPromptSubmit
+conditions:
+  - field: unreadable
+    equals: rules
+---
+A rule tier is missing.
+-- home/.config/handrail/no-gap.md --
+---
+event: PreToolUse
+conditions:
+  - field: unreadable
+    not_equals: command
+---
+Never fires on a payload without unreadable.
+-- home/.config/handrail/path-or-git.md --
+---
+event: PreToolUse
+conditions:
+  - any:
+      - field: path
+        not_glob: "**/*.md"
+      - field: command
+        starts_with: git
+---
+Absent path, present command.
+-- home/.config/handrail/unexpanded.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    equals: echo $HOME * $(touch ran)
+---
+Expansions stay as written.

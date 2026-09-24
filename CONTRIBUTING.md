@@ -10,8 +10,8 @@ Two documents decide whether a change is acceptable:
 - [`docs/spec.md`](docs/spec.md) is the behavioural source of truth. A change
   that alters behaviour changes the spec in the same pull request, and a change
   the spec forbids is not merged whatever the code does.
-- [`CLAUDE.md`](CLAUDE.md) states the two constraints the build enforces: zero
-  third-party runtime dependencies, and `os.Exit` only in `main.go`. Both are
+- [`CLAUDE.md`](CLAUDE.md) states the two constraints the build enforces: one
+  third-party runtime dependency, `mvdan.cc/sh/v3/syntax`, and `os.Exit` only in `main.go`. Both are
   checked by the linter, so breaking either fails CI rather than review.
 
 [`GLOSSARY.md`](GLOSSARY.md) defines the vocabulary. Use its words for types and
@@ -31,7 +31,7 @@ task build
 Linting additionally needs [golangci-lint](https://golangci-lint.run/docs/welcome/install/)
 v2.13.2, and `task release-check` needs [GoReleaser](https://goreleaser.com/install/).
 Neither is in `go.mod` on purpose: a tool directive would put roughly 200 modules
-into a `go.sum` whose first promise is zero third-party dependencies.
+into a `go.sum` whose first promise is one third-party runtime dependency.
 
 ## Before you push
 

@@ -39,6 +39,7 @@ linters:
           allow:
             - $gostd
             - github.com/svyatov/handrail
+            - mvdan.cc/sh/v3/syntax
           deny:
             - pkg: os/exec
               desc: the hook path spawns no process

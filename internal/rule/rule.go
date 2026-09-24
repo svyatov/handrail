@@ -42,6 +42,9 @@ type Rule struct {
 	Enabled    bool
 	Conditions []Condition
 	Message    string
+	// fields names each field the conditions test once, in the order evaluation
+	// chooses a Candidate for them. A Term's slot is its field's index here.
+	fields []string
 }
 
 // Live reports whether this rule can fire: enabled, and not shadowed by a
@@ -71,6 +74,7 @@ type Term struct {
 	Value string
 	re    *regexp.Regexp
 	line  int
+	slot  int
 }
 
 // events holds the six core events. Which of them a harness has, and what a
@@ -99,7 +103,7 @@ func IsKind(name string) bool {
 // address. raw.* is a v1 non-goal, so this set is closed.
 func IsField(name string) bool {
 	switch name {
-	case "command", "path", "content", "server", "tool", "prompt":
+	case "command", "path", "content", "server", "tool", "prompt", "unreadable":
 		return true
 	}
 	return false
@@ -178,6 +182,16 @@ func Parse(name string, data []byte) (*Rule, error) {
 			}
 			if r.Conditions, err = parseConditions(kv.val); err != nil {
 				return nil, err
+			}
+			for _, c := range r.Conditions {
+				for i := range c.Terms {
+					t := &c.Terms[i]
+					t.slot = slices.Index(r.fields, t.Field)
+					if t.slot < 0 {
+						t.slot = len(r.fields)
+						r.fields = append(r.fields, t.Field)
+					}
+				}
 			}
 		default:
 			return nil, fmt.Errorf("line %d: unknown frontmatter field %q", kv.line, kv.key)

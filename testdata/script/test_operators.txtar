@@ -27,7 +27,7 @@ stdout '^warn  equals  project-shared$'
 ! stdout '^warn  contains'
 
 # equals is the whole value, not a substring of it.
-exec sh -c 'handrail test PreToolUse --field command="  e0quals  "; echo code=$?'
+exec sh -c 'handrail test PreToolUse --field command="e0quals now"; echo code=$?'
 stdout '^outcome: allow$'
 
 exec sh -c 'handrail test PreToolUse --field command=s0tartsfoo; echo code=$?'
