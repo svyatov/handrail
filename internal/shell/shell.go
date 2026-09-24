@@ -85,7 +85,9 @@ func (r *reader) redirect(rd *syntax.Redirect) {
 	case syntax.Hdoc, syntax.DashHdoc, syntax.WordHdoc:
 		return
 	case syntax.DplIn, syntax.DplOut:
-		if lit := rd.Word.Lit(); lit == "-" || strings.Trim(lit, "0123456789") == "" {
+		// Only a bare descriptor duplicates one: Lit is empty for a quoted or
+		// expanded target, which bash may open as a file.
+		if lit := rd.Word.Lit(); lit != "" && strings.Trim(lit, "0123456789") == "" || lit == "-" {
 			return
 		}
 	}
@@ -132,7 +134,11 @@ func (r *reader) word(w *syntax.Word) string {
 		case *syntax.Lit:
 			b.WriteString(unescape(p.Value, ""))
 		case *syntax.SglQuoted:
-			b.WriteString(p.Value)
+			if p.Dollar {
+				b.WriteString(ansiC(p.Value))
+			} else {
+				b.WriteString(p.Value)
+			}
 		case *syntax.DblQuoted:
 			for _, inner := range p.Parts {
 				if lit, ok := inner.(*syntax.Lit); ok {
@@ -173,6 +179,73 @@ func unescape(s, special string) string {
 		}
 	}
 	return b.String()
+}
+
+// ansiC decodes the body of a $'...' string as bash does, since r$'\155' is
+// rm to bash and a rule must read it so. An unknown escape keeps its
+// backslash, as bash keeps it.
+func ansiC(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' || i == len(s)-1 {
+			b.WriteByte(s[i])
+			continue
+		}
+		i++
+		if c := strings.IndexByte(`abeEfnrtv\'"?`, s[i]); c >= 0 {
+			b.WriteByte("\a\b\x1b\x1b\f\n\r\t\v\\'\"?"[c])
+			continue
+		}
+		switch s[i] {
+		case 'c':
+			if i+1 < len(s) {
+				i++
+				b.WriteByte(s[i] & 0x1f)
+				continue
+			}
+		case '0', '1', '2', '3', '4', '5', '6', '7':
+			n, end := digits(s, i, 3, 8)
+			b.WriteByte(byte(n))
+			i = end - 1
+			continue
+		case 'x', 'u', 'U':
+			width := [...]int{2, 4, 8}[strings.IndexByte("xuU", s[i])]
+			if n, end := digits(s, i+1, width, 16); end > i+1 {
+				if s[i] == 'x' {
+					b.WriteByte(byte(n))
+				} else {
+					b.WriteRune(rune(n))
+				}
+				i = end - 1
+				continue
+			}
+		}
+		b.WriteByte('\\')
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+// digits reads up to maximum digits in base from s[start:], and returns their
+// value and the index after the last one.
+func digits(s string, start, maximum, base int) (n, end int) {
+	end = start
+	for end < len(s) && end-start < maximum {
+		c := s[end]
+		if 'A' <= c && c <= 'F' {
+			c += 'a' - 'A'
+		}
+		d := strings.IndexByte("0123456789abcdef"[:base], c)
+		if d < 0 {
+			break
+		}
+		n = n*base + d
+		end++
+	}
+	return n, end
 }
 
 func earlier(a, b syntax.Node) syntax.Node {

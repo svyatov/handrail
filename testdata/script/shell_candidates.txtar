@@ -23,10 +23,15 @@ exec handrail test PreToolUse --field 'command=git push; ls'
 # redirects it accepts. fd duplication and the device files name no file.
 exec handrail test PreToolUse --field 'command=git log > out.txt'
 stdout '^warn  git-only  global$'
-exec handrail test PreToolUse --field 'command=git log 2>/dev/null 2>&1'
+exec handrail test PreToolUse --field 'command=git log 2>/dev/null 2>&1 <&-'
 ! stdout 'git-only'
 exec handrail test PreToolUse --field 'command=git log <<< hi'
 ! stdout 'git-only'
+# Only a literal descriptor is fd duplication: a quoted or expanded target is a file.
+exec handrail test PreToolUse --field 'command=git status >&"important.txt"'
+stdout '^warn  git-only  global$'
+exec handrail test PreToolUse --field 'command=git status >&$F'
+stdout '^warn  git-only  global$'
 exec handrail test PreToolUse --field 'command=git log >"out file"'
 stdout '^warn  redirect-unquoted  global$'
 
