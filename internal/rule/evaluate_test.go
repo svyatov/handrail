@@ -53,9 +53,9 @@ func TestEveryOperatorTheParserAcceptsAlsoMatches(t *testing.T) {
 	}
 }
 
-// parseOne builds a one-Term rule the way a rule file does, so the compile switch is on
-// the path too: an operator needing a regexp and not getting one panics in
-// matches rather than quietly missing.
+// parseOne builds a one-Term rule the way a rule file does, so the compile
+// switch is on the path too: an operator needing a regexp and not getting one
+// panics in matches rather than quietly missing.
 func parseOne(t *testing.T, op, value string) *Rule {
 	t.Helper()
 	doc := strings.Join([]string{
