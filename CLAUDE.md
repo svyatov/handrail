@@ -1,6 +1,8 @@
 # handrail
 
-`docs/spec.md` is the behavioural source of truth. `GLOSSARY.md` defines the vocabulary.
+`docs/spec.md` is the behavioural source of truth, about 100 KB: list its sections with
+`grep -n '^#' docs/spec.md` and read only the range a ticket names. `GLOSSARY.md` defines
+the vocabulary.
 
 ## Commands
 
