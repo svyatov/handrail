@@ -17,7 +17,9 @@ import (
 // the commands before its malformed tail.
 func Read(line string) (cands [][]string, ok bool) {
 	// Bash for every command, whatever shell the harness runs, as a declared
-	// approximation (docs/spec.md section 2).
+	// approximation (docs/spec.md section 2). Recovery supplies missing closing
+	// tokens, one per open construct, so the bound only has to exceed the
+	// nesting a real command line reaches.
 	f, err := syntax.NewParser(syntax.RecoverErrors(8)).Parse(strings.NewReader(line), "")
 	if err != nil {
 		return nil, false
@@ -35,11 +37,13 @@ func Read(line string) (cands [][]string, ok bool) {
 	return r.cands, true
 }
 
+// reader collects the Candidates of one line as the walk meets them.
 type reader struct {
 	line  string
 	cands [][]string
 }
 
+// add records one Candidate, with one Spelling where both are the same.
 func (r *reader) add(source, unquoted string) {
 	if unquoted == source {
 		r.cands = append(r.cands, []string{source})
@@ -261,6 +265,9 @@ func digits(s string, start, maximum int, base rune) (n rune, end int) {
 	return n, end
 }
 
+// earlier and later pick the node that starts first and the one that ends
+// last, so a statement's text spans its command and its redirects in whatever
+// order they were written. a may be nil, a statement of redirects alone.
 func earlier(a, b syntax.Node) syntax.Node {
 	if a == nil || b.Pos().Offset() < a.Pos().Offset() {
 		return b
@@ -268,8 +275,15 @@ func earlier(a, b syntax.Node) syntax.Node {
 	return a
 }
 
+// A recovered end has no offset and means the end of the line, so it is
+// later than any end that has one.
 func later(a, b syntax.Node) syntax.Node {
-	if a == nil || b.End().IsRecovered() || !a.End().IsRecovered() && b.End().Offset() > a.End().Offset() {
+	switch {
+	case a == nil, b.End().IsRecovered():
+		return b
+	case a.End().IsRecovered():
+		return a
+	case b.End().Offset() > a.End().Offset():
 		return b
 	}
 	return a
