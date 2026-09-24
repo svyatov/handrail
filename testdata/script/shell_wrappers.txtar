@@ -1,0 +1,174 @@
+# A condition reads through a Wrapper to the command it runs (docs/spec.md
+# section 2), and every level stays a Candidate.
+
+exec handrail test PreToolUse --field 'command=FOO=1 sudo timeout 30 rm -rf /'
+stdout '^warn  rm-root  global$'
+! stdout 'fail-closed'
+
+# A rule can still name the Wrapper.
+exec handrail test PreToolUse --field 'command=FOO=1 sudo timeout 30 rm -rf /'
+stdout '^warn  sudo  global$'
+stdout '^warn  timeout  global$'
+
+# A flag's arity comes from the table, a cluster included, and a long option
+# matches by unique prefix.
+exec handrail test PreToolUse --field 'command=sudo -nu root timeout -k 5 -s KILL 30 rm -rf /'
+stdout '^warn  rm-root  global$'
+! stdout 'fail-closed'
+exec handrail test PreToolUse --field 'command=sudo -uroot --preserve-g timeout --sig KILL --kill=5 30 rm -rf /'
+stdout '^warn  rm-root  global$'
+! stdout 'fail-closed'
+exec handrail test PreToolUse --field 'command=sudo -- rm -rf /'
+stdout '^warn  rm-root  global$'
+# An ambiguous prefix is a flag the table lacks.
+exec handrail test PreToolUse --field 'command=sudo --re rm -rf /'
+stdout '^warn  rm-root  global$'
+stdout '^warn  fail-closed  global$'
+
+# A flag the table lacks is read both ways, as taking no argument and taking
+# one, and declared.
+exec handrail test PreToolUse --field 'command=sudo -X foo rm -rf /'
+stdout '^warn  rm-start  global$'
+stdout '^warn  fail-closed  global$'
+exec handrail test PreToolUse --field 'command=sudo -X rm -rf /'
+stdout '^warn  rm-root  global$'
+exec handrail test PreToolUse --field 'command=sudo -nXfoo rm -rf /'
+stdout '^warn  rm-root  global$'
+# sudo's -h is help alone and takes a host, so it is read both ways without a give-up.
+exec handrail test PreToolUse --field 'command=sudo -h host rm -rf /'
+stdout '^warn  rm-root  global$'
+! stdout 'fail-closed'
+
+# A Wrapper stops at its first operand, where its command starts.
+exec handrail test PreToolUse --field 'command=sudo ls -u rm -rf /'
+! stdout 'rm-start'
+
+# Every Wrapper on the list, each through its own flags.
+exec handrail test PreToolUse --field 'command=\time -f %e -a -o t.log rm -rf /'
+stdout '^warn  rm-root  global$'
+exec handrail test PreToolUse --field 'command=nice -n 5 nice -10 rm -rf /'
+stdout '^warn  rm-root  global$'
+exec handrail test PreToolUse --field 'command=nohup rm -rf / &'
+stdout '^warn  rm-root  global$'
+exec handrail test PreToolUse --field 'command=stdbuf -oL -e 0 rm -rf /'
+stdout '^warn  rm-root  global$'
+exec handrail test PreToolUse --field 'command=command -p builtin noglob exec -a x rm -rf /'
+stdout '^warn  rm-root  global$'
+! stdout 'fail-closed'
+exec handrail test PreToolUse --field 'command=env -i -u HOME --chdir=/ - FOO=1 BAR=2 rm -rf /'
+stdout '^warn  rm-root  global$'
+exec handrail test PreToolUse --field 'command=doas -u root setsid -f rm -rf /'
+stdout '^warn  rm-root  global$'
+exec handrail test PreToolUse --field 'command=flock -w 5 /tmp/lock rm -rf /'
+stdout '^warn  rm-root  global$'
+exec handrail test PreToolUse --field 'command=ls | xargs -0 -n 1 -I{} rm -rf /'
+stdout '^warn  rm-root  global$'
+exec handrail test PreToolUse --field 'command=find . -name x -exec rm -rf / \; -execdir rm -f {} + -ok rm -r \; -okdir rm -v {} \;'
+stdout '^warn  rm-root  global$'
+stdout '^warn  rm-f  global$'
+stdout '^warn  rm-r  global$'
+stdout '^warn  rm-v  global$'
+exec handrail test PreToolUse --field 'command=mise exec node@20 -C . -- rm -rf /'
+stdout '^warn  rm-root  global$'
+exec handrail test PreToolUse --field 'command=direnv exec /repo rm -rf /'
+stdout '^warn  rm-root  global$'
+exec handrail test PreToolUse --field 'command=devbox run --pure -e A=1 rm -rf /'
+stdout '^warn  rm-root  global$'
+! stdout 'fail-closed'
+
+# The command a find action runs ends at its terminator, and a + ends it only
+# after {}.
+exec handrail test PreToolUse --field 'command=find . -exec rm -f + {} + -print'
+stdout '^warn  rm-f-plus  global$'
+exec handrail test PreToolUse --field 'command=find . -exec rm "-f" {} \; -print'
+stdout '^warn  rm-f-exact  global$'
+
+# command -v and -V look a command up and run nothing.
+exec handrail test PreToolUse --field 'command=command -v rm -rf /'
+! stdout 'rm-start'
+exec handrail test PreToolUse --field 'command=command -pV rm'
+! stdout 'rm-start'
+# sudo -e edits files, and runs no command.
+exec handrail test PreToolUse --field 'command=sudo -e rm'
+! stdout 'rm-start'
+
+-- home/.config/handrail/rm-root.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    starts_with: rm -rf /
+---
+Never delete from the root.
+-- home/.config/handrail/fail-closed.md --
+---
+event: PreToolUse
+conditions:
+  - field: unreadable
+    equals: command
+---
+handrail could not read this command.
+-- home/.config/handrail/rm-start.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    starts_with: rm
+---
+Any rm.
+-- home/.config/handrail/sudo.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    starts_with: sudo
+---
+Any sudo.
+-- home/.config/handrail/timeout.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    starts_with: timeout 30
+---
+Any timeout.
+-- home/.config/handrail/rm-f.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    starts_with: rm -f
+---
+rm -f.
+-- home/.config/handrail/rm-f-exact.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    equals: rm "-f" {}
+---
+The find action alone, as written.
+-- home/.config/handrail/rm-r.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    equals: rm -r
+---
+rm -r.
+-- home/.config/handrail/rm-v.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    starts_with: rm -v
+---
+rm -v.
+-- home/.config/handrail/rm-f-plus.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    equals: rm -f + {}
+---
+A + that does not follow {} is an argument.
