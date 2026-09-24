@@ -120,7 +120,7 @@ it: approve or drop). Per rule, not in a batch: approving one is
 not approving the next. Approved means write it; anything else means drop it and
 move to the next candidate. Never write a file before its own approval.
 
-## 6. On approval: write, validate, replay, advise
+## 6. On approval: write, validate, replay
 
 1. **Write** the file at the agreed path, following "Pick the tier and the path"
    in `../add/SKILL.md`, including its note on `sync` and `.git/info/exclude`.
@@ -139,8 +139,6 @@ move to the next candidate. Never write a file before its own approval.
    in the matched list; exit 2 confirms a block. **If the replay does not match,
    the rule is wrong**: fix the Matcher and replay again before moving on. Never
    leave a rule on disk that failed its own replay.
-4. **Relay the Advisor** for block rules, scoped to the harness you are running
-   in ("Relay the Advisor" there). An empty array is normal.
 
 Report at the end: which rules landed, which the user declined, and any behavior
 you skipped as already covered.
