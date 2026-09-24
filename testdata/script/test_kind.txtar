@@ -22,7 +22,7 @@ exec handrail test PreToolUse --kind shell --field tool=Frobnicate
 ! stdout 'other-only'
 
 # The event has to match too.
-exec sh -c 'handrail test Stop --kind shell; echo code=$?'
+exec sh -c 'handrail test PostToolUse --kind shell; echo code=$?'
 stdout '^outcome: allow$'
 
 -- .git/HEAD --

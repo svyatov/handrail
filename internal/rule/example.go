@@ -101,8 +101,22 @@ func exampleValues(f pair) ([]string, error) {
 		}
 		values = append(values, v.scalar)
 	}
+	// A written list is a list even with one entry, so only a list field
+	// takes one, and a path list is a rename.
+	switch {
+	case !slices.Contains(listFields, f.key):
+		return nil, fmt.Errorf("line %d: %s must be a single value", f.line, f.key)
+	case f.key == "path" && len(values) != 2:
+		return nil, fmt.Errorf("line %d: %w", f.line, errRename)
+	}
 	return values, nil
 }
+
+// listFields are the fields that hold one Candidate per value written, so
+// the only ones a call writes as a list.
+var listFields = []string{"url", "network_grant", "unreadable", "path"}
+
+var errRename = errors.New("a path list is a rename: its source and its destination")
 
 // CheckCall holds fields written for one call on event, as an Example or
 // test --field writes them, to what a live call could carry.
@@ -133,10 +147,10 @@ func checkField(name string, values []string) error {
 		return fmt.Errorf("unknown field %q", name)
 	}
 	switch {
-	case len(values) > 1 && !slices.Contains([]string{"url", "network_grant", "unreadable", "path"}, name):
+	case len(values) > 1 && !slices.Contains(listFields, name):
 		return fmt.Errorf("%s must be a single value", name)
 	case name == "path" && len(values) > 2:
-		return errors.New("a path list is a rename: its source and its destination")
+		return errRename
 	}
 	for _, v := range values {
 		switch {

@@ -17,6 +17,36 @@ stdout '"action": "block"'
 stdout '"degraded_from": null'
 stdout '"outcome": "block"'
 
+# A written call is read by the named harness's Adapter alone. Codex applies a
+# patch heredoc sent through the shell itself; Claude Code runs it as a program.
+exec sh -c 'handrail test PreToolUse --kind shell --field "command=$(cat patch.sh)"'
+! stdout 'no-secrets-file'
+! exec sh -c 'handrail test PreToolUse --kind shell --field "command=$(cat patch.sh)" --harness codex'
+stdout '^block  no-secrets-file  global$'
+
+# A written tool answers to the names that harness gives it.
+exec handrail test PreToolUse --field tool=apply_patch --harness codex
+stdout '^    Edit$'
+exec handrail test PreToolUse --field tool=apply_patch
+! stdout '^    Edit$'
+
+-- patch.sh --
+apply_patch <<'EOF'
+*** Begin Patch
+*** Add File: secrets.yml
++key: 1
+*** End Patch
+EOF
+-- home/.config/handrail/no-secrets-file.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: path
+    equals: secrets.yml
+---
+Keep secrets out of the tree.
 -- home/.config/handrail/no-deploy.md --
 ---
 event: UserPromptSubmit

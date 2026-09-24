@@ -96,9 +96,10 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "handrail test: unknown event %q\n", event)
 		return 1
 	}
-	if *kind != "" && !rule.IsKind(*kind) {
-		fmt.Fprintf(stderr, "handrail test: unknown kind %q\n", *kind)
-		return 1
+	// --kind writes the kind field, so a second kind written beside it is a
+	// list where one value goes.
+	if *kind != "" {
+		_ = fields.Set("kind=" + *kind)
 	}
 	a, known := harness.Lookup(*only)
 	if !known {
@@ -113,7 +114,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	for _, f := range fields {
-		if f.Name == "kind" && *kind == "" {
+		if f.Name == "kind" {
 			*kind = f.Values[0]
 		}
 	}
@@ -124,7 +125,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if e.Kind == "" && rule.ToolEvent(event) {
 		e.Kind = "other"
 	}
-	payloads := harness.ExamplePayloads(event, e)
+	payloads := a.Payloads(event, e)
 	if *fromStdin {
 		data, err := io.ReadAll(stdin)
 		if err != nil {
@@ -141,10 +142,15 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "handrail test: reading payload: %v\n", err)
 			return 1
 		}
-		// Flags win over every payload, so one field can be varied against a
-		// capture.
+		// Flags win over the capture's payload, so one field can be varied
+		// against it. A capture that yields several, such as a patch, has no
+		// one call to vary: each payload is its own edit.
+		if len(payloads) > 1 && len(fields) > 0 {
+			fmt.Fprintf(stderr, "handrail test: the capture yields %d payloads, and --field and --kind vary one call; write the call with --field alone\n", len(payloads))
+			return 1
+		}
 		for i := range payloads {
-			harness.SetFields(&payloads[i], fields)
+			a.SetFields(&payloads[i], fields)
 			if *kind != "" {
 				payloads[i].Kind = *kind
 			}

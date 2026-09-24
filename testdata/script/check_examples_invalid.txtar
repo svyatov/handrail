@@ -13,6 +13,8 @@ stderr 'ex-list-on-single\.md: line 5: command must be a single value'
 stderr 'ex-list-entry-not-scalar\.md: line 6: url entries must be single values'
 stderr 'ex-map-value\.md: line 5: command must be a single value'
 stderr 'ex-path-three\.md: line 5: a path list is a rename: its source and its destination'
+stderr 'ex-path-one\.md: line 5: a path list is a rename: its source and its destination'
+stderr 'ex-list-of-one\.md: line 5: command must be a single value'
 stderr 'ex-empty\.md: line 5: command needs a value'
 stderr 'ex-empty-grant\.md: line 5: network_grant needs a value'
 stderr 'ex-writes-empty-false\.md: line 5: writes_empty can only be true'
@@ -110,6 +112,24 @@ examples:
         - a
         - b
         - c
+---
+A message.
+-- .handrail/ex-path-one.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - path:
+        - a
+---
+A message.
+-- .handrail/ex-list-of-one.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - command:
+        - ls
 ---
 A message.
 -- .handrail/ex-empty.md --

@@ -182,24 +182,22 @@ func (p *Payload) setCommand(line string) {
 	}
 }
 
-// Unset drops a field and the unreadable entry SetField derived from it, a
-// url's domain included, so the next SetField replaces what it held rather
-// than adding to it. A command's files need no dropping: setting a command
-// replaces them.
+// Unset drops a field and the unreadable entry for it, and a url's domain
+// with them, so the next SetField replaces what it held rather than adding to
+// it. A command's files need no dropping: setting a command replaces them.
 func (p *Payload) Unset(name string) {
 	if p.fields == nil {
 		return
 	}
 	delete(p.fields, name)
-	switch name {
-	case "url":
+	gone := []string{name}
+	if name == "url" {
 		delete(p.fields, "domain")
-		name = "domain"
-	case "command":
-	default:
-		return
+		gone = append(gone, "domain")
 	}
-	p.fields["unreadable"] = slices.DeleteFunc(p.fields["unreadable"], func(c candidate) bool { return c.spellings[0] == name })
+	p.fields["unreadable"] = slices.DeleteFunc(p.fields["unreadable"], func(c candidate) bool {
+		return slices.Contains(gone, c.spellings[0])
+	})
 }
 
 // Has reports whether the payload carries a canonical field. Not carrying it

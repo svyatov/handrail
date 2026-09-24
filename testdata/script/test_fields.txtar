@@ -25,6 +25,12 @@ stderr '^handrail test: unknown kind "bash"$'
 ! exec handrail test Stop --field kind=shell
 stderr '^handrail test: kind applies only to PreToolUse and PostToolUse$'
 
+# --kind is the same field, held to the same terms.
+! exec handrail test UserPromptSubmit --kind shell --field prompt=hi
+stderr '^handrail test: kind applies only to PreToolUse and PostToolUse$'
+! exec handrail test PreToolUse --kind shell --field kind=file_edit
+stderr '^handrail test: kind must be a single value$'
+
 # kind is a field an Example writes, so --field takes it.
 exec handrail test PreToolUse --field kind=shell --field command=ls
 stdout '^warn  shell-call  global$'
@@ -49,6 +55,29 @@ stdin numeric-host.json
 exec handrail test PreToolUse --stdin --field url=https://example.com/a
 ! stdout 'unreadable'
 
+# A capture that yields several payloads has no one call a flag could vary:
+# each file section of a patch is its own.
+stdin two-files.json
+! exec handrail test PreToolUse --stdin --harness codex --field path=x
+stderr '^handrail test: the capture yields 2 payloads, and --field and --kind vary one call; write the call with --field alone$'
+stdin two-files.json
+! exec handrail test PreToolUse --stdin --harness codex --kind shell
+stderr 'the capture yields 2 payloads'
+
+# A written tool over a capture answers to the names the named harness gives it.
+stdin fetch.json
+exec handrail test PreToolUse --stdin --field tool=apply_patch
+stdout '^    apply_patch$'
+! stdout '^    Edit$'
+
+# A written field is read, so the capture's unreadable entry for it goes.
+stdin number-path.json
+exec handrail test PreToolUse --stdin
+stdout '^  unreadable: path$'
+stdin number-path.json
+exec handrail test PreToolUse --stdin --field path=notes.txt
+! stdout 'unreadable'
+
 # A replaced command takes its files and its unreadable with it.
 stdin unreadable-shell.json
 exec handrail test PreToolUse --stdin --field command=ls
@@ -68,6 +97,18 @@ Names example.com.
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
   "tool_input": {"command": "cat .env; bash -c \"$X\""}
+}
+-- number-path.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Read",
+  "tool_input": {"file_path": 5}
+}
+-- two-files.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Update File: config/.env\n@@\n+PORT=3000\n*** Add File: secrets.yml\n+api_key: sk-live-1\n*** End Patch\n"}
 }
 -- numeric-host.json --
 {

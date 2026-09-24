@@ -1,6 +1,8 @@
 package harness
 
 import (
+	"slices"
+
 	"github.com/svyatov/handrail/internal/rule"
 	"github.com/svyatov/handrail/internal/shell"
 )
@@ -19,21 +21,40 @@ func FailingExamples(r *rule.Rule) []rule.Example {
 }
 
 // ExamplePayloads is every payload a live call with the Example's fields
-// yields.
+// yields on some harness.
 func ExamplePayloads(event string, e rule.Example) []rule.Payload {
+	return callPayloads(event, e, adapters)
+}
+
+// Payloads is every payload a live call with these fields yields on this
+// harness: the call test --field writes.
+func (a Adapter) Payloads(event string, e rule.Example) []rule.Payload {
+	return callPayloads(event, e, []Adapter{a})
+}
+
+// SetFields writes fields onto p as this harness carries them, each replacing
+// what p carried under that name.
+func (a Adapter) SetFields(p *rule.Payload, fields []rule.ExampleField) {
+	setFields(p, fields, []Adapter{a})
+}
+
+// callPayloads is every payload a live call with these fields yields, read
+// with the knowledge of the Adapters from.
+func callPayloads(event string, e rule.Example, from []Adapter) []rule.Payload {
 	p := rule.Payload{Event: event, Kind: e.Kind}
-	tools, command := SetFields(&p, e.Fields)
-	// Codex applies this form itself, and an Example takes its knowledge too.
-	if dir, patch, ok := shell.Patch(command); ok && p.Kind == "shell" {
-		return append([]rule.Payload{p}, patchPayloads(event, tools, dir, patch)...)
+	tools, command := setFields(&p, e.Fields, from)
+	// Codex applies this form itself, so only its knowledge reads the patch.
+	if slices.ContainsFunc(from, func(a Adapter) bool { return a.patchInShell }) && p.Kind == "shell" {
+		if dir, patch, ok := shell.Patch(command); ok {
+			return append([]rule.Payload{p}, patchPayloads(event, tools, dir, patch)...)
+		}
 	}
 	return []rule.Payload{p}
 }
 
-// SetFields writes fields onto p the way an Example writes them, each replacing
-// what p carried under that name, and returns the tool names and the command
-// it wrote.
-func SetFields(p *rule.Payload, fields []rule.ExampleField) (tools []string, command string) {
+// setFields writes fields onto p as the Adapters from carry them, and returns
+// the tool names and the command it wrote.
+func setFields(p *rule.Payload, fields []rule.ExampleField, from []Adapter) (tools []string, command string) {
 	// Every name is cleared before any is written, so a command's derived
 	// unreadable merges with a written one whatever their order.
 	for _, f := range fields {
@@ -43,7 +64,7 @@ func SetFields(p *rule.Payload, fields []rule.ExampleField) (tools []string, com
 		switch {
 		case f.Name == "kind":
 		case f.Name == "tool":
-			for _, a := range adapters {
+			for _, a := range from {
 				tools = append(tools, a.toolNames(f.Values[0])...)
 			}
 			setTool(p, tools)
