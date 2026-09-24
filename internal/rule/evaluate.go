@@ -1,6 +1,8 @@
 package rule
 
 import (
+	"net/netip"
+	"net/url"
 	"path"
 	"slices"
 	"strings"
@@ -53,8 +55,9 @@ type candidate struct {
 // blocks the wrong call.
 //
 // command is read here as a shell program, so the hook path and test read it
-// alike, and unreadable gains an entry rather than being replaced, since each
-// failure adds its own.
+// alike. tool gains a Spelling and unreadable an entry rather than being
+// replaced, since a call answers to several names and each failure adds its
+// own.
 func (p *Payload) SetField(name, value string) bool {
 	if value == "" {
 		return false
@@ -69,6 +72,36 @@ func (p *Payload) SetField(name, value string) bool {
 		// Cleaned where it is set, never joined to cwd, so src/../.env is .env
 		// to a rule however the call spelled it.
 		p.fields[name] = []candidate{{spellings: []string{path.Clean(value)}}}
+	case "tool":
+		// One call, however many names it answers to: each is a Spelling of
+		// the one Candidate, so a not_ term fires only when no name matches.
+		if len(p.fields[name]) == 0 {
+			p.fields[name] = []candidate{{}}
+		}
+		if c := &p.fields[name][0]; !slices.Contains(c.spellings, value) {
+			c.spellings = append(c.spellings, value)
+		}
+	case "url":
+		// Each url is its own Candidate, and so is the domain read from it.
+		p.fields[name] = append(p.fields[name], candidate{spellings: []string{value}})
+		if host, ok := domainOf(value); ok {
+			p.fields["domain"] = append(p.fields["domain"], candidate{spellings: []string{host}})
+		} else {
+			p.SetField("unreadable", "domain")
+		}
+	case "network_grant":
+		// Each grant is its own Candidate, the host alone: a leading *. stays,
+		// since it is what widens the grant.
+		g := strings.ToLower(value)
+		if rest, ok := strings.CutPrefix(g, "["); ok {
+			g, _, _ = strings.Cut(rest, "]")
+		} else {
+			g, _, _ = strings.Cut(g, ":")
+		}
+		if g == "" {
+			return false
+		}
+		p.fields[name] = append(p.fields[name], candidate{spellings: []string{g}})
 	case "unreadable":
 		if !slices.ContainsFunc(p.fields[name], func(c candidate) bool { return c.spellings[0] == value }) {
 			p.fields[name] = append(p.fields[name], candidate{spellings: []string{value}})
@@ -77,6 +110,28 @@ func (p *Payload) SetField(name, value string) bool {
 		p.fields[name] = []candidate{{spellings: []string{value}}}
 	}
 	return true
+}
+
+// domainOf reads the host a url names, never resolving it: lowercased, with
+// port, userinfo, IPv6 brackets and one trailing dot removed. A url that will
+// not parse, names no host, or leaves a host character outside [a-z0-9.-] (an
+// IP literal excepted) has no domain handrail can vouch for, because a host it
+// reads differently from the fetcher is one a rule can be steered past.
+func domainOf(raw string) (string, bool) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", false
+	}
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if _, err := netip.ParseAddr(host); err == nil {
+		return host, true
+	}
+	if host == "" || strings.ContainsFunc(host, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '.' && r != '-'
+	}) {
+		return "", false
+	}
+	return host, true
 }
 
 // SetRename fills path with both files a rename names, source then

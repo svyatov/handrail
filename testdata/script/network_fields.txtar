@@ -1,0 +1,145 @@
+# url is each destination a call names, and domain the host read from each
+# one: lowercased, with port, userinfo, IPv6 brackets and a trailing dot gone.
+exec handrail trust
+
+stdin webfetch.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  fetch-url  '
+stdout '^warn  example  '
+! stdout 'untrusted-host'
+
+stdin userinfo.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  example  '
+
+stdin ipv6.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  loopback  '
+! stdout 'untrusted-host'
+
+# Claude Code's Monitor nests its WebSocket url under ws.
+stdin monitor-ws.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  stream  '
+
+# Codex's webrun names pages under open[].ref_id, and only a ref that is an
+# absolute http or https URL is a destination. Each url is its own Candidate,
+# so an allowlist fires when any one of them leaves it.
+stdin webrun.json
+exec handrail test PreToolUse --stdin --harness codex
+stdout '^warn  example  '
+stdout '^warn  only-example  '
+stdout '^warn  example-page  '
+! stdout 'untrusted-host'
+
+# A host handrail reads differently from the fetcher yields no domain and
+# declares so, whether the url will not parse, has no host, or holds a host
+# character outside a-z, 0-9, dot and hyphen.
+stdin bad-parse.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  untrusted-host  '
+stdout '^warn  fetch-url  '
+! stdout 'only-example'
+
+stdin no-host.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  untrusted-host  '
+
+stdin idn.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  untrusted-host  '
+
+# A url key fills url on any tool, an MCP one included.
+stdin mcp.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  example  '
+
+# A shell call reaches the network through command, never through url.
+stdin curl.json
+exec handrail test PreToolUse --stdin --harness claude
+! stdout 'fetch-url'
+stdout '^outcome: allow$'
+
+# test takes a url and derives its domain the same way.
+exec handrail test PreToolUse --field url=https://EXAMPLE.com/
+stdout '^warn  example  '
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- webfetch.json --
+{"tool_name": "WebFetch", "tool_input": {"url": "https://Example.COM:8080/x", "prompt": "summarize"}}
+-- userinfo.json --
+{"tool_name": "WebFetch", "tool_input": {"url": "https://user:pw@example.com./"}}
+-- ipv6.json --
+{"tool_name": "WebFetch", "tool_input": {"url": "http://[::1]:8080/"}}
+-- monitor-ws.json --
+{"tool_name": "Monitor", "tool_input": {"ws": {"url": "wss://stream.example.com/feed"}}}
+-- webrun.json --
+{"tool_name": "webrun", "tool_input": {"open": [{"ref_id": "https://example.com/a"}, {"ref_id": "turn0search1"}, {"ref_id": "http://other.org/"}]}}
+-- bad-parse.json --
+{"tool_name": "WebFetch", "tool_input": {"url": "https://exa mple.com/"}}
+-- no-host.json --
+{"tool_name": "WebFetch", "tool_input": {"url": "example.com/path"}}
+-- idn.json --
+{"tool_name": "WebFetch", "tool_input": {"url": "https://bücher.de/"}}
+-- mcp.json --
+{"tool_name": "mcp__browser__open", "tool_input": {"url": "https://example.com"}}
+-- curl.json --
+{"tool_name": "Bash", "tool_input": {"command": "curl https://example.com"}}
+-- .handrail/fetch-url.md --
+---
+event: PreToolUse
+conditions:
+  - field: url
+    matches: .
+---
+Any url.
+-- .handrail/example.md --
+---
+event: PreToolUse
+conditions:
+  - field: domain
+    equals: example.com
+---
+Example.
+-- .handrail/example-page.md --
+---
+event: PreToolUse
+conditions:
+  - field: url
+    equals: https://example.com/a
+---
+Example page.
+-- .handrail/loopback.md --
+---
+event: PreToolUse
+conditions:
+  - field: domain
+    equals: '::1'
+---
+Loopback.
+-- .handrail/stream.md --
+---
+event: PreToolUse
+conditions:
+  - field: domain
+    equals: stream.example.com
+---
+Stream.
+-- .handrail/only-example.md --
+---
+event: PreToolUse
+kind: network
+conditions:
+  - field: domain
+    not_equals: example.com
+---
+Only example.com.
+-- .handrail/untrusted-host.md --
+---
+event: PreToolUse
+conditions:
+  - field: unreadable
+    equals: domain
+---
+A host handrail could not read.

@@ -1,0 +1,105 @@
+# network_grant is each host a shell call asks Claude Code's sandbox to open,
+# lowercased, with any port and IPv6 brackets gone and a leading *. kept.
+# unsandboxed says the call asks to run outside the sandbox.
+exec handrail trust
+
+stdin bash-grant.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  grants-example  '
+stdout '^warn  grants-wildcard  '
+stdout '^warn  grants-loopback  '
+stdout '^warn  only-example  '
+! stdout 'unsandboxed'
+! stdout 'fetch-url'
+
+stdin pwsh-unsandboxed.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  unsandboxed  '
+! stdout 'grants-'
+
+# A command Monitor carries the same grant.
+stdin monitor-grant.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  grants-example  '
+
+# WebSearch's key of the same name filters results and grants nothing.
+stdin websearch.json
+exec handrail test PreToolUse --stdin --harness claude
+! stdout 'grants-'
+
+# A grant that names no host is no grant, so an allowlist does not fire on it.
+stdin bash-empty-grant.json
+exec handrail test PreToolUse --stdin --harness claude
+! stdout 'only-example'
+
+# Asking to stay in the sandbox is no answer to unsandboxed.
+stdin bash-sandboxed.json
+exec handrail test PreToolUse --stdin --harness claude
+! stdout 'unsandboxed'
+
+# test normalizes a grant the same way.
+exec handrail test PreToolUse --field network_grant=EXAMPLE.com:443
+stdout '^warn  grants-example  '
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- bash-grant.json --
+{"tool_name": "Bash", "tool_input": {"command": "curl https://example.com", "allowed_domains": ["Example.COM", "*.example.org:443", "[::1]:8080"]}}
+-- pwsh-unsandboxed.json --
+{"tool_name": "PowerShell", "tool_input": {"command": "iwr https://example.com", "dangerouslyDisableSandbox": true}}
+-- bash-empty-grant.json --
+{"tool_name": "Bash", "tool_input": {"command": "ls", "allowed_domains": [":443", "[]"]}}
+-- bash-sandboxed.json --
+{"tool_name": "Bash", "tool_input": {"command": "ls", "dangerouslyDisableSandbox": false}}
+-- monitor-grant.json --
+{"tool_name": "Monitor", "tool_input": {"command": "curl -N https://example.com/feed", "allowed_domains": ["example.com"]}}
+-- websearch.json --
+{"tool_name": "WebSearch", "tool_input": {"query": "handrail", "allowed_domains": ["example.com"]}}
+-- .handrail/grants-example.md --
+---
+event: PreToolUse
+conditions:
+  - field: network_grant
+    equals: example.com
+---
+Example.
+-- .handrail/grants-wildcard.md --
+---
+event: PreToolUse
+conditions:
+  - field: network_grant
+    equals: '*.example.org'
+---
+Wildcard.
+-- .handrail/grants-loopback.md --
+---
+event: PreToolUse
+conditions:
+  - field: network_grant
+    equals: '::1'
+---
+Loopback.
+-- .handrail/only-example.md --
+---
+event: PreToolUse
+conditions:
+  - field: network_grant
+    not_equals: example.com
+---
+Only example.com.
+-- .handrail/unsandboxed.md --
+---
+event: PreToolUse
+conditions:
+  - field: unsandboxed
+    equals: true
+---
+Outside the sandbox.
+-- .handrail/fetch-url.md --
+---
+event: PreToolUse
+conditions:
+  - field: url
+    matches: .
+---
+A grant is never a destination.

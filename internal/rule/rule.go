@@ -94,7 +94,7 @@ func IsEvent(name string) bool { return slices.Contains(events[:], name) }
 // IsKind reports whether name is a canonical tool kind.
 func IsKind(name string) bool {
 	switch name {
-	case "shell", "file_edit", "file_read", "mcp", "other":
+	case "shell", "file_edit", "file_read", "mcp", "agent", "network", "other":
 		return true
 	}
 	return false
@@ -105,7 +105,7 @@ func IsKind(name string) bool {
 func IsField(name string) bool {
 	switch name {
 	case "command", "path", "content", "removed_content", "writes_empty", "deletes",
-		"server", "tool", "prompt", "unreadable":
+		"server", "tool", "prompt", "agent_type", "agent_prompt", "model", "url", "domain", "network_grant", "unsandboxed", "unreadable":
 		return true
 	}
 	return false
