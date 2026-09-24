@@ -74,7 +74,7 @@ type Term struct {
 }
 
 // events holds the six core events. Which of them a harness has, and what a
-// hook can do on each, is its Adapter's event table. The hook path pays for
+// hook can do on each, is its Adapter's Capability matrix. The hook path pays for
 // every byte of startup work, so this is an array of constants: static data the
 // linker lays out, with no init to run.
 var events = [...]string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop"}

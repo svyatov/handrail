@@ -53,10 +53,9 @@ func (p Payload) Field(name string) []string { return p.fields[name] }
 // with both halves of what the event produces: the rules that matched any of
 // its payloads, once each and in delivery order (tier order, then alphabetical
 // within a tier), and the Outcome, the strongest Action among them, or allow
-// when nothing matched. A caller
-// deriving the Outcome for itself would be a second answer to the same
-// question, free to disagree with this one, and test exists to say what hook
-// will do.
+// when nothing matched. A caller deriving the Outcome for itself would be a
+// second answer to the same question, free to disagree with this one, and test
+// exists to say what hook will do.
 //
 // Liveness is checked inline rather than over rs.Effective(), because this is
 // the hot path and the selector would allocate a second slice per event.

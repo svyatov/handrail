@@ -22,13 +22,14 @@ type Adapter struct {
 	dir     string // user-level directory, under the home directory
 	homeEnv string // the variable that relocates that directory, if the harness has one
 	file    string // the one config file sync writes inside it
-	// events is what a hook can do on each event, in the order sync writes
+	// events is the harness's Capability matrix: what a hook can do on each
+	// event, in the order sync writes
 	// hook entries for them. Delivery, sync and the degradation report all
 	// read it, so a capability is written down once per harness.
 	events []eventCaps
 }
 
-// eventCaps is one row of an Adapter's event table.
+// eventCaps is one row of an Adapter's Capability matrix.
 type eventCaps struct {
 	name   string
 	deny   denial // how a block is delivered, or noDenial where it cannot be
@@ -238,8 +239,8 @@ func set(p *rule.Payload, name string, input map[string]any, keys ...string) {
 	}
 }
 
-// caps reads event's row of the Adapter's event table. An event the table
-// lacks has no row, and so can neither block nor inject.
+// caps reads event's row of the Adapter's Capability matrix. An event the
+// matrix lacks has no row, and so can neither block nor inject.
 func (a Adapter) caps(event string) eventCaps {
 	for _, c := range a.events {
 		if c.name == event {

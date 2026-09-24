@@ -279,14 +279,15 @@ func (d Degradation) String() string {
 func (a Adapter) Degradations(rules []*rule.Rule) []Degradation {
 	var out []Degradation
 	for _, r := range rules {
-		if r.Action == rule.Block && a.caps(r.Event).deny == noDenial {
+		c := a.caps(r.Event)
+		if r.Action == rule.Block && c.deny == noDenial {
 			out = append(out, Degradation{
 				Rule: r.Name, From: rule.Block.String(), To: rule.Warn.String(), Reason: a.blockReason(r.Event),
 			})
 		}
 		// The message still reaches the user, on stderr, but the agent is gone by
 		// then: an injected warning it can act on is what was lost.
-		if !a.caps(r.Event).inject {
+		if !c.inject {
 			out = append(out, Degradation{
 				Rule: r.Name, From: rule.Warn.String(), To: "notice",
 				Reason: a.title + " discards hook output on " + r.Event + ", so the message goes to the user, not the agent",
