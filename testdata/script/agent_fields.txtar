@@ -1,0 +1,95 @@
+# A spawn call names the subagent it asks for, the task it hands over and the
+# model it requests, each under its own harness's keys.
+exec handrail trust
+
+stdin claude-agent.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  explorer  '
+stdout '^warn  deploy-task  '
+stdout '^warn  opus  '
+
+stdin codex-spawn.json
+exec handrail test PreToolUse --stdin --harness codex
+stdout '^warn  explorer  '
+stdout '^warn  deploy-task  '
+
+# The model key Codex puts on every hook envelope is the session's model, not
+# one the call asks for, and the agent_type on a tool event inside a subagent
+# names the caller: neither is read.
+stdin codex-envelope.json
+exec handrail test PreToolUse --stdin --harness codex
+! stdout 'opus'
+! stdout 'explorer'
+stdout '^outcome: allow$'
+
+# A spawn that names no subagent leaves agent_type absent, so an allowlist on
+# it does not fire, and one that names no model leaves model absent; a kind:
+# agent rule with no agent_type condition still reaches every spawn.
+stdin claude-untyped.json
+exec handrail test PreToolUse --stdin --harness claude
+! stdout 'only-explorers'
+! stdout 'only-opus'
+stdout '^warn  every-spawn  '
+
+stdin claude-agent.json
+exec handrail test PreToolUse --stdin --harness claude
+! stdout 'only-explorers'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- claude-agent.json --
+{"tool_name": "Agent", "tool_input": {"subagent_type": "Explore", "prompt": "deploy the app", "model": "opus"}}
+-- claude-untyped.json --
+{"tool_name": "Agent", "tool_input": {"subagent_type": "", "prompt": "look around"}}
+-- codex-spawn.json --
+{"model": "gpt-5", "tool_name": "spawn_agent", "tool_input": {"agent_type": "Explore", "message": "deploy the app"}}
+-- codex-envelope.json --
+{"model": "opus", "agent_type": "Explore", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- .handrail/explorer.md --
+---
+event: PreToolUse
+conditions:
+  - field: agent_type
+    equals: Explore
+---
+Explorer.
+-- .handrail/deploy-task.md --
+---
+event: PreToolUse
+conditions:
+  - field: agent_prompt
+    contains: deploy
+---
+Deploy task.
+-- .handrail/opus.md --
+---
+event: PreToolUse
+conditions:
+  - field: model
+    equals: opus
+---
+Opus.
+-- .handrail/only-explorers.md --
+---
+event: PreToolUse
+kind: agent
+conditions:
+  - field: agent_type
+    not_equals: Explore
+---
+Only explorers.
+-- .handrail/only-opus.md --
+---
+event: PreToolUse
+kind: agent
+conditions:
+  - field: model
+    not_equals: opus
+---
+Only opus.
+-- .handrail/every-spawn.md --
+---
+event: PreToolUse
+kind: agent
+---
+Every spawn.

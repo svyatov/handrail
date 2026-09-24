@@ -1,0 +1,123 @@
+# tool holds every name the harness answers to for a call: the name on the
+# wire, plus the aliases that harness documents, a former name included.
+exec handrail trust
+
+# Claude Code's Agent was named Task, so a rule naming either reaches it.
+stdin agent.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  names-task  '
+stdout '^warn  names-agent  '
+
+# Codex matches apply_patch as Edit and Write too, and every edit it makes
+# carries all three names.
+stdin apply-patch.json
+exec handrail test PreToolUse --stdin --harness codex
+stdout '^warn  names-edit  '
+stdout '^warn  names-apply-patch  '
+
+# An Adapter relays only its own harness's names: Claude Code never calls
+# apply_patch Edit.
+stdin apply-patch.json
+exec handrail test PreToolUse --stdin --harness claude
+! stdout 'names-edit'
+stdout '^warn  names-apply-patch  '
+
+# Codex's shell tool is Bash, and a patch heredoc it intercepts is an edit the
+# Bash call makes, so its payloads carry Bash.
+stdin codex-heredoc.json
+exec handrail test PreToolUse --stdin --harness codex
+stdout '^warn  bash-edits  '
+
+# An MCP call carries its full name and the bare tool name.
+stdin mcp.json
+exec handrail test PreToolUse --stdin
+stdout '^warn  names-deploy  '
+stdout '^warn  names-mcp-deploy  '
+
+# A shell call's file payloads carry the call's own tool.
+stdin bash-cat.json
+exec handrail test PreToolUse --stdin
+stdout '^warn  bash-reads  '
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- agent.json --
+{"tool_name": "Agent", "tool_input": {"subagent_type": "Explore", "prompt": "find it"}}
+-- apply-patch.json --
+{"tool_name": "apply_patch", "tool_input": {"command": "*** Begin Patch\n*** Add File: a.txt\n+hi\n*** End Patch\n"}}
+-- codex-heredoc.json --
+{"tool_name": "Bash", "tool_input": {"command": "apply_patch <<'EOF'\n*** Begin Patch\n*** Add File: b.txt\n+hi\n*** End Patch\nEOF"}}
+-- mcp.json --
+{"tool_name": "mcp__fly__deploy", "tool_input": {"app": "prod"}}
+-- bash-cat.json --
+{"tool_name": "Bash", "tool_input": {"command": "cat .env"}}
+-- .handrail/names-task.md --
+---
+event: PreToolUse
+conditions:
+  - field: tool
+    equals: Task
+---
+Task.
+-- .handrail/names-agent.md --
+---
+event: PreToolUse
+conditions:
+  - field: tool
+    equals: Agent
+---
+Agent.
+-- .handrail/names-edit.md --
+---
+event: PreToolUse
+conditions:
+  - field: tool
+    equals: Edit
+---
+Edit.
+-- .handrail/names-apply-patch.md --
+---
+event: PreToolUse
+conditions:
+  - field: tool
+    equals: apply_patch
+---
+apply_patch.
+-- .handrail/bash-edits.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: tool
+    equals: Bash
+  - field: path
+    equals: b.txt
+---
+An edit the Bash call makes.
+-- .handrail/names-deploy.md --
+---
+event: PreToolUse
+conditions:
+  - field: tool
+    equals: deploy
+---
+Bare.
+-- .handrail/names-mcp-deploy.md --
+---
+event: PreToolUse
+conditions:
+  - field: tool
+    equals: mcp__fly__deploy
+---
+Full.
+-- .handrail/bash-reads.md --
+---
+event: PreToolUse
+kind: file_read
+conditions:
+  - field: tool
+    equals: Bash
+  - field: path
+    equals: .env
+---
+A file the Bash call reads.

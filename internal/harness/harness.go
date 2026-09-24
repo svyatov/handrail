@@ -5,6 +5,7 @@ package harness
 import (
 	"encoding/json"
 	"io"
+	"net/url"
 	"path"
 	"slices"
 	"strings"
@@ -28,6 +29,12 @@ type Adapter struct {
 	// patchInShell is true where the harness applies an apply_patch heredoc a
 	// shell call sends, rather than running the line.
 	patchInShell bool
+	// aliases lists, per tool name on the wire, every name the harness
+	// documents it also answers to, a former name included. The wire name leads.
+	aliases [][]string
+	// agentTypeKey and agentPromptKey are the tool input keys a spawn names
+	// its subagent and hands over its task under.
+	agentTypeKey, agentPromptKey string
 	// events is the harness's Capability matrix: what a hook can do on each
 	// event, in the order sync writes
 	// hook entries for them. Delivery, sync and the degradation report all
@@ -63,6 +70,7 @@ const (
 var adapters = []Adapter{
 	{
 		Name: "claude", title: "Claude Code", dir: ".claude", homeEnv: "CLAUDE_CONFIG_DIR", file: "settings.json",
+		aliases: [][]string{{"Agent", "Task"}}, agentTypeKey: "subagent_type", agentPromptKey: "prompt",
 		events: []eventCaps{
 			{name: "PreToolUse", deny: exitTwo, inject: true},
 			{name: "PostToolUse", inject: true},
@@ -78,6 +86,8 @@ var adapters = []Adapter{
 	},
 	{
 		Name: "codex", title: "Codex CLI", dir: ".codex", homeEnv: "CODEX_HOME", file: "hooks.json", patchInShell: true,
+		aliases:      [][]string{{"apply_patch", "Edit", "Write"}, {"spawn_agent", "Agent"}},
+		agentTypeKey: "agent_type", agentPromptKey: "message",
 		events: []eventCaps{
 			{name: "PreToolUse", deny: exitTwo, inject: true},
 			{name: "PostToolUse", inject: true},
@@ -135,16 +145,55 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		return nil, "", err
 	}
 	p := rule.Payload{Event: event, Kind: classify(in.ToolName)}
+	tools := a.toolNames(in.ToolName)
+	setTool(&p, tools)
+	// Read by key presence, on any tool, and from the tool input alone: the
+	// envelope's model is the session's, and its agent_type on a tool event
+	// names the subagent calling rather than one the call asks for.
+	set(&p, "agent_type", in.ToolInput, a.agentTypeKey)
+	set(&p, "agent_prompt", in.ToolInput, a.agentPromptKey)
+	set(&p, "model", in.ToolInput, "model")
+	set(&p, "url", in.ToolInput, "url")
+	switch in.ToolName {
+	case "Monitor":
+		if ws, ok := in.ToolInput["ws"].(map[string]any); ok {
+			set(&p, "url", ws, "url")
+		}
+	case "webrun":
+		// Most refs name a search result rather than a page; only an absolute
+		// http or https URL is a destination.
+		open, _ := in.ToolInput["open"].([]any)
+		for _, o := range open {
+			ref, _ := o.(map[string]any)
+			if s, ok := ref["ref_id"].(string); ok {
+				if u, err := url.Parse(s); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+					p.SetField("url", s)
+				}
+			}
+		}
+	}
 	var edits []rule.Payload
 	switch p.Kind {
 	case "shell":
 		set(&p, "command", in.ToolInput, "command")
+		// Claude Code's shells ask their sandbox for more under these keys.
+		// WebSearch's allowed_domains filters results instead, and it is not
+		// a shell.
+		grants, _ := in.ToolInput["allowed_domains"].([]any)
+		for _, g := range grants {
+			if s, ok := g.(string); ok {
+				p.SetField("network_grant", s)
+			}
+		}
+		if off, _ := in.ToolInput["dangerouslyDisableSandbox"].(bool); off {
+			p.SetField("unsandboxed", "true")
+		}
 		// Codex applies a patch heredoc sent through the shell itself, after
 		// this hook and with no second one, so this is the only place its
 		// edits are seen. Claude Code runs the same line as a program.
 		if line, ok := in.ToolInput["command"].(string); ok && a.patchInShell {
 			if dir, patch, ok := shell.Patch(line); ok {
-				edits = patchPayloads(event, dir, patch)
+				edits = patchPayloads(event, tools, dir, patch)
 			}
 		}
 	case "file_edit":
@@ -161,16 +210,15 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		// unread, every path and content condition would silently never fire on
 		// that harness's only editing tool.
 		if patch, ok := in.ToolInput["command"].(string); ok && !p.Has("path") {
-			if edits := patchPayloads(event, "", patch); len(edits) > 0 {
+			if edits := patchPayloads(event, tools, "", patch); len(edits) > 0 {
 				return edits, in.CWD, nil
 			}
 		}
 	case "file_read":
 		set(&p, "path", in.ToolInput, "file_path")
 	case "mcp":
-		if server, tool, ok := strings.Cut(strings.TrimPrefix(in.ToolName, "mcp__"), "__"); ok {
+		if server, _, ok := strings.Cut(strings.TrimPrefix(in.ToolName, "mcp__"), "__"); ok {
 			p.SetField("server", server)
-			p.SetField("tool", tool)
 		}
 	}
 	p.SetField("prompt", in.Prompt)
@@ -189,7 +237,8 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 // tool_input.command like Bash's: Claude Code's tools reference says so
 // outright. It is opt-in on Linux and macOS rather than absent there, and a
 // shell rule that stops firing the moment a user opts in is the failure this
-// table exists to prevent.
+// table exists to prevent. Monitor watches a command or a WebSocket, and takes
+// the kind whose field a rule can read: shell.
 func classify(tool string) string {
 	if strings.HasPrefix(tool, "mcp__") {
 		return "mcp"
@@ -197,14 +246,49 @@ func classify(tool string) string {
 	switch tool {
 	case "":
 		return ""
-	case "Bash", "PowerShell":
+	case "Bash", "PowerShell", "Monitor":
 		return "shell"
 	case "Edit", "Write", "NotebookEdit", "apply_patch":
 		return "file_edit"
 	case "Read":
 		return "file_read"
+	case "Agent":
+		return "agent"
+	case "WebFetch", "WebSearch", "webrun":
+		return "network"
+	}
+	// Codex's multi-agent v2 puts its spawn tool in a configurable namespace,
+	// collaborationspawn_agent by default, with no alias to match instead.
+	if strings.HasSuffix(tool, "spawn_agent") {
+		return "agent"
 	}
 	return "other"
+}
+
+// toolNames lists every name the harness answers to for a call to tool: the
+// name on the wire, then the aliases this harness documents for it. An MCP
+// call also answers to its bare tool name. No Adapter invents a name another
+// harness uses, because tool is the harness's own vocabulary and kind the
+// portable one.
+func (a Adapter) toolNames(tool string) []string {
+	if rest, ok := strings.CutPrefix(tool, "mcp__"); ok {
+		if _, bare, ok := strings.Cut(rest, "__"); ok {
+			return []string{tool, bare}
+		}
+	}
+	for _, names := range a.aliases {
+		if names[0] == tool {
+			return names
+		}
+	}
+	return []string{tool}
+}
+
+// setTool writes every name the call answers to as a Spelling of tool.
+func setTool(p *rule.Payload, names []string) {
+	for _, n := range names {
+		p.SetField("tool", n)
+	}
 }
 
 // textKeys are the tool input keys a file edit carries its written text under,
@@ -228,8 +312,9 @@ func writesEmpty(p *rule.Payload, namesText bool) {
 //
 // A rename is one edit: its Move to: header adds the destination to the
 // section it sits in. A relative path is joined to dir, the directory Codex
-// applies the patch in when a shell call cds there first.
-func patchPayloads(event, dir, patch string) []rule.Payload {
+// applies the patch in when a shell call cds there first. Every edit carries
+// tools, the names of the call that made it.
+func patchPayloads(event string, tools []string, dir, patch string) []rule.Payload {
 	var edits []rule.Payload
 	var paths, added, removed []string
 	var section string // the verb of the header that opened it
@@ -238,6 +323,7 @@ func patchPayloads(event, dir, patch string) []rule.Payload {
 			return
 		}
 		p := rule.Payload{Event: event, Kind: "file_edit"}
+		setTool(&p, tools)
 		p.SetRename(paths[0], paths[len(paths)-1])
 		p.SetField("content", strings.Join(added, "\n"))
 		p.SetField("removed_content", strings.Join(removed, "\n"))

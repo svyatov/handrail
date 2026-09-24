@@ -1,0 +1,88 @@
+# kind: agent selects the spawn tools each Adapter knows by name, and kind:
+# network the fetch tools.
+exec handrail trust
+
+stdin claude-agent.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  spawns  '
+! stdout 'fetches'
+
+# Codex's multi-agent v1 spawn tool, which Codex also matches as Agent.
+stdin codex-spawn.json
+exec handrail test PreToolUse --stdin --harness codex
+stdout '^warn  spawns  '
+stdout '^warn  names-agent  '
+
+# Under multi-agent v2 the spawn tool sits in a namespace and has no alias, so
+# the kind comes from the spawn_agent suffix.
+stdin codex-spawn-v2.json
+exec handrail test PreToolUse --stdin --harness codex
+stdout '^warn  spawns  '
+! stdout 'names-agent'
+
+stdin webfetch.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  fetches  '
+! stdout 'spawns'
+
+stdin websearch.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  fetches  '
+
+stdin webrun.json
+exec handrail test PreToolUse --stdin --harness codex
+stdout '^warn  fetches  '
+
+# Monitor watches a command or a WebSocket, and a command is what a rule can
+# read, so it is a shell.
+stdin monitor.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  shells  '
+! stdout 'fetches'
+
+# The kinds are part of the vocabulary test takes.
+exec handrail test PreToolUse --kind agent
+stdout '^warn  spawns  '
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- claude-agent.json --
+{"tool_name": "Agent", "tool_input": {"subagent_type": "Explore", "prompt": "find it"}}
+-- codex-spawn.json --
+{"tool_name": "spawn_agent", "tool_input": {"message": "find it"}}
+-- codex-spawn-v2.json --
+{"tool_name": "collaborationspawn_agent", "tool_input": {"task_name": "t", "message": "find it"}}
+-- webfetch.json --
+{"tool_name": "WebFetch", "tool_input": {"url": "https://example.com", "prompt": "summarize"}}
+-- websearch.json --
+{"tool_name": "WebSearch", "tool_input": {"query": "handrail"}}
+-- webrun.json --
+{"tool_name": "webrun", "tool_input": {"open": [{"ref_id": "https://example.com"}]}}
+-- monitor.json --
+{"tool_name": "Monitor", "tool_input": {"command": "tail -f log"}}
+-- .handrail/spawns.md --
+---
+event: PreToolUse
+kind: agent
+---
+A spawn.
+-- .handrail/fetches.md --
+---
+event: PreToolUse
+kind: network
+---
+A fetch.
+-- .handrail/shells.md --
+---
+event: PreToolUse
+kind: shell
+---
+A shell.
+-- .handrail/names-agent.md --
+---
+event: PreToolUse
+conditions:
+  - field: tool
+    equals: Agent
+---
+Agent.
