@@ -141,9 +141,15 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 	if env == nil {
 		return nil, "", errors.New("the payload is null")
 	}
-	var name string
+	// cwd picks the project whose rules apply, so one handrail cannot read
+	// fails the payload rather than letting the process's own stand in for it.
+	var cwd, name string
 	var input map[string]any
-	cwd, _ := env["cwd"].(string)
+	if raw, ok := env["cwd"]; ok {
+		if cwd, ok = raw.(string); !ok {
+			return nil, "", errors.New("cwd is not a string")
+		}
+	}
 	if raw, ok := env["tool_input"]; ok {
 		if input, ok = raw.(map[string]any); !ok {
 			return nil, "", errors.New("tool_input is not an object")
@@ -231,14 +237,10 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		// states outright: "Bash and apply_patch use tool_input.command". Left
 		// unread, every path and content condition would silently never fire on
 		// that harness's only editing tool.
+		// A non-string envelope reads as an empty one: an edit naming nothing.
 		if raw, ok := input["command"]; ok && !p.Has("path") {
-			patch, ok := raw.(string)
-			if !ok {
-				p.SetField("unreadable", "path")
-			}
-			if edits := patchPayloads(event, tools, "", patch); len(edits) > 0 {
-				return edits, cwd, nil
-			}
+			patch, _ := raw.(string)
+			return patchPayloads(event, tools, "", patch), cwd, nil
 		}
 	case "file_read":
 		set(&p, "path", input, "file_path")
@@ -339,7 +341,8 @@ func writesEmpty(p *rule.Payload, namesText bool) {
 // A rename is one edit: its Move to: header adds the destination to the
 // section it sits in. A relative path is joined to dir, the directory Codex
 // applies the patch in when a shell call cds there first. Every edit carries
-// tools, the names of the call that made it.
+// tools, the names of the call that made it. An envelope with no file header
+// is still an edit, one that names nothing handrail can read.
 func patchPayloads(event string, tools []string, dir, patch string) []rule.Payload {
 	var edits []rule.Payload
 	var paths, added, removed []string
@@ -385,6 +388,14 @@ func patchPayloads(event string, tools []string, dir, patch string) []rule.Paylo
 		}
 	}
 	done()
+	if edits == nil {
+		p := rule.Payload{Event: event, Kind: "file_edit"}
+		setTool(&p, tools)
+		for _, f := range [...]string{"path", "content", "removed_content"} {
+			p.SetField("unreadable", f)
+		}
+		edits = append(edits, p)
+	}
 	return edits
 }
 

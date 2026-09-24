@@ -20,6 +20,12 @@ exec handrail hook claude PreToolUse
 stdout 'handrail warn: gap-payload'
 ! stdout 'handrail warn: any-shell'
 
+# A cwd handrail cannot read would pick the project rules by guesswork.
+stdin number-cwd.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: gap-payload'
+! stdout 'handrail warn: any-shell'
+
 # stdin that will not read at all: a directory opens and then fails to read.
 exec sh -c 'handrail hook claude PreToolUse < .; echo code=$?'
 stdout 'handrail warn: gap-payload'
@@ -52,6 +58,13 @@ stdout 'no working directory'
 ! stdout 'any-shell'
 stdout '^code=0$'
 
+# A file is no directory to work in either.
+stdin file-cwd.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: global-gap \(global\)'
+stdout 'no working directory'
+! stdout 'broken rule'
+
 -- .git/HEAD --
 ref: refs/heads/main
 -- garbage --
@@ -64,6 +77,10 @@ null
 {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
 -- gone-cwd.json --
 {"hook_event_name": "PreToolUse", "cwd": "/nonexistent/handrail-gone", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- number-cwd.json --
+{"hook_event_name": "PreToolUse", "cwd": 5, "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- file-cwd.json --
+{"hook_event_name": "PreToolUse", "cwd": "/etc/hosts", "tool_name": "Bash", "tool_input": {"command": "ls"}}
 -- .handrail/gap-payload.md --
 ---
 event: PreToolUse

@@ -64,7 +64,10 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if !filepath.IsAbs(cwd) {
 		cwd, _ = os.Getwd()
 	}
-	if _, err := os.Stat(cwd); err != nil {
+	if fi, err := os.Stat(cwd); err != nil || !fi.IsDir() {
+		if err == nil {
+			err = fmt.Errorf("%s is not a directory", cwd)
+		}
 		cwd = ""
 		failures = append(failures, fmt.Sprintf("handrail: no working directory, so no project rule was evaluated: %v", err))
 	}

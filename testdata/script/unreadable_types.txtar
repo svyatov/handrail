@@ -44,8 +44,18 @@ exec handrail hook claude PreToolUse
 stdout 'handrail warn: gap-network-grant \(project-shared\)'
 ! stdout 'gap-unsandboxed'
 
-# A patch envelope is the source of path and content on Codex's apply_patch.
+# A patch envelope is the source of path and content on Codex's apply_patch,
+# so one handrail cannot read declares both, whether it is not a string or
+# holds no file header at all, sent as the tool or through the shell.
 stdin number-patch.json
+exec handrail hook codex PreToolUse
+stdout 'handrail warn: gap-path \(project-shared\)'
+stdout 'handrail warn: gap-content \(project-shared\)'
+stdin headerless-patch.json
+exec handrail hook codex PreToolUse
+stdout 'handrail warn: gap-path \(project-shared\)'
+stdout 'handrail warn: gap-content \(project-shared\)'
+stdin headerless-shell-patch.json
 exec handrail hook codex PreToolUse
 stdout 'handrail warn: gap-path \(project-shared\)'
 
@@ -71,6 +81,18 @@ ref: refs/heads/main
 {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls", "allowed_domains": "example.com", "dangerouslyDisableSandbox": "yes"}}
 -- number-patch.json --
 {"hook_event_name": "PreToolUse", "tool_name": "apply_patch", "tool_input": {"command": 42}}
+-- headerless-patch.json --
+{"hook_event_name": "PreToolUse", "tool_name": "apply_patch", "tool_input": {"command": "not a patch"}}
+-- headerless-shell-patch.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "apply_patch <<'EOF'\nnot a patch\nEOF"}}
+-- .handrail/gap-content.md --
+---
+event: PreToolUse
+conditions:
+  - field: unreadable
+    equals: content
+---
+handrail could not read the content.
 -- bad-grant-entry.json --
 {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls", "allowed_domains": ["example.com", 5]}}
 -- string-command.json --
