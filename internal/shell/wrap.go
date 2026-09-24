@@ -271,21 +271,32 @@ const (
 )
 
 var wrappers = map[string]*grammar{
+	// timeout: GNU coreutils timeout --help; FreeBSD and macOS timeout(1)
 	"timeout": {short: "fk:ps:v", long: "foreground kill-after= preserve-status signal= verbose help version", operands: 1},
-	"time":    {short: "af:hlo:pqv", long: "append format= output= portability quiet verbose help version"},
-	"nice":    {short: "n:0123456789", long: "adjustment= help version"},
-	"nohup":   {long: "help version"},
-	"stdbuf":  {short: "e:i:o:", long: "error= input= output= help version"},
+	// time: GNU time 1.9 time --help; FreeBSD and macOS time(1)
+	"time": {short: "af:hlo:pqv", long: "append format= output= portability quiet verbose help version"},
+	// nice: GNU coreutils nice --help, with obsolete -N; FreeBSD and macOS nice(1)
+	"nice": {short: "n:0123456789", long: "adjustment= help version"},
+	// nohup: GNU coreutils nohup --help; FreeBSD and macOS nohup(1)
+	"nohup": {long: "help version"},
+	// stdbuf: GNU coreutils stdbuf --help; FreeBSD stdbuf(1)
+	"stdbuf": {short: "e:i:o:", long: "error= input= output= help version"},
+	// command: bash manual, Bash Builtins, command [-pVv]
 	"command": {short: "pvV", stop: []string{"v", "V"}},
+	// builtin: bash manual, Bash Builtins, builtin [shell-builtin [args]]
 	"builtin": {},
-	"noglob":  {},
-	"exec":    {short: "a:cl"},
+	// noglob: zsh manual, Precommand Modifiers
+	"noglob": {},
+	// exec: bash manual, Bourne Shell Builtins, exec [-cl] [-a name]
+	"exec": {short: "a:cl"},
+	// sudo: sudo 1.9 sudo(8)
 	"sudo": {
 		short:   "ABbEeHh?iKklNnPSsVva:c:C:D:g:p:R:r:T:t:U:u:",
 		long:    "askpass auth-type= background bell close-from= chdir= preserve-env edit group= set-home help host= login login-class= remove-timestamp reset-timestamp list no-update non-interactive preserve-groups prompt= chroot= role= stdin shell type= command-timeout= other-user= user= version validate",
 		assigns: true,
 		stop:    []string{"e", "edit"},
 	},
+	// env: GNU coreutils env --help; FreeBSD and macOS env(1)
 	"env": {
 		short:   "0iC:L:P:S:U:u:v",
 		long:    "ignore-environment null unset= chdir= split-string= ignore-signal default-signal block-signal list-signal-handling debug help version",
@@ -293,37 +304,47 @@ var wrappers = map[string]*grammar{
 		script:  []string{"S", "split-string"},
 		splits:  true,
 	},
-	"doas":   {short: "a:C:Lnsu:"},
+	// doas: OpenBSD doas(1); OpenDoas doas(1)
+	"doas": {short: "a:C:Lnsu:"},
+	// setsid: util-linux setsid(1)
 	"setsid": {short: "cfwhV", long: "ctty fork wait help version"},
+	// flock: util-linux flock(1)
 	"flock": {
 		short:    "eE:FhnosuVw:x",
 		long:     "shared exclusive unlock nonblock nb no-fork close wait= timeout= conflict-exit-code= verbose help version",
 		operands: 1,
 		dashC:    true,
 	},
+	// watch: procps-ng watch(1)
 	"watch": {
 		short:  "bcCdeghn:pq:rs:tvwx",
 		long:   "beep color no-color differences exec chgexit errexit help interval= precise equexit= no-rerun shotsdir= no-title version no-wrap",
 		joined: true,
 	},
-	// su is a nested shell: its command is only the script its -c names.
+	// su: util-linux su(1). A nested shell: its command is only the script
+	// its -c names.
 	"su": {
 		short:   "c:fg:G:hlmPps:Vw:",
 		long:    "command= session-command= fast group= supp-group= help login preserve-environment pty shell= version whitelist-environment=",
 		permute: true,
 		script:  []string{"c", "command", "session-command"},
 	},
+	// xargs: GNU findutils xargs --help; FreeBSD and macOS xargs(1)
 	"xargs": {
 		short:    "0a:d:E:e::I:i::J:L:l::n:oP:prR:S:s:tx",
 		long:     "null arg-file= delimiter= eof replace max-lines max-args= max-procs= interactive no-run-if-empty max-chars= verbose exit open-tty process-slot-var= show-limits help version",
 		detaches: true,
 	},
-	"mise exec":   mise,
-	"mise x":      mise,
+	"mise exec": mise,
+	"mise x":    mise,
+	// direnv exec: direnv(1), direnv exec DIR COMMAND
 	"direnv exec": {operands: 1},
-	"devbox run":  {short: "c:e:hlq", long: "config= env= env-file= environment= help list omit-nix-env pure quiet recompute"},
+	// devbox run: Jetify devbox docs, devbox run --help
+	"devbox run": {short: "c:e:hlq", long: "config= env= env-file= environment= help list omit-nix-env pure quiet recompute"},
 }
 
+// mise is mise exec and its alias mise x, from the mise docs and mise exec
+// --help.
 var mise = &grammar{
 	short:   "c:C:E:hj:qvy",
 	long:    "command= jobs= allow-env= allow-net= allow-read= allow-write= deny-all deny-env deny-net deny-read deny-write fresh-env no-deps raw help cd= env= quiet verbose yes locked silent",
