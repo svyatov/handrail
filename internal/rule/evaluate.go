@@ -48,26 +48,21 @@ func (p Payload) Field(name string) string { return p.fields[name] }
 
 // Evaluate runs the payload against the Effective ruleset and answers with both
 // halves of what an event produces: the rules that matched, in delivery order
-// (tier order, then alphabetical within a tier), and the Outcome, allow, warn
-// or block, where one block among several matches makes it block. A caller
+// (tier order, then alphabetical within a tier), and the Outcome, the
+// strongest Action among them, or allow when nothing matched. A caller
 // deriving the Outcome for itself would be a second answer to the same
 // question, free to disagree with this one, and test exists to say what hook
 // will do.
 //
 // Liveness is checked inline rather than over rs.Effective(), because this is
 // the hot path and the selector would allocate a second slice per event.
-func (rs *Ruleset) Evaluate(p Payload) (matched []*Rule, outcome string) {
-	outcome = Allow
+func (rs *Ruleset) Evaluate(p Payload) (matched []*Rule, outcome Outcome) {
 	for _, r := range rs.Rules {
 		if !r.Live() || !r.matches(p) {
 			continue
 		}
 		matched = append(matched, r)
-		if r.Action == Block {
-			outcome = Block
-		} else if outcome == Allow {
-			outcome = Warn
-		}
+		outcome = max(outcome, r.Action)
 	}
 	return matched, outcome
 }

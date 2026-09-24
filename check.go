@@ -64,7 +64,7 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 				Tier:       r.Tier,
 				Event:      r.Event,
 				Kind:       r.Kind,
-				Action:     r.Action,
+				Action:     r.Action.String(),
 				Enabled:    r.Enabled,
 				ShadowedBy: shadowedBy,
 				Path:       r.Path,

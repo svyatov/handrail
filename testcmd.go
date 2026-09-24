@@ -131,10 +131,10 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	// The same call the hook path makes, so what test reports is what hook does.
 	matched, outcome := rs.Evaluate(payload)
-	out := testOutput{Outcome: outcome, Matched: []testMatch{}}
+	out := testOutput{Outcome: outcome.String(), Matched: []testMatch{}}
 	for _, r := range matched {
 		out.Matched = append(out.Matched, testMatch{
-			Rule: r.Name, Tier: r.Tier, Action: r.Action, Message: r.Message,
+			Rule: r.Name, Tier: r.Tier, Action: r.Action.String(), Message: r.Message,
 		})
 	}
 
@@ -157,7 +157,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "outcome: %s\n", out.Outcome)
 	}
 
-	if out.Outcome == rule.Block {
+	if outcome == rule.Block {
 		return 2
 	}
 	return 0

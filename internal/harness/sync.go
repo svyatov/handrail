@@ -281,14 +281,14 @@ func (a Adapter) Degradations(rules []*rule.Rule) []Degradation {
 	for _, r := range rules {
 		if r.Action == rule.Block && !a.canBlock(r.Event) {
 			out = append(out, Degradation{
-				Rule: r.Name, From: "block", To: "warn", Reason: a.blockReason(r.Event),
+				Rule: r.Name, From: rule.Block.String(), To: rule.Warn.String(), Reason: a.blockReason(r.Event),
 			})
 		}
 		// The message still reaches the user, on stderr, but the agent is gone by
 		// then: an injected warning it can act on is what was lost.
 		if !canInject(r.Event) {
 			out = append(out, Degradation{
-				Rule: r.Name, From: "warn", To: "notice",
+				Rule: r.Name, From: rule.Warn.String(), To: "notice",
 				Reason: a.title + " discards hook output on " + r.Event + ", so the message goes to the user, not the agent",
 			})
 		}

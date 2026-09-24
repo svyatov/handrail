@@ -46,7 +46,7 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// An engine that cannot answer lets the event through rather than wedge the
 	// harness, so every failure below delivers a message and never blocks.
 	failOpen := func(format string, args ...any) int {
-		return a.Deliver(event, fmt.Sprintf(format, args...), false, stdout, stderr)
+		return a.Deliver(event, fmt.Sprintf(format, args...), rule.Allow, stdout, stderr)
 	}
 	// Two different faults, so two different messages: stdin never arrived, or it
 	// arrived and was not the payload. Reporting the second as the first sends the
@@ -69,7 +69,7 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	rs := rule.Load(cwd)
 	matched, outcome := rs.Evaluate(payload)
-	return a.Deliver(event, agentMessage(rs, matched), outcome == rule.Block, stdout, stderr)
+	return a.Deliver(event, agentMessage(rs, matched), outcome, stdout, stderr)
 }
 
 // agentMessage is the wire format the hook path delivers: everything the agent

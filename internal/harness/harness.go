@@ -240,7 +240,7 @@ type hookSpecific struct {
 // else proceeds and injects the message into the agent's context. Both
 // harnesses document the same two channels, exit 2 with a stderr reason and a
 // hookSpecificOutput.additionalContext object, so one implementation serves.
-func (a Adapter) Deliver(event, message string, block bool, stdout, stderr io.Writer) int {
+func (a Adapter) Deliver(event, message string, outcome rule.Outcome, stdout, stderr io.Writer) int {
 	if message == "" {
 		return 0
 	}
@@ -248,7 +248,7 @@ func (a Adapter) Deliver(event, message string, block bool, stdout, stderr io.Wr
 	// denial; on SessionEnd, which has no decision control and whose JSON output
 	// the harness discards, it is the only way left to reach the user, which is
 	// what a warning degrades to where context injection does not exist.
-	if (block && a.canBlock(event)) || !canInject(event) {
+	if (outcome == rule.Block && a.canBlock(event)) || !canInject(event) {
 		// A failed write leaves nobody to tell, but the outcome still stands: a
 		// block that cannot state its reason is still a block.
 		_, _ = io.WriteString(stderr, message+"\n")
