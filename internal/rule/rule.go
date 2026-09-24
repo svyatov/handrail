@@ -9,15 +9,25 @@ import (
 	"strings"
 )
 
-// The Action and Outcome vocabulary, one set for both: an Outcome takes the
-// strongest Action among the matched rules, so warn and block are the same two
-// values under either name. Allow is exported although no Rule.Action may hold
-// it, because it belongs to the vocabulary rather than to one field.
+// Outcome is the Action and Outcome vocabulary, one type for both: an Outcome
+// takes the strongest Action among the matched rules, so warn, ask and block
+// are the same values under either name. The constants run in the order of the
+// gate, allow < warn < ask < block, so the strongest of several is their max.
+// Allow is the absence of a match, and no Rule.Action holds it.
+type Outcome int
+
+// The four Outcomes, weakest first.
 const (
-	Allow = "allow"
-	Warn  = "warn"
-	Block = "block"
+	Allow Outcome = iota
+	Warn
+	Ask
+	Block
 )
+
+var outcomes = [...]string{"allow", "warn", "ask", "block"}
+
+// String is the Outcome as a rule file and every report spell it.
+func (o Outcome) String() string { return outcomes[o] }
 
 // Rule is one guardrail: a matcher (event, kind, conditions) and the message
 // delivered when it matches. Identity is the file's basename.
@@ -28,7 +38,7 @@ type Rule struct {
 	ShadowedBy *Rule // the higher-tier rule replacing this one, if any
 	Event      string
 	Kind       string
-	Action     string
+	Action     Outcome
 	Enabled    bool
 	Conditions []Condition
 	Message    string
@@ -63,14 +73,11 @@ type Term struct {
 	line  int
 }
 
-// events holds the six core events, in the order sync writes hook entries for
-// them. The hook path pays for every byte of startup work, so this is an array
-// of constants: static data the linker lays out, with no init to run.
+// events holds the six core events. Which of them a harness has, and what a
+// hook can do on each, is its Adapter's Capability matrix. The hook path pays for
+// every byte of startup work, so this is an array of constants: static data the
+// linker lays out, with no init to run.
 var events = [...]string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop"}
-
-// Events lists the six core events. Only sync needs the list, and it gets a
-// copy so no caller can reorder the array IsEvent reads.
-func Events() []string { return slices.Clone(events[:]) }
 
 // IsEvent reports whether name is one of the six core events.
 func IsEvent(name string) bool { return slices.Contains(events[:], name) }
@@ -143,11 +150,18 @@ func Parse(name string, data []byte) (*Rule, error) {
 				return nil, fmt.Errorf("line %d: unknown kind %q", kv.line, r.Kind)
 			}
 		case "action":
-			if err := scalarInto(kv, &r.Action); err != nil {
+			var v string
+			if err := scalarInto(kv, &v); err != nil {
 				return nil, err
 			}
-			if r.Action != Warn && r.Action != Block {
-				return nil, fmt.Errorf("line %d: unknown action %q", kv.line, r.Action)
+			// ask is in the vocabulary before a rule file may write it.
+			switch v {
+			case "warn":
+				r.Action = Warn
+			case "block":
+				r.Action = Block
+			default:
+				return nil, fmt.Errorf("line %d: unknown action %q", kv.line, v)
 			}
 		case "enabled":
 			var v string

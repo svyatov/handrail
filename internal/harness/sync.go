@@ -56,7 +56,7 @@ func (a Adapter) path(file string) string {
 // ConfigPath is the one file sync writes: user-level, never project-level.
 func (a Adapter) ConfigPath() string { return a.path(a.file) }
 
-// Install puts exactly one hook entry per canonical event into the harness's
+// Install puts exactly one hook entry per event of its table into the harness's
 // user-level config, invoking bin. It reports how many entries it wrote and
 // whether the file needed changing. Every other key in the file is left exactly
 // as it was: these are the user's settings, and handrail is one tenant among
@@ -72,8 +72,8 @@ func (a Adapter) Install(bin string) (entries int, changed bool, err error) {
 	if hooks == nil {
 		hooks = map[string]any{}
 	}
-	events := rule.Events()
-	for _, event := range events {
+	for _, c := range a.events {
+		event := c.name
 		groups := a.prune(hooks[event], event)
 		// No matcher: the matcher field is optional on every event that has one,
 		// and handrail classifies the tool itself, so one shape fits all six.
@@ -94,9 +94,9 @@ func (a Adapter) Install(bin string) (entries int, changed bool, err error) {
 	}
 	next = append(next, '\n')
 	if string(next) == string(old) {
-		return len(events), false, nil
+		return len(a.events), false, nil
 	}
-	return len(events), true, write(path, next)
+	return len(a.events), true, write(path, next)
 }
 
 // read parses the harness's config, returning the bytes it came from so Install
@@ -143,7 +143,7 @@ func (a Adapter) entryBinary(command, event string) (string, bool) {
 	return bin, true
 }
 
-// Entries reports the binary each canonical event's installed hook entry
+// Entries reports the binary each event's installed hook entry
 // invokes, in the order sync wrote them. An event handrail has no entry for
 // comes back empty, which is what doctor calls a missing entry.
 func (a Adapter) Entries() ([]Entry, error) {
@@ -152,9 +152,9 @@ func (a Adapter) Entries() ([]Entry, error) {
 		return nil, err
 	}
 	hooks, _ := settings["hooks"].(map[string]any)
-	events := rule.Events()
-	out := make([]Entry, 0, len(events))
-	for _, event := range events {
+	out := make([]Entry, 0, len(a.events))
+	for _, c := range a.events {
+		event := c.name
 		e := Entry{Event: event}
 		groups, _ := hooks[event].([]any)
 		for _, g := range groups {
@@ -279,16 +279,17 @@ func (d Degradation) String() string {
 func (a Adapter) Degradations(rules []*rule.Rule) []Degradation {
 	var out []Degradation
 	for _, r := range rules {
-		if r.Action == rule.Block && !a.canBlock(r.Event) {
+		c := a.caps(r.Event)
+		if r.Action == rule.Block && c.deny == noDenial {
 			out = append(out, Degradation{
-				Rule: r.Name, From: "block", To: "warn", Reason: a.blockReason(r.Event),
+				Rule: r.Name, From: rule.Block.String(), To: rule.Warn.String(), Reason: a.blockReason(r.Event),
 			})
 		}
 		// The message still reaches the user, on stderr, but the agent is gone by
 		// then: an injected warning it can act on is what was lost.
-		if !canInject(r.Event) {
+		if !c.inject {
 			out = append(out, Degradation{
-				Rule: r.Name, From: "warn", To: "notice",
+				Rule: r.Name, From: rule.Warn.String(), To: "notice",
 				Reason: a.title + " discards hook output on " + r.Event + ", so the message goes to the user, not the agent",
 			})
 		}

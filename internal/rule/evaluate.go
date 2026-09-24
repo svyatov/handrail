@@ -1,13 +1,16 @@
 package rule
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // Payload is the canonical event payload a matcher is evaluated against: the
 // envelope fields a matcher can select on, plus the per-kind normalized fields.
 // The zero value is a valid empty payload, so an Adapter that fails to
 // normalize can return one.
 //
-// Fill one, then read it: Evaluate takes a Payload by value, and a copy shares
+// Fill one, then read it: Evaluate reads each Payload by value, and a copy shares
 // the map its fields live in, so a SetField on the copy would write through to
 // the original once that map exists and be dropped while it does not. Nothing
 // does that today, and this is the sentence saying not to start.
@@ -17,7 +20,7 @@ type Payload struct {
 	// fields is unexported so that SetField is the only way in. The rule it
 	// enforces is a matcher's rule, so it belongs to this package rather than to
 	// each Adapter that fills a payload in.
-	fields map[string]string
+	fields map[string][]string
 }
 
 // SetField writes a canonical field unless the value is empty, and reports
@@ -36,38 +39,33 @@ func (p *Payload) SetField(name, value string) bool {
 		return false
 	}
 	if p.fields == nil {
-		p.fields = make(map[string]string)
+		p.fields = make(map[string][]string)
 	}
-	p.fields[name] = value
+	p.fields[name] = []string{value}
 	return true
 }
 
-// Field reads a canonical field. Empty means the payload does not carry it,
-// which is the same answer SetField refuses to write.
-func (p Payload) Field(name string) string { return p.fields[name] }
+// Field reads a canonical field's values. None means the payload does not
+// carry it, which is the same answer SetField refuses to write.
+func (p Payload) Field(name string) []string { return p.fields[name] }
 
-// Evaluate runs the payload against the Effective ruleset and answers with both
-// halves of what an event produces: the rules that matched, in delivery order
-// (tier order, then alphabetical within a tier), and the Outcome, allow, warn
-// or block, where one block among several matches makes it block. A caller
-// deriving the Outcome for itself would be a second answer to the same
-// question, free to disagree with this one, and test exists to say what hook
-// will do.
+// Evaluate runs an event's payloads against the Effective ruleset and answers
+// with both halves of what the event produces: the rules that matched any of
+// its payloads, once each and in delivery order (tier order, then alphabetical
+// within a tier), and the Outcome, the strongest Action among them, or allow
+// when nothing matched. A caller deriving the Outcome for itself would be a
+// second answer to the same question, free to disagree with this one, and test
+// exists to say what hook will do.
 //
 // Liveness is checked inline rather than over rs.Effective(), because this is
 // the hot path and the selector would allocate a second slice per event.
-func (rs *Ruleset) Evaluate(p Payload) (matched []*Rule, outcome string) {
-	outcome = Allow
+func (rs *Ruleset) Evaluate(payloads []Payload) (matched []*Rule, outcome Outcome) {
 	for _, r := range rs.Rules {
-		if !r.Live() || !r.matches(p) {
+		if !r.Live() || !slices.ContainsFunc(payloads, r.matches) {
 			continue
 		}
 		matched = append(matched, r)
-		if r.Action == Block {
-			outcome = Block
-		} else if outcome == Allow {
-			outcome = Warn
-		}
+		outcome = max(outcome, r.Action)
 	}
 	return matched, outcome
 }
@@ -96,27 +94,35 @@ func (r *Rule) matches(p Payload) bool {
 	return true
 }
 
-// matches applies one operator to one field. A condition against a field the
-// payload does not carry never matches, in either polarity: "path does not end
-// with .env" says nothing about a shell command that has no path at all.
+// matches applies one operator to every value of one field, and matches when
+// some value meets it in the term's polarity: ADR 0024's reading, where
+// not_starts_with: git fires on a call that is not only git. A condition
+// against a field the payload does not carry has no value to meet it, so it
+// never matches, in either polarity: "path does not end with .env" says nothing
+// about a shell command that has no path at all.
 func (t *Term) matches(p Payload) bool {
-	v, ok := p.fields[t.Field]
-	if !ok {
-		return false
-	}
 	op, negated := strings.CutPrefix(t.Op, "not_")
-	var hit bool
+	for _, v := range p.fields[t.Field] {
+		if t.hit(op, v) != negated {
+			return true
+		}
+	}
+	return false
+}
+
+// hit applies the operator, without its polarity, to one value.
+func (t *Term) hit(op, v string) bool {
 	switch op {
 	case "matches", "glob":
-		hit = t.re.MatchString(v)
+		return t.re.MatchString(v)
 	case "contains":
-		hit = strings.Contains(v, t.Value)
+		return strings.Contains(v, t.Value)
 	case "equals":
-		hit = v == t.Value
+		return v == t.Value
 	case "starts_with":
-		hit = strings.HasPrefix(v, t.Value)
+		return strings.HasPrefix(v, t.Value)
 	case "ends_with":
-		hit = strings.HasSuffix(v, t.Value)
+		return strings.HasSuffix(v, t.Value)
 	}
-	return hit != negated
+	return false
 }
