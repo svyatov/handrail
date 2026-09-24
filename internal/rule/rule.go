@@ -42,6 +42,7 @@ type Rule struct {
 	Action     Outcome
 	Enabled    bool
 	Conditions []Condition
+	Examples   []Example
 	Message    string
 	// fields names each field the conditions test once, in the order evaluation
 	// chooses a Candidate for them. A Term's slot is its field's index here.
@@ -134,6 +135,7 @@ func Parse(name string, data []byte) (*Rule, error) {
 
 	r := &Rule{Name: name, Action: Warn, Enabled: true, Message: strings.TrimSpace(body)}
 	seen := make(map[string]bool, len(doc.mapping))
+	var kindLine int
 	for _, kv := range doc.mapping {
 		if seen[kv.key] {
 			return nil, fmt.Errorf("line %d: duplicate field %q", kv.line, kv.key)
@@ -149,6 +151,7 @@ func Parse(name string, data []byte) (*Rule, error) {
 				return nil, fmt.Errorf("line %d: unknown event %q", kv.line, r.Event)
 			}
 		case "kind":
+			kindLine = kv.line
 			if err := scalarInto(kv, &r.Kind); err != nil {
 				return nil, err
 			}
@@ -195,9 +198,17 @@ func Parse(name string, data []byte) (*Rule, error) {
 					}
 				}
 			}
+		case "examples":
+			if r.Examples, err = parseExamples(kv); err != nil {
+				return nil, err
+			}
 		default:
 			return nil, fmt.Errorf("line %d: unknown frontmatter field %q", kv.line, kv.key)
 		}
+	}
+
+	if err := r.checkEvent(kindLine); err != nil {
+		return nil, err
 	}
 
 	// A disabled rule is exempt from matcher validation; whatever fields it
@@ -213,6 +224,60 @@ func Parse(name string, data []byte) (*Rule, error) {
 		}
 	}
 	return r, nil
+}
+
+// checkEvent holds the kind, the conditions and the Examples to what the rule's
+// event can carry, and gives each Example the kind it takes: the one it
+// writes, else the rule's. With neither, the spec's other and no kind read
+// alike, since only a rule naming a kind reads one. A rule with no event is a
+// disabled stub, with no event to hold anything to.
+func (r *Rule) checkEvent(kindLine int) error {
+	if r.Event == "" {
+		return nil
+	}
+	tool := toolEvent(r.Event)
+	if r.Kind != "" && !tool {
+		return fmt.Errorf("line %d: kind applies only to PreToolUse and PostToolUse", kindLine)
+	}
+	for _, c := range r.Conditions {
+		for _, t := range c.Terms {
+			if !carries(r.Event, t.Field) {
+				return fmt.Errorf("line %d: %s never carries %s", t.line, r.Event, t.Field)
+			}
+		}
+	}
+	for i := range r.Examples {
+		e := &r.Examples[i]
+		for _, f := range e.Fields {
+			switch {
+			case f.Name == "kind" && !tool:
+				return fmt.Errorf("line %d: kind applies only to PreToolUse and PostToolUse", e.Line)
+			case f.Name != "kind" && !carries(r.Event, f.Name):
+				return fmt.Errorf("line %d: %s never carries %s", e.Line, r.Event, f.Name)
+			}
+		}
+		if e.Kind == "" {
+			e.Kind = r.Kind
+		}
+	}
+	return nil
+}
+
+// toolEvent reports whether event is about a tool call, the only events that
+// carry a kind.
+func toolEvent(event string) bool { return event == "PreToolUse" || event == "PostToolUse" }
+
+// carries is the per-event field table: whether a payload of event can hold
+// field on either harness. unreadable is on every event, since any read can
+// fail.
+func carries(event, field string) bool {
+	switch {
+	case field == "unreadable":
+		return true
+	case event == "UserPromptSubmit":
+		return field == "prompt"
+	}
+	return toolEvent(event) && field != "prompt"
 }
 
 // parseFrontmatter reads a markdown file's YAML frontmatter as a mapping, and

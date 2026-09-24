@@ -44,10 +44,13 @@ type Tier struct {
 // Problems are reported, never judged: the hook path is loud fail-open and the
 // authoring commands are strict.
 type Ruleset struct {
-	Root     string  // the project root: the repo root, or the cwd outside a repo
-	Rules    []*Rule // delivery order, shadowed and disabled included
-	Tiers    []Tier
-	Problems []Problem
+	Root  string  // the project root: the repo root, or the cwd outside a repo
+	Rules []*Rule // delivery order, shadowed and disabled included
+	// Untrusted holds the rules of a tier trust skipped: none of them counts,
+	// and check still runs their Examples.
+	Untrusted []*Rule
+	Tiers     []Tier
+	Problems  []Problem
 }
 
 // Effective returns the Effective ruleset: the rules that can fire, in
@@ -107,6 +110,7 @@ func Load(cwd string) *Ruleset {
 				rs.Rules = append(rs.Rules, rules...)
 			} else {
 				t.Skipped = len(rules)+len(problems) > 0
+				rs.Untrusted = append(rs.Untrusted, rules...)
 			}
 		}
 		rs.Tiers = append(rs.Tiers, t)

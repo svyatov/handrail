@@ -16,7 +16,7 @@ stdout '^project-personal +personal-only +Stop'
 ! stdout 'notes'
 
 # Comments and blank lines in frontmatter are comments and blank lines.
-stdout '^project-shared +commented +SessionStart +mcp +block +enabled$'
+stdout '^project-shared +commented +PreToolUse +mcp +block +enabled$'
 
 # Every operator negates with not_, and glob understands **.
 stdout '^project-shared +negations +PostToolUse +file_edit +warn +enabled$'
@@ -61,7 +61,7 @@ The local tier is its own scan.
 -- .handrail/commented.md --
 ---
 # which event, and why
-event: SessionStart  # trailing comments are comments
+event: PreToolUse  # trailing comments are comments
 
 kind: mcp
 action: block

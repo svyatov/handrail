@@ -1,0 +1,203 @@
+# Every Example that no live call could be is a validation error, and so is a
+# condition or kind on an event that never carries it.
+exec handrail trust
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=1$'
+stderr 'ex-unknown-key\.md: line 4: unknown examples key "maybe"'
+stderr 'ex-not-a-mapping\.md: line 3: examples must be a mapping'
+stderr 'ex-match-not-a-list\.md: line 4: match must be a list'
+stderr 'ex-entry-not-a-mapping\.md: line 5: example must be a mapping'
+stderr 'ex-unknown-field\.md: line 5: unknown example field "cmd"'
+stderr 'ex-domain\.md: line 5: domain comes from a written url, so write the url'
+stderr 'ex-list-on-single\.md: line 5: command must be a single value'
+stderr 'ex-list-entry-not-scalar\.md: line 6: url entries must be single values'
+stderr 'ex-map-value\.md: line 5: command must be a single value'
+stderr 'ex-path-three\.md: line 5: a path list is a rename: its source and its destination'
+stderr 'ex-empty\.md: line 5: command needs a value'
+stderr 'ex-empty-grant\.md: line 5: network_grant needs a value'
+stderr 'ex-writes-empty-false\.md: line 5: writes_empty can only be true'
+stderr 'ex-bad-unreadable\.md: line 5: unknown unreadable value "nope"'
+stderr 'ex-no-fields\.md: line 5: example has no fields'
+stderr 'ex-bad-kind\.md: line 5: unknown kind "bash"'
+stderr 'ex-duplicate\.md: line 6: duplicate field "command"'
+stderr 'ex-wrong-event\.md: line 5: PreToolUse never carries prompt'
+stderr 'ex-kind-off-tool\.md: line 5: kind applies only to PreToolUse and PostToolUse'
+stderr 'cond-wrong-event\.md: line 5: UserPromptSubmit never carries command'
+stderr 'kind-off-tool\.md: line 3: kind applies only to PreToolUse and PostToolUse'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/ex-unknown-key.md --
+---
+event: PreToolUse
+examples:
+  maybe:
+    - command: ls
+---
+A message.
+-- .handrail/ex-not-a-mapping.md --
+---
+event: PreToolUse
+examples:
+  - command: ls
+---
+A message.
+-- .handrail/ex-match-not-a-list.md --
+---
+event: PreToolUse
+examples:
+  match: ls
+---
+A message.
+-- .handrail/ex-entry-not-a-mapping.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - ls
+---
+A message.
+-- .handrail/ex-unknown-field.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - cmd: ls
+---
+A message.
+-- .handrail/ex-domain.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - domain: evil.example
+---
+A message.
+-- .handrail/ex-list-on-single.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - command:
+        - ls
+        - pwd
+---
+A message.
+-- .handrail/ex-list-entry-not-scalar.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - url:
+        - a: b
+---
+A message.
+-- .handrail/ex-map-value.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - command:
+        a: b
+---
+A message.
+-- .handrail/ex-path-three.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - path:
+        - a
+        - b
+        - c
+---
+A message.
+-- .handrail/ex-empty.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - command: ""
+---
+A message.
+-- .handrail/ex-empty-grant.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - network_grant: ":443"
+---
+A message.
+-- .handrail/ex-writes-empty-false.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - writes_empty: false
+---
+A message.
+-- .handrail/ex-bad-unreadable.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - unreadable: nope
+---
+A message.
+-- .handrail/ex-no-fields.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - kind: shell
+---
+A message.
+-- .handrail/ex-bad-kind.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - kind: bash
+      command: ls
+---
+A message.
+-- .handrail/ex-duplicate.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - command: ls
+      command: pwd
+---
+A message.
+-- .handrail/ex-wrong-event.md --
+---
+event: PreToolUse
+examples:
+  match:
+    - prompt: hi
+---
+A message.
+-- .handrail/ex-kind-off-tool.md --
+---
+event: UserPromptSubmit
+examples:
+  match:
+    - kind: shell
+      prompt: hi
+---
+A message.
+-- .handrail/cond-wrong-event.md --
+---
+event: UserPromptSubmit
+conditions:
+  - field: command
+    contains: rm
+---
+A message.
+-- .handrail/kind-off-tool.md --
+---
+event: Stop
+kind: shell
+---
+A message.

@@ -90,14 +90,8 @@ func (p *Payload) SetField(name, value string) bool {
 			p.SetField("unreadable", "domain")
 		}
 	case "network_grant":
-		// Each grant is its own Candidate, the host alone: a leading *. stays,
-		// since it is what widens the grant.
-		g := strings.ToLower(value)
-		if rest, ok := strings.CutPrefix(g, "["); ok {
-			g, _, _ = strings.Cut(rest, "]")
-		} else {
-			g, _, _ = strings.Cut(g, ":")
-		}
+		// Each grant is its own Candidate.
+		g := grant(value)
 		if g == "" {
 			return false
 		}
@@ -110,6 +104,18 @@ func (p *Payload) SetField(name, value string) bool {
 		p.fields[name] = []candidate{{spellings: []string{value}}}
 	}
 	return true
+}
+
+// grant normalizes a network_grant to the host alone: lowercased, without its
+// port or IPv6 brackets. A leading *. stays, since it is what widens the grant.
+func grant(value string) string {
+	g := strings.ToLower(value)
+	if rest, ok := strings.CutPrefix(g, "["); ok {
+		g, _, _ = strings.Cut(rest, "]")
+	} else {
+		g, _, _ = strings.Cut(g, ":")
+	}
+	return g
 }
 
 // domainOf reads the host a url names, never resolving it: lowercased, with

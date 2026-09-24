@@ -213,6 +213,19 @@ func (p *parser) seq(ind int) (*node, error) {
 			n.seq = append(n.seq, child)
 			continue
 		}
+		// An item that opens with no key is a scalar: a url's first colon has
+		// no space after it, and a quoted value is one value, colons and all.
+		_, rest, keyed := strings.Cut(body, ":")
+		keyed = keyed && (rest == "" || rest[0] == ' ' || rest[0] == '\t')
+		if body[0] == '\'' || body[0] == '"' || !keyed {
+			s, _, err := parseScalar(body)
+			if err != nil {
+				return nil, p.errf(p.i, "%v", err)
+			}
+			n.seq = append(n.seq, &node{isScalar: true, scalar: s, line: p.i + 1 + frontmatterOffset})
+			p.i++
+			continue
+		}
 		// Rewrite "- key: value" as a plain mapping line at the column where
 		// the item's own keys align, then parse the item as that mapping.
 		col := cur + 1 + (len(t) - 1 - len(body))

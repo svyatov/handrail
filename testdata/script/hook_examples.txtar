@@ -1,0 +1,65 @@
+# At SessionStart, failing Examples in every tier in effect are one notice to
+# the human and the agent, naming the rules and their count and never an
+# Example's text. An untrusted shared tier's rules are not in effect.
+stdin start.json
+exec sh -c 'handrail hook claude SessionStart; echo code=$?'
+stdout '^code=0$'
+stdout '"systemMessage": "handrail: 2 rules fail their Examples: drifted \(global\), also-drifted \(project-personal\); run handrail check"'
+stdout '"additionalContext": "handrail: 2 rules fail their Examples: drifted \(global\), also-drifted \(project-personal\); run handrail check'
+! stdout 'sudo'
+! stdout 'shared-drifted'
+
+# A failing Example never changes enforcement: the rule enforces as written.
+stdin rm.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=2$'
+stderr 'handrail block: drifted'
+! stderr 'Examples'
+
+# One failing rule reads as one.
+rm .handrail/local/also-drifted.md
+stdin start.json
+exec handrail hook claude SessionStart
+stdout '"systemMessage": "handrail: 1 rule fails its Examples: drifted \(global\); run handrail check"'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- start.json --
+{"hook_event_name": "SessionStart", "source": "startup"}
+-- rm.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "rm -rf ~"}}
+-- home/.config/handrail/drifted.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf ~
+examples:
+  match:
+    - command: sudo rm -rf /
+---
+Never delete recursively from the home directory.
+-- .handrail/local/also-drifted.md --
+---
+event: UserPromptSubmit
+conditions:
+  - field: prompt
+    contains: ship it
+examples:
+  no_match:
+    - prompt: ship it
+---
+Not yet.
+-- .handrail/shared-drifted.md --
+---
+event: UserPromptSubmit
+conditions:
+  - field: prompt
+    contains: deploy
+examples:
+  match:
+    - prompt: hello
+---
+Not yet.

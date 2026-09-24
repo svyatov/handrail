@@ -1,0 +1,37 @@
+# A failing Example is not a validation error: sync names it, still writes the
+# hooks, and exits 1. An untrusted shared tier's Examples run too.
+exec sh -c 'handrail sync; echo code=$?'
+stdout '^code=1$'
+stderr 'drifted\.md: line 11: match example fails: command="sudo rm -rf /"'
+stderr 'shared\.md: line 8: match example fails: command="git push"'
+stdout 'claude: wrote 6 hook entries'
+exists home/.claude/settings.json
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- home/.claude/.keep --
+-- .handrail/local/drifted.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf ~
+examples:
+  match:
+    - command: rm -rf ~
+    - command: sudo rm -rf /
+---
+Never delete recursively from the filesystem root.
+-- .handrail/shared.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    starts_with: git push --force
+examples:
+  match:
+    - command: git push
+---
+No force pushes.

@@ -2,19 +2,23 @@
 exec sh -c 'handrail import hookify; echo code=$?'
 stdout '^code=0$'
 ! stderr .
-stdout '^8 imported, 0 skipped$'
+stdout '^7 imported, 1 skipped$'
 
-# Every event maps: bash, file, prompt, stop, and all inferred from the fields.
+# Every event maps: bash, file, prompt, and all inferred from the fields.
 cmp .handrail/local/block-dangerous-rm.md want/block-dangerous-rm.md
 cmp .handrail/local/warn-console-log.md want/warn-console-log.md
 cmp .handrail/local/warn-sensitive-files.md want/warn-sensitive-files.md
 cmp .handrail/local/no-ship-it.md want/no-ship-it.md
-cmp .handrail/local/stop-todo.md want/stop-todo.md
 cmp .handrail/local/infer-shell.md want/infer-shell.md
 cmp .handrail/local/writes-only.md want/writes-only.md
 cmp .handrail/local/disabled-lockfile.md want/disabled-lockfile.md
 
 stdout 'imported \.claude/hookify\.block-dangerous-rm\.local\.md -> \.handrail/local/block-dangerous-rm\.md'
+
+# A stop pattern reads the agent's message, a field Stop does not carry yet,
+# so the converted rule could never fire and is not written.
+stdout 'skipped  \.claude/hookify\.stop-todo\.local\.md: converted rule is invalid: line 6: Stop never carries content'
+! exists .handrail/local/stop-todo.md
 
 # The converted tier is a valid ruleset, so the import needs no hand-fixing.
 exec sh -c 'handrail check; echo code=$?'
@@ -130,15 +134,6 @@ pattern: TODO
 action: block
 ---
 
-Finish the TODOs before stopping.
--- want/stop-todo.md --
----
-event: Stop
-action: block
-conditions:
-  - field: content
-    matches: '(?i)TODO'
----
 Finish the TODOs before stopping.
 -- .claude/hookify.infer-shell.local.md --
 ---
