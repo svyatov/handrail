@@ -18,8 +18,8 @@ stdout '^ok +codex: 6 hook entries current$'
 # Degradations and fail-open quirks are reprintable here, not only at sync time.
 stdout '^note +claude: block degraded to warn for late: Claude Code has no denial to give on PostToolUse$'
 stdout '^note +claude: hook errors and timeouts fail open'
-stdout '^note +codex: codex exec --ignore-rules bypasses execpolicy'
-! stdout 'claude: codex exec'
+stdout '^note +codex: non-managed hooks need a one-time trust review'
+! stdout 'claude: non-managed hooks'
 
 # Tier discovery for the current repo, with the directory each tier was read
 # from: a wrong root is the other half of "why is nothing firing".

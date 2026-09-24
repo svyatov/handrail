@@ -7,3 +7,10 @@ stderr 'Usage: handrail'
 exec sh -c 'handrail; echo code=$?'
 stdout '^code=1$'
 stderr 'Usage: handrail'
+
+# advise is gone with the Advisor (ADR 0018): handrail has one enforcement
+# path, so the name is unknown and the usage no longer lists it.
+exec sh -c 'handrail advise; echo code=$?'
+stdout '^code=1$'
+stderr 'unknown command "advise"'
+! stderr '^  advise'

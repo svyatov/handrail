@@ -27,14 +27,13 @@ grep 'my-own.sh' home/.codex/hooks.json
 stdout 'codex: block degraded to warn for no-yolo: Codex CLI cannot fail closed on UserPromptSubmit before the model request \(upstream #33630\)'
 stdout 'codex: non-managed hooks need a one-time trust review, and --dangerously-bypass-hook-trust skips that review rather than the hooks'
 stdout 'codex: an enterprise allow_managed_hooks_only requirement ignores user-level hooks'
-stdout 'codex: codex exec --ignore-rules bypasses execpolicy'
 stdout 'codex: hook errors and timeouts fail open'
 
 # The same rule keeps its teeth on Claude Code, which can deny there.
 ! stdout 'claude: block degraded to warn for no-yolo'
 
 # Each harness is reported under its own name, and only its own caveats.
-! stdout 'claude: codex exec'
+! stdout 'claude: non-managed hooks'
 ! stdout 'codex: disableAllHooks'
 
 # $CODEX_HOME moves the config Codex reads, so sync follows it: writing to

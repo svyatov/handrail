@@ -75,7 +75,6 @@ Starting from nothing, the sequence is:
 | `check` | Validate every tier and print the effective ruleset, annotated with tier, shadowing, and disabling. |
 | `test <event>` | Dry-run one event against the rules. Exit 2 when the outcome is block. |
 | `sync` | Write handrail's hook entries into every detected harness. The plugin runs this for you after a fresh install. |
-| `advise [rule]` | Report which rules also translate into a native harness entry, such as a Claude Code permission deny, for you to paste into your own config. |
 | `trust` | Grant this repo's committed `.handrail/` rules permission to take effect. |
 | `import hookify` | Convert upstream hookify rule files into personal rules, reporting anything the format cannot express. |
 | `doctor` | Diagnose the install offline. The first thing to run when nothing fires. |

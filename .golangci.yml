@@ -29,9 +29,9 @@ linters:
 
   settings:
     depguard:
-      # "Zero third-party runtime dependencies" is a promise the spec makes and
-      # nothing else enforced. An allow list rather than a deny list, so a new
-      # import fails without anyone remembering to forbid it first.
+      # The runtime dependency budget (ADR 0011) is an allow list rather than a
+      # deny list, so a new import fails without anyone remembering to forbid
+      # it first. The hook path spawns no process, so os/exec is denied too.
       rules:
         runtime:
           files:
@@ -40,8 +40,8 @@ linters:
             - $gostd
             - github.com/svyatov/handrail
           deny:
-            - pkg: "!$gostd"
-              desc: the binary depends on the standard library only
+            - pkg: os/exec
+              desc: the hook path spawns no process
         test:
           files:
             - $test

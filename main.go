@@ -31,7 +31,6 @@ Commands:
   check     Validate the rules and print the effective ruleset
   test      Dry-run a synthetic payload against the rules
   trust     Grant this repo's Project-shared rules
-  advise    Recommend native harness entries for the rules that translate
   import    Convert upstream hookify rules into Project-personal rules
   doctor    Diagnose this machine's install, offline
   version   Print version, commit, and build date
@@ -76,8 +75,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdTest(args[1:], stdin, stdout, stderr)
 	case "trust":
 		return cmdTrust(args[1:], stdout, stderr)
-	case "advise":
-		return cmdAdvise(args[1:], stdout, stderr)
 	case "import":
 		return cmdImport(args[1:], stdout, stderr)
 	case "doctor":
@@ -301,110 +298,6 @@ func cmdTrust(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-type adviceOutput struct {
-	Rule          string   `json:"rule"`
-	Tier          string   `json:"tier"`
-	Harness       string   `json:"harness"`
-	Mechanism     string   `json:"mechanism"`
-	Entry         string   `json:"entry"`
-	Location      string   `json:"location"`
-	ScopeWidening *string  `json:"scope_widening"`
-	Caveats       []string `json:"caveats"`
-}
-
-// cmdAdvise is the Advisor: it recommends promoting a rule to a harness-native
-// mechanism where the matcher translates exactly, and stops there. Nothing is
-// written, and an accepted entry becomes the user's own config, which handrail
-// never owns, updates, or garbage-collects (ADR 0005).
-func cmdAdvise(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("advise", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	only := fs.String("harness", "", "advise only for this harness")
-	asJSON := fs.Bool("json", false, "print the advice as JSON")
-
-	// The rule name is positional and leads, as test's event does: the stdlib
-	// flag package stops at the first non-flag argument.
-	var name string
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		name, args = args[0], args[1:]
-	}
-	if err := fs.Parse(args); err != nil {
-		return 1
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "handrail advise: unexpected argument %q\n", fs.Arg(0))
-		return 1
-	}
-	if *only != "" {
-		if _, ok := harness.Lookup(*only); !ok {
-			fmt.Fprintf(stderr, "handrail advise: unknown harness %q; known: %s\n",
-				*only, strings.Join(harness.Names(), ", "))
-			return 1
-		}
-	}
-
-	// An authoring-time surface, so it is strict like check and test.
-	rs, code := loadValidRules(stderr)
-	if code != 0 {
-		return code
-	}
-
-	// Advice is about what is live: a shadowed or disabled rule enforces
-	// nothing, so promoting it would install a deny nothing asked for.
-	var targets []*rule.Rule
-	for _, r := range rs.Effective() {
-		if name != "" && r.Name != name {
-			continue
-		}
-		targets = append(targets, r)
-	}
-	if name != "" && len(targets) == 0 {
-		fmt.Fprintf(stderr, "handrail advise: no enabled, unshadowed rule named %q\n", name)
-		return 1
-	}
-
-	out := []adviceOutput{}
-	for _, r := range targets {
-		for _, a := range harness.Adapters() {
-			if *only != "" && a.Name != *only {
-				continue
-			}
-			adv, ok := a.Advise(r)
-			if !ok {
-				continue
-			}
-			out = append(out, adviceOutput{
-				Rule: r.Name, Tier: r.Tier, Harness: a.Name,
-				Mechanism: adv.Mechanism, Entry: adv.Entry, Location: adv.Location,
-				ScopeWidening: scopeNote(adv.WidensScope, rs.Root), Caveats: adv.Caveats,
-			})
-		}
-	}
-
-	if *asJSON {
-		return writeJSON(stdout, stderr, out)
-	}
-	if len(out) == 0 {
-		fmt.Fprintln(stdout, "handrail advise: no rule translates to a native entry")
-		return 0
-	}
-	for _, adv := range out {
-		fmt.Fprintf(stdout, "%s  %s  %s  %s\n", adv.Rule, adv.Tier, adv.Harness, adv.Mechanism)
-		fmt.Fprintf(stdout, "  add to %s:\n", adv.Location)
-		for line := range strings.SplitSeq(adv.Entry, "\n") {
-			fmt.Fprintf(stdout, "    %s\n", line)
-		}
-		if adv.ScopeWidening != nil {
-			fmt.Fprintf(stdout, "  scope: %s\n", *adv.ScopeWidening)
-		}
-		for _, c := range adv.Caveats {
-			fmt.Fprintf(stdout, "  caveat: %s\n", c)
-		}
-		fmt.Fprintln(stdout)
-	}
-	return 0
-}
-
 // cmdImport is the one-shot converter from another tool's rules. It writes into
 // the Project-personal tier, which is where somebody else's guardrails belong
 // until their new owner has read them: nothing lands in a committed tier, and
@@ -472,17 +365,6 @@ func relTo(root, path string) string {
 		return path
 	}
 	return rel
-}
-
-// scopeNote renders what a promotion changes about a rule's reach. Whether the
-// entry widens it is the Advisor's answer, because only the Adapter knows how
-// far its mechanism reaches; naming the repo is this side's job.
-func scopeNote(widens bool, root string) *string {
-	if !widens {
-		return nil
-	}
-	s := fmt.Sprintf("this rule applies only in %s, and the entry applies in every repo on this machine", root)
-	return &s
 }
 
 // cmdSync installs handrail into the machine's harnesses. It is per-machine,

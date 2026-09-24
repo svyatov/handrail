@@ -5,27 +5,24 @@ package harness
 import (
 	"encoding/json"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/svyatov/handrail/internal/rule"
 )
 
 // Adapter is one harness's translation knowledge: where its user-level config
-// lives, what it calls itself in a report, what it cannot be made to do, and
-// what the Advisor can promote a rule into.
+// lives, what it calls itself in a report, and what it cannot be made to do.
 // The identifier is the harness's binary name, which is what users type.
 type Adapter struct {
 	Name string
 	// Quirks are the behaviours a user should know about but handrail cannot
 	// change. Reported next to the degradations, for the same reason.
 	Quirks       []string
-	title        string    // how the harness names itself in a report
-	dir          string    // user-level directory, under the home directory
-	homeEnv      string    // the variable that relocates that directory, if the harness has one
-	file         string    // the one config file sync writes inside it
-	blocksPrompt bool      // whether a denial on UserPromptSubmit is honoured
-	promotion    promotion // what the Advisor can promote a rule into, absent if nothing
+	title        string // how the harness names itself in a report
+	dir          string // user-level directory, under the home directory
+	homeEnv      string // the variable that relocates that directory, if the harness has one
+	file         string // the one config file sync writes inside it
+	blocksPrompt bool   // whether a denial on UserPromptSubmit is honoured
 }
 
 // Both harnesses read the same Claude-shaped hook config and speak the same
@@ -40,25 +37,13 @@ var adapters = []Adapter{
 			"hook errors and timeouts fail open, so a broken guardrail never stops the session",
 			"disableAllHooks and cloud sessions bypass handrail entirely",
 		},
-		// Permission rules live in the same file sync writes, under a different key.
-		promotion: promotion{mechanism: "permissions.deny", file: "settings.json", scope: scopeUser, entries: claudeEntries},
 	},
 	{
 		Name: "codex", title: "Codex CLI", dir: ".codex", homeEnv: "CODEX_HOME", file: "hooks.json",
-		promotion: promotion{
-			mechanism: "execpolicy prefix_rule",
-			file:      filepath.Join("rules", "default.rules"),
-			scope:     scopeUser,
-			caveats: []string{
-				"codex exec --ignore-rules bypasses execpolicy, so the backstop is absent there while the rule still fires",
-			},
-			entries: codexEntries,
-		},
 		Quirks: []string{
 			"hook errors and timeouts fail open, so a broken guardrail never stops the session",
 			"non-managed hooks need a one-time trust review, and --dangerously-bypass-hook-trust skips that review rather than the hooks",
 			"an enterprise allow_managed_hooks_only requirement ignores user-level hooks, handrail's included",
-			"codex exec --ignore-rules bypasses execpolicy, so a rule promoted by advise loses its fail-closed backstop there",
 		},
 	},
 }
