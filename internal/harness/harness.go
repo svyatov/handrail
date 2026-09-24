@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/svyatov/handrail/internal/rule"
@@ -145,16 +146,12 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		}
 	case "file_edit":
 		set(&p, "path", in.ToolInput, "file_path", "notebook_path")
-		set(&p, "content", in.ToolInput, "content", "new_string", "new_source")
+		set(&p, "content", in.ToolInput, textKeys[:]...)
 		set(&p, "removed_content", in.ToolInput, "old_string")
-		// content stays absent when empty, so the one fact that absence would
-		// hide gets its own field. With content absent, a text key the call
-		// carries as a string carries "": the call writes no text.
-		for _, k := range []string{"content", "new_string", "new_source"} {
-			if _, ok := in.ToolInput[k].(string); ok && p.Has("path") && !p.Has("content") {
-				p.SetField("writes_empty", "true")
-			}
-		}
+		writesEmpty(&p, slices.ContainsFunc(textKeys[:], func(k string) bool {
+			_, ok := in.ToolInput[k].(string)
+			return ok
+		}))
 		// Codex passes apply_patch as a shell-like tool, so the whole edit
 		// arrives as one patch envelope under command, which its hooks reference
 		// states outright: "Bash and apply_patch use tool_input.command". Left
@@ -207,6 +204,19 @@ func classify(tool string) string {
 	return "other"
 }
 
+// textKeys are the tool input keys a file edit carries its written text under,
+// in the order content reads them.
+var textKeys = [...]string{"content", "new_string", "new_source"}
+
+// writesEmpty sets writes_empty on a call that names the text it writes and
+// whose text was read as empty, the one fact content's absence would otherwise
+// hide. A call that never names its text, or names no path, says nothing.
+func writesEmpty(p *rule.Payload, namesText bool) {
+	if namesText && p.Has("path") && !p.Has("content") {
+		p.SetField("writes_empty", "true")
+	}
+}
+
 // patchPayloads reads a patch envelope as one file_edit payload per file
 // section, each holding the file it names and the lines it adds. path and
 // content must describe the same edit: a content condition answering for one
@@ -219,7 +229,7 @@ func classify(tool string) string {
 func patchPayloads(event, dir, patch string) []rule.Payload {
 	var edits []rule.Payload
 	var paths, added, removed []string
-	var deletes bool
+	var section string // the verb of the header that opened it
 	done := func() {
 		if paths == nil {
 			return
@@ -228,11 +238,12 @@ func patchPayloads(event, dir, patch string) []rule.Payload {
 		p.SetRename(paths[0], paths[len(paths)-1])
 		p.SetField("content", strings.Join(added, "\n"))
 		p.SetField("removed_content", strings.Join(removed, "\n"))
-		if deletes {
+		if section == "Delete File:" {
 			p.SetField("deletes", "true")
-		} else if len(added) == 0 && p.Has("path") {
-			p.SetField("writes_empty", "true")
 		}
+		// An added file names its whole text and an edit that removes lines
+		// names what replaces them; a bare rename names no text at all.
+		writesEmpty(&p, section == "Add File:" || len(removed) > 0)
 		edits = append(edits, p)
 		paths, added, removed = nil, nil, nil
 	}
@@ -255,7 +266,7 @@ func patchPayloads(event, dir, patch string) []rule.Payload {
 			paths = append(paths, file)
 		default:
 			done()
-			paths, deletes = []string{file}, verb == "Delete File:"
+			paths, section = []string{file}, verb
 		}
 	}
 	done()

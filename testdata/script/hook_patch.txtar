@@ -73,6 +73,15 @@ exec handrail hook codex PreToolUse
 stdout 'handrail warn: writes-empty'
 stdout 'Matched files:\\n  app.py\\n  empty.txt'
 
+# A lone blank + line joins to no text, so it writes empty as well; a rename
+# with no hunk writes nothing and empties nothing, so it does not.
+stdin patch-blank.json
+exec handrail hook codex PreToolUse
+stdout 'handrail warn: writes-empty'
+stdin rename-only.json
+exec handrail hook codex PreToolUse
+! stdout 'writes-empty'
+
 # A call that omits the text it writes says nothing about it either way.
 stdin write-omitted.json
 exec handrail hook claude PreToolUse
@@ -165,6 +174,18 @@ ref: refs/heads/main
   "hook_event_name": "PreToolUse",
   "tool_name": "apply_patch",
   "tool_input": {"command": "*** Begin Patch\n*** Update File: app.py\n@@\n-debug = True\n*** Add File: empty.txt\n*** End Patch\n"}
+}
+-- patch-blank.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Add File: blank.txt\n+\n*** End Patch\n"}
+}
+-- rename-only.json --
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {"command": "*** Begin Patch\n*** Update File: notes/a.txt\n*** Move to: notes/b.txt\n*** End Patch\n"}
 }
 -- write-omitted.json --
 {
