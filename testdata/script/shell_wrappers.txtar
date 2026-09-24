@@ -92,6 +92,21 @@ exec handrail test PreToolUse --field 'command=command -pV rm'
 exec handrail test PreToolUse --field 'command=sudo -e rm'
 ! stdout 'rm-start'
 
+# Review fixes to the tables: every flag upstream documents, with its arity.
+exec handrail test PreToolUse --field 'command=flock -E 3 /tmp/lock rm -rf /'
+stdout '^warn  rm-root  global$'
+! stdout 'fail-closed'
+exec handrail test PreToolUse --field 'command=sudo -B -N -a auth -c class rm -rf /'
+stdout '^warn  rm-root  global$'
+! stdout 'fail-closed'
+# A GNU optional argument takes the rest of its word and never the next one.
+exec handrail test PreToolUse --field 'command=xargs -i rm -rf /'
+stdout '^warn  rm-root  global$'
+! stdout 'fail-closed'
+exec handrail test PreToolUse --field 'command=xargs -i{} -l1 rm -rf /'
+stdout '^warn  rm-root  global$'
+! stdout 'fail-closed'
+
 -- home/.config/handrail/rm-root.md --
 ---
 event: PreToolUse

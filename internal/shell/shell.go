@@ -4,6 +4,7 @@
 package shell
 
 import (
+	"slices"
 	"strings"
 
 	"mvdan.cc/sh/v3/syntax"
@@ -31,8 +32,9 @@ type reader struct {
 	cands [][]string
 	// gaveUp is true once the program runs code handrail cannot read.
 	gaveUp bool
-	// piped holds the statements whose standard input is a pipe.
-	piped map[*syntax.Stmt]bool
+	// fed holds the statements whose standard input comes from outside the
+	// call: a pipe, or the pipe or input redirect of a group that holds them.
+	fed map[*syntax.Stmt]bool
 	// depth is how many re-parses deep the program is.
 	depth int
 }
@@ -47,16 +49,26 @@ func (r *reader) read(code string) bool {
 	if err != nil {
 		return false
 	}
-	r.line, r.piped = code, map[*syntax.Stmt]bool{}
+	r.line, r.fed = code, map[*syntax.Stmt]bool{}
 	syntax.Walk(f, func(n syntax.Node) bool {
 		switch n := n.(type) {
 		case *syntax.BinaryCmd:
 			// A pipeline nests to the left, so each pipe's right side is
 			// every piped statement.
 			if n.Op == syntax.Pipe || n.Op == syntax.PipeAll {
-				r.piped[n.Y] = true
+				r.fed[n.Y] = true
 			}
 		case *syntax.Stmt:
+			// The walk meets a group before the statements it holds, and
+			// each of them reads the group's input.
+			if _, call := n.Cmd.(*syntax.CallExpr); !call && (r.fed[n] || input(n)) {
+				syntax.Walk(n.Cmd, func(m syntax.Node) bool {
+					if st, ok := m.(*syntax.Stmt); ok {
+						r.fed[st] = true
+					}
+					return true
+				})
+			}
 			r.stmt(n)
 		case *syntax.Redirect:
 			r.redirect(n)
@@ -64,6 +76,17 @@ func (r *reader) read(code string) bool {
 		return true
 	})
 	return true
+}
+
+// input reports whether a statement redirects its standard input.
+func input(st *syntax.Stmt) bool {
+	return slices.ContainsFunc(st.Redirs, func(rd *syntax.Redirect) bool {
+		switch rd.Op {
+		case syntax.RdrIn, syntax.RdrInOut, syntax.DplIn, syntax.Hdoc, syntax.DashHdoc, syntax.WordHdoc:
+			return rd.N == nil || rd.N.Value == "0"
+		}
+		return false
+	})
 }
 
 // code reads code a listed shell or Wrapper runs, as $() contents are read.

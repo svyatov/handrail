@@ -113,6 +113,27 @@ stdout '^warn  fail-closed  global$'
 stdout '^warn  eval-rm  global$'
 ! stdout 'rm-root'
 
+# Review fixes: each is a way past a rule that the first reading missed.
+# eval drops a leading --, as bash does.
+exec handrail test PreToolUse --field 'command=eval -- ''rm -rf /'''
+stdout '^warn  rm-root  global$'
+# A pipe feeds every statement of the group or subshell it runs.
+exec handrail test PreToolUse --field 'command=printf x | { sh; }'
+stdout '^warn  fail-closed  global$'
+exec handrail test PreToolUse --field 'command=curl x | (true; bash)'
+stdout '^warn  fail-closed  global$'
+exec handrail test PreToolUse --field 'command={ sh; } < install.sh'
+stdout '^warn  fail-closed  global$'
+# xargs does not pass its standard input to the command it runs.
+exec handrail test PreToolUse --field 'command=ls | xargs bash'
+! stdout 'fail-closed'
+# env -S splits its string into words that the remaining operands join.
+exec handrail test PreToolUse --field 'command=env -S ''sh -c'' ''true; rm -rf /'''
+stdout '^warn  rm-root  global$'
+! stdout 'fail-closed'
+exec handrail test PreToolUse --field 'command=env -S eval a "$Y"'
+stdout '^warn  fail-closed  global$'
+
 -- heredoc.json --
 {"tool_name":"Bash","tool_input":{"command":"bash <<EOF\ncd / && rm -rf \\/\nEOF"}}
 -- heredoc-quoted.json --

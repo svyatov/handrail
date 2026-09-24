@@ -16,6 +16,9 @@ type call struct {
 	words []string // each argument's unquoted form
 	to    syntax.Node
 	seen  map[int]bool // the words a Candidate already starts at
+	// detached is true once a level runs under a Wrapper that gives its
+	// command none of the call's standard input.
+	detached bool
 }
 
 // level adds the command that runs from word i up to word j as a Candidate,
@@ -48,6 +51,9 @@ func (r *reader) follow(c *call, i, j int) {
 		r.shell(c, i+1, j)
 		return
 	case "eval":
+		if i+1 < j && c.words[i+1] == "--" {
+			i++
+		}
 		r.code(c.text(i+1, j))
 		return
 	case "find":
@@ -59,6 +65,7 @@ func (r *reader) follow(c *call, i, j int) {
 		g, k = wrappers[name+" "+c.words[k]], k+1
 	}
 	if g != nil {
+		c.detached = c.detached || g.detaches
 		s := scan{r: r, c: c, g: g, j: j, done: map[int]bool{}}
 		s.from(k)
 	}
@@ -125,9 +132,12 @@ func (r *reader) shell(c *call, i, j int) {
 
 // stdin reads what a shell with no script reads from its standard input. A
 // literal heredoc or herestring is code the call holds; a pipe or a file is
-// not.
+// not. A shell xargs runs reads none of the call's input.
 func (r *reader) stdin(c *call) {
-	if r.piped[c.st] {
+	if c.detached {
+		return
+	}
+	if r.fed[c.st] {
 		r.gaveUp = true
 	}
 	for _, rd := range c.st.Redirs {
@@ -182,7 +192,8 @@ func literal(w *syntax.Word) bool {
 // follows the flags.
 type grammar struct {
 	// short lists the short flags as getopt does: a letter followed by ':'
-	// takes an argument, and one followed by '?' may or may not.
+	// takes an argument, one followed by '::' takes the rest of its word if
+	// any, and one followed by '?' may or may not take one.
 	short string
 	// long lists the long flags, marked the same way with a trailing '=' or
 	// '?'.
@@ -207,16 +218,25 @@ type grammar struct {
 	// dashC is true for a program that passes the argument of a -c or
 	// --command after its operands to sh -c, as flock does.
 	dashC bool
+	// detaches is true for a program that gives its command none of its own
+	// standard input, as xargs reads it for arguments.
+	detaches bool
+	// splits is true for a program whose script flag's argument is split into
+	// the first words of its command, as env -S's is.
+	splits bool
 }
 
-// arity is how many arguments a flag takes: none, one, or either, for a flag
-// the implementations disagree on or the table lacks.
+// arity is how many arguments a flag takes: none, one, either, for a flag
+// the implementations disagree on or the table lacks, or attached, getopt's
+// optional argument, which is the rest of the flag's word and never the next
+// word.
 type arity byte
 
 const (
 	none arity = iota
 	one
 	either
+	attached
 )
 
 var wrappers = map[string]*grammar{
@@ -230,8 +250,8 @@ var wrappers = map[string]*grammar{
 	"noglob":  {},
 	"exec":    {short: "a:cl"},
 	"sudo": {
-		short:   "AbEeHh?iKklnPSsVvC:D:g:p:R:r:T:t:U:u:",
-		long:    "askpass background bell close-from= chdir= preserve-env edit group= set-home help host= login remove-timestamp reset-timestamp list non-interactive preserve-groups prompt= chroot= role= stdin shell type= command-timeout= other-user= user= version validate",
+		short:   "ABbEeHh?iKklNnPSsVva:c:C:D:g:p:R:r:T:t:U:u:",
+		long:    "askpass auth-type= background bell close-from= chdir= preserve-env edit group= set-home help host= login login-class= remove-timestamp reset-timestamp list no-update non-interactive preserve-groups prompt= chroot= role= stdin shell type= command-timeout= other-user= user= version validate",
 		assigns: true,
 		stop:    "e edit",
 	},
@@ -240,11 +260,12 @@ var wrappers = map[string]*grammar{
 		long:    "ignore-environment null unset= chdir= split-string= ignore-signal default-signal block-signal list-signal-handling debug help version",
 		assigns: true,
 		script:  "S split-string",
+		splits:  true,
 	},
 	"doas":   {short: "a:C:Lnsu:"},
 	"setsid": {short: "cfwhV", long: "ctty fork wait help version"},
 	"flock": {
-		short:    "eEFhnosuVw:x",
+		short:    "eE:FhnosuVw:x",
 		long:     "shared exclusive unlock nonblock nb no-fork close wait= timeout= conflict-exit-code= verbose help version",
 		operands: 1,
 		dashC:    true,
@@ -263,8 +284,9 @@ var wrappers = map[string]*grammar{
 		script:  "c command session-command",
 	},
 	"xargs": {
-		short: "0a:d:E:e?I:i?J:L:l?n:oP:prR:S:s:tx",
-		long:  "null arg-file= delimiter= eof replace max-lines max-args= max-procs= interactive no-run-if-empty max-chars= verbose exit open-tty process-slot-var= show-limits help version",
+		short:    "0a:d:E:e::I:i::J:L:l::n:oP:prR:S:s:tx",
+		long:     "null arg-file= delimiter= eof replace max-lines max-args= max-procs= interactive no-run-if-empty max-chars= verbose exit open-tty process-slot-var= show-limits help version",
+		detaches: true,
 	},
 	"mise exec":   mise,
 	"mise x":      mise,
@@ -312,6 +334,8 @@ func marked(rest string) arity {
 	switch {
 	case rest == "":
 		return none
+	case strings.HasPrefix(rest, "::"):
+		return attached
 	case rest[0] == ':' || rest[0] == '=':
 		return one
 	case rest[0] == '?':
@@ -329,14 +353,22 @@ type scan struct {
 	g    *grammar
 	j    int
 	done map[int]bool
+	// split is the string a splitting flag gave, and splitLiteral whether the
+	// call holds it literally.
+	split        string
+	splitLiteral bool
 }
 
 // from reads the Wrapper's arguments from word k.
 func (s *scan) from(k int) {
-	if k >= s.j || s.done[k] {
+	if s.done[k] {
 		return
 	}
 	s.done[k] = true
+	if k >= s.j {
+		s.operands(k)
+		return
+	}
 	w := s.c.words[k]
 	switch {
 	case w == "--":
@@ -379,6 +411,9 @@ func (s *scan) cluster(k int, w string) {
 		if a == none {
 			continue
 		}
+		if a == attached {
+			break
+		}
 		if i == len(w)-1 {
 			s.from(k + 2)
 		} else {
@@ -407,14 +442,24 @@ func (g *grammar) is(list, full string) bool {
 }
 
 // script reads a flag's argument as code: the rest of word k when attached,
-// else the next word.
+// else the next word. A program that splits it into the first words of its
+// command, as env -S does, keeps it for the operands that follow.
 func (s *scan) script(k int, rest string, attached bool) {
+	var text string
+	var lit bool
 	switch {
 	case attached:
-		s.r.code(rest, literal(s.c.args[k]))
+		text, lit = rest, literal(s.c.args[k])
 	case k+1 < s.j:
-		s.r.code(s.c.text(k+1, k+2))
+		text, lit = s.c.text(k+1, k+2)
+	default:
+		return
 	}
+	if s.g.splits {
+		s.split, s.splitLiteral = text, lit
+		return
+	}
+	s.r.code(text, lit)
 }
 
 // operands skips what comes before the command and adds its level. env reads
@@ -427,6 +472,15 @@ func (s *scan) operands(k int) {
 			break
 		}
 		k++
+	}
+	if s.split != "" {
+		words, lit := []string{s.split}, s.splitLiteral
+		for i := k; i < s.j; i++ {
+			quoted, _ := syntax.Quote(s.c.words[i], syntax.LangBash)
+			words = append(words, quoted)
+			lit = lit && literal(s.c.args[i])
+		}
+		s.r.code(strings.Join(words, " "), lit)
 	}
 	switch {
 	case k >= s.j:
