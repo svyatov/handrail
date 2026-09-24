@@ -53,10 +53,10 @@ func TestEveryOperatorTheParserAcceptsAlsoMatches(t *testing.T) {
 	}
 }
 
-// parseOne builds a Term the way a rule file does, so the compile switch is on
+// parseOne builds a one-Term rule the way a rule file does, so the compile switch is on
 // the path too: an operator needing a regexp and not getting one panics in
 // matches rather than quietly missing.
-func parseOne(t *testing.T, op, value string) *Term {
+func parseOne(t *testing.T, op, value string) *Rule {
 	t.Helper()
 	doc := strings.Join([]string{
 		"---",
@@ -75,5 +75,5 @@ func parseOne(t *testing.T, op, value string) *Term {
 	if len(r.Conditions) != 1 || len(r.Conditions[0].Terms) != 1 {
 		t.Fatalf("Parse(%s) produced %d conditions, want one term", op, len(r.Conditions))
 	}
-	return &r.Conditions[0].Terms[0]
+	return r
 }
