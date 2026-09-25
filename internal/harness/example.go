@@ -82,22 +82,27 @@ func setFields(p *rule.Payload, fields []rule.ExampleField, from []Adapter) (com
 		p.Unset(f.Name)
 	}
 	for _, f := range fields {
-		switch {
-		case f.Name == "kind":
-		case f.Name == "tool":
-			for _, a := range from {
-				setTool(p, a.toolNames(f.Values[0]))
-			}
-		case f.Name == "path" && len(f.Values) == 2:
-			p.SetRename(f.Values[0], f.Values[1])
-		default:
-			for _, v := range f.Values {
-				p.SetField(f.Name, v)
-			}
-			if f.Name == "command" {
-				command = f.Values[0]
-			}
+		setField(p, f, from)
+		if f.Name == "command" {
+			command = f.Values[0]
 		}
 	}
 	return command
+}
+
+// setField writes one field onto p as the Adapters from carry it.
+func setField(p *rule.Payload, f rule.ExampleField, from []Adapter) {
+	switch {
+	case f.Name == "kind":
+	case f.Name == "tool":
+		for _, a := range from {
+			setTool(p, a.toolNames(f.Values[0]))
+		}
+	case f.Name == "path" && len(f.Values) == 2:
+		p.SetRename(f.Values[0], f.Values[1])
+	default:
+		for _, v := range f.Values {
+			p.SetField(f.Name, v)
+		}
+	}
 }
