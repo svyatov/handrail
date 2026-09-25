@@ -124,11 +124,7 @@ func (r *reader) read(code string) bool {
 				r.fed[n.Y] = true
 			}
 		case *syntax.Stmt:
-			// The walk meets a group before the statements it holds, and
-			// each of them reads the group's input.
-			if _, call := n.Cmd.(*syntax.CallExpr); !call && (r.fed[n] || input(n)) {
-				r.feed(n.Cmd)
-			}
+			r.feed(n)
 			r.stmt(n)
 		case *syntax.Redirect:
 			r.redirect(n)
@@ -138,9 +134,15 @@ func (r *reader) read(code string) bool {
 	return true
 }
 
-// feed marks every statement a group holds as fed.
-func (r *reader) feed(group syntax.Command) {
-	syntax.Walk(group, func(m syntax.Node) bool {
+// feed marks every statement a group holds as fed when the group itself is.
+// The walk meets a group before the statements it holds, and each of them
+// reads the group's input. A redirect alone, or a pipe with nothing after it,
+// is a statement with no command.
+func (r *reader) feed(st *syntax.Stmt) {
+	if _, call := st.Cmd.(*syntax.CallExpr); call || st.Cmd == nil || !r.fed[st] && !input(st) {
+		return
+	}
+	syntax.Walk(st.Cmd, func(m syntax.Node) bool {
 		if st, ok := m.(*syntax.Stmt); ok {
 			r.fed[st] = true
 		}
@@ -245,7 +247,8 @@ func (r *reader) command(st *syntax.Stmt, cmd *syntax.CallExpr, from, to syntax.
 // redirect adds a redirect whose target is a file. fd duplication, heredocs,
 // herestrings and the device files name no file.
 func (r *reader) redirect(rd *syntax.Redirect) {
-	if namesNoFile(rd) {
+	// A target the parser had to supply is not in the line, so it names no file.
+	if rd.Word == nil || rd.Word.Pos().IsRecovered() || namesNoFile(rd) {
 		return
 	}
 	target := r.word(rd.Word)
@@ -326,11 +329,11 @@ func pattern(part syntax.WordPart) bool {
 }
 
 // src is the line's text from the start of one node to the end of another. A
-// recovered end has no position, and a node the parser had to close runs to
-// the end of the line.
+// recovered end has no position, nor does the end of a token the parser
+// supplied, and a node the parser had to close runs to the end of the line.
 func (r *reader) src(from, to syntax.Node) string {
 	end := to.End()
-	if end.IsRecovered() {
+	if end.IsRecovered() || !end.IsValid() {
 		return r.text[from.Pos().Offset():]
 	}
 	return r.text[from.Pos().Offset():end.Offset()]
