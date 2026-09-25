@@ -22,7 +22,7 @@ stdout 'handrail block: no-secrets \(project-shared\)'
 stdout 'handrail warn: no-env-edits \(project-shared\)'
 
 # A shell rule does not reach it: apply_patch is a file edit, whatever it rides in.
-! stderr 'no-heredocs'
+! stdout 'no-heredocs'
 
 # One patch can touch several files, and each file section is its own payload:
 # the credential written into the second file blocks, and the env rule still

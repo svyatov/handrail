@@ -10,10 +10,14 @@ stderr 'ask\.md: line 5: agent_only applies only to warn'
 rm home/.config/handrail/ask.md
 
 # A repository may not whisper to the agent: in the Project-shared tier
-# agent_only is an error to check.
-exec handrail trust
+# agent_only is an error to check, before trust as after it.
 mkdir .handrail
 cp warn.md .handrail/coach.md
+! exec handrail check
+stderr 'coach\.md: agent_only is refused in the Project-shared tier'
+! exec handrail check --json
+stdout '"path": ".*coach\.md",\n +"message": "agent_only is refused in the Project-shared tier"'
+exec handrail trust
 ! exec handrail check
 stdout '^project-shared +coach +PreToolUse'
 stderr 'coach\.md: agent_only is refused in the Project-shared tier'
@@ -26,15 +30,17 @@ exec handrail hook claude PreToolUse
 stdout '"systemMessage": "handrail warn: coach \(project-shared\)"'
 
 # ...and SessionStart names it on both channels, ahead of any rule's message.
+# Shadowed or not, it is named, so the notice says what was dropped and makes
+# no claim about who hears a rule that may never fire.
 cp hello.md home/.config/handrail/hello.md
 stdin start.json
 exec handrail hook claude SessionStart
-stdout '"systemMessage": "handrail: agent_only dropped from 1 Project-shared rule, so the human hears it: coach; run handrail check\\nhandrail warn: hello \(global\)"'
-stdout '"additionalContext": "handrail: agent_only dropped from 1 Project-shared rule, so the human hears it: coach; run handrail check\\n\\nhandrail warn: hello \(global\)\\nGood morning\."'
+stdout '"systemMessage": "handrail: agent_only is refused in the Project-shared tier, so it was dropped from 1 rule: coach; run handrail check\\nhandrail warn: hello \(global\)"'
+stdout '"additionalContext": "handrail: agent_only is refused in the Project-shared tier, so it was dropped from 1 rule: coach; run handrail check\\n\\nhandrail warn: hello \(global\)\\nGood morning\."'
 cp warn.md .handrail/coach-too.md
 stdin start.json
 exec handrail hook claude SessionStart
-stdout '"systemMessage": "handrail: agent_only dropped from 2 Project-shared rules, so the human hears them: coach, coach-too; run handrail check'
+stdout '"systemMessage": "handrail: agent_only is refused in the Project-shared tier, so it was dropped from 2 rules: coach, coach-too; run handrail check'
 
 # A shared block that sets it is refused the same way, and keeps blocking: a
 # repository cannot switch its own block off with one line.

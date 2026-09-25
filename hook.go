@@ -131,7 +131,8 @@ func standingNotices(rs *rule.Ruleset, event string) []string {
 }
 
 // agentOnlyNotice names the Project-shared rules that lost agent_only, and ""
-// when none did.
+// when none did. A shadowed or dropped one is named too, so the notice says
+// what was dropped rather than who hears it.
 func agentOnlyNotice(rules []*rule.Rule) string {
 	var lost []string
 	for _, r := range rules {
@@ -142,11 +143,12 @@ func agentOnlyNotice(rules []*rule.Rule) string {
 	if len(lost) == 0 {
 		return ""
 	}
-	count := fmt.Sprintf("%d Project-shared rules, so the human hears them", len(lost))
+	count := fmt.Sprintf("%d rules", len(lost))
 	if len(lost) == 1 {
-		count = "1 Project-shared rule, so the human hears it"
+		count = "1 rule"
 	}
-	return fmt.Sprintf("handrail: agent_only dropped from %s: %s; run handrail check", count, strings.Join(lost, ", "))
+	return fmt.Sprintf("handrail: agent_only is refused in the Project-shared tier, so it was dropped from %s: %s; run handrail check",
+		count, strings.Join(lost, ", "))
 }
 
 // droppedNotice counts the Project-shared files dropped for naming a Global
