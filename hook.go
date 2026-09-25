@@ -47,19 +47,10 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// handrail's own failures never decide the event: each is declared as
 	// unreadable, where a rule may fail closed on it, and named on both channels.
 	payloads, cwd, failures := readCall(a, event, stdin)
-	// The payload names the directory the event happened in; the process's own is
-	// the fallback for a harness that leaves it out. That is process state rather
-	// than payload, so it is answered here and not in Normalize. A directory
-	// that is not there names no project, whoever named it, but the call was
-	// still read, so it keeps its kind and meets the Global tier.
-	if !filepath.IsAbs(cwd) {
-		cwd, _ = os.Getwd()
-	}
-	if fi, err := os.Stat(cwd); err != nil || !fi.IsDir() {
-		if err == nil {
-			err = fmt.Errorf("%s is not a directory", cwd)
-		}
-		cwd = ""
+	// A directory that is not there names no project, whoever named it, but the
+	// call was still read, so it keeps its kind and meets the Global tier.
+	cwd, err := eventDir(cwd)
+	if err != nil {
 		failures = append(failures, fmt.Sprintf("handrail: no working directory, so no project rule was evaluated: %v", err))
 	}
 	if failures != nil {
@@ -72,6 +63,24 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	failures = append(failures, loadNotices(rs)...)
 	agent, human := messages(a, rs, event, matched, failures)
 	return a.Deliver(event, agent, human, outcome, stdout, stderr)
+}
+
+// eventDir is the directory the event happened in, and "" with the reason when
+// that is no directory. The payload names it; the process's own is the
+// fallback for a harness that leaves it out. That is process state rather than
+// payload, so it is answered here and not in Normalize.
+func eventDir(cwd string) (string, error) {
+	if !filepath.IsAbs(cwd) {
+		cwd, _ = os.Getwd()
+	}
+	fi, err := os.Stat(cwd)
+	if err == nil && !fi.IsDir() {
+		err = fmt.Errorf("%s is not a directory", cwd)
+	}
+	if err != nil {
+		return "", err
+	}
+	return cwd, nil
 }
 
 // readCall reads the harness's payload from stdin and normalizes it. A

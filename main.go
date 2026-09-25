@@ -3,6 +3,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -34,6 +35,19 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
+// commands are the entrypoints run dispatches to. Only hook and test read
+// stdin; the rest take it to share one signature.
+var commands = map[string]func(args []string, stdin io.Reader, stdout, stderr io.Writer) int{
+	"sync":    cmdSync,
+	"hook":    cmdHook,
+	"check":   cmdCheck,
+	"test":    cmdTest,
+	"trust":   cmdTrust,
+	"import":  cmdImport,
+	"doctor":  cmdDoctor,
+	"version": cmdVersion,
+}
+
 // run is the CLI seam: every command dispatches from here, and the exit code
 // is the return value rather than an os.Exit deep in a subcommand.
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -41,27 +55,32 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprint(stderr, usage)
 		return 1
 	}
-	switch args[0] {
-	case "sync":
-		return cmdSync(args[1:], stdout, stderr)
-	case "hook":
-		return cmdHook(args[1:], stdin, stdout, stderr)
-	case "check":
-		return cmdCheck(args[1:], stdout, stderr)
-	case "test":
-		return cmdTest(args[1:], stdin, stdout, stderr)
-	case "trust":
-		return cmdTrust(args[1:], stdout, stderr)
-	case "import":
-		return cmdImport(args[1:], stdout, stderr)
-	case "doctor":
-		return cmdDoctor(args[1:], stdout, stderr)
-	case "version":
-		return cmdVersion(args[1:], stdout, stderr)
-	default:
+	cmd, ok := commands[args[0]]
+	if !ok {
 		fmt.Fprintf(stderr, "handrail: unknown command %q\n\n", args[0])
 		fmt.Fprint(stderr, usage)
 		return 1
+	}
+	return cmd(args[1:], stdin, stdout, stderr)
+}
+
+// parseFlags parses a command's flags and refuses a positional argument after
+// them, reporting whether the command may go on.
+func parseFlags(fs *flag.FlagSet, args []string, stderr io.Writer) bool {
+	if err := fs.Parse(args); err != nil {
+		return false
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "handrail %s: unexpected argument %q\n", fs.Name(), fs.Arg(0))
+		return false
+	}
+	return true
+}
+
+// reportProblems names each rule file problem on stderr.
+func reportProblems(problems []rule.Problem, stderr io.Writer) {
+	for _, p := range problems {
+		fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
 	}
 }
 
@@ -90,9 +109,7 @@ func loadValidRules(stderr io.Writer) (*rule.Ruleset, int) {
 		return nil, 1
 	}
 	if problems := rs.Invalid(); len(problems) > 0 {
-		for _, p := range problems {
-			fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
-		}
+		reportProblems(problems, stderr)
 		return nil, 1
 	}
 	return rs, 0

@@ -58,27 +58,8 @@ func TestHookColdStart(t *testing.T) {
 		t.Fatalf("building handrail: %v\n%s", err, out)
 	}
 
-	// A realistic worst case for a no-match call: every tier populated, so the
-	// run walks three directories and parses every rule before deciding nothing
-	// applies.
 	home, repo := filepath.Join(dir, "home"), filepath.Join(dir, "repo")
-	mkdirs(t, filepath.Join(repo, ".git"))
-	for _, tier := range []struct {
-		dir   string
-		name  string
-		rules int
-	}{
-		{filepath.Join(home, ".config", "handrail"), "global", 10},
-		{filepath.Join(repo, ".handrail"), "shared", 10},
-		{filepath.Join(repo, ".handrail", "local"), "personal", 5},
-	} {
-		mkdirs(t, tier.dir)
-		for i := range tier.rules {
-			writeFile(t, filepath.Join(tier.dir, fmt.Sprintf("%s-%d.md", tier.name, i)),
-				"---\nevent: PreToolUse\nkind: shell\nconditions:\n  - field: command\n"+
-					fmt.Sprintf("    matches: ^never-%d-\\w+$\n---\nA rule that does not match.\n", i))
-		}
-	}
+	populateTiers(t, home, repo)
 
 	// The same redirection sandbox gives the scripts, for the same reason: this
 	// execs a real binary, so a missing variable would land in the real user's
@@ -123,6 +104,30 @@ func TestHookColdStart(t *testing.T) {
 	if median := times[len(times)/2]; median > hookBudget {
 		t.Errorf("no-match hook took %v, over the %v budget (best %v, worst %v)",
 			median, hookBudget, times[0], times[len(times)-1])
+	}
+}
+
+// populateTiers is a realistic worst case for a no-match call: every tier
+// populated, so the run walks three directories and parses every rule before
+// deciding nothing applies.
+func populateTiers(t *testing.T, home, repo string) {
+	t.Helper()
+	mkdirs(t, filepath.Join(repo, ".git"))
+	for _, tier := range []struct {
+		dir   string
+		name  string
+		rules int
+	}{
+		{filepath.Join(home, ".config", "handrail"), "global", 10},
+		{filepath.Join(repo, ".handrail"), "shared", 10},
+		{filepath.Join(repo, ".handrail", "local"), "personal", 5},
+	} {
+		mkdirs(t, tier.dir)
+		for i := range tier.rules {
+			writeFile(t, filepath.Join(tier.dir, fmt.Sprintf("%s-%d.md", tier.name, i)),
+				"---\nevent: PreToolUse\nkind: shell\nconditions:\n  - field: command\n"+
+					fmt.Sprintf("    matches: ^never-%d-\\w+$\n---\nA rule that does not match.\n", i))
+		}
 	}
 }
 

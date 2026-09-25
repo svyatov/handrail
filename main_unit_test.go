@@ -24,12 +24,12 @@ func TestCommandsReportAnUnwritableStdout(t *testing.T) {
 		name string
 		run  func(stdout, stderr io.Writer) int
 	}{
-		{"check", func(stdout, stderr io.Writer) int { return cmdCheck(nil, stdout, stderr) }},
-		{"check --json", func(stdout, stderr io.Writer) int { return cmdCheck([]string{"--json"}, stdout, stderr) }},
+		{"check", func(stdout, stderr io.Writer) int { return cmdCheck(nil, nil, stdout, stderr) }},
+		{"check --json", func(stdout, stderr io.Writer) int { return cmdCheck([]string{"--json"}, nil, stdout, stderr) }},
 		{"test --json", func(stdout, stderr io.Writer) int {
 			return cmdTest([]string{"PreToolUse", "--json"}, nil, stdout, stderr)
 		}},
-		{"sync", func(stdout, stderr io.Writer) int { return cmdSync(nil, stdout, stderr) }},
+		{"sync", func(stdout, stderr io.Writer) int { return cmdSync(nil, nil, stdout, stderr) }},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

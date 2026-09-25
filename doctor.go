@@ -15,14 +15,10 @@ import (
 // binary answering, each harness's hook entries, this repo's tiers, trust state
 // and exclusion line, and whether the rules parse. It exits 1 when anything is
 // wrong, so the answer is actionable without reading the report.
-func cmdDoctor(args []string, stdout, stderr io.Writer) int {
+func cmdDoctor(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	if err := fs.Parse(args); err != nil {
-		return 1
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "handrail doctor: unexpected argument %q\n", fs.Arg(0))
+	if !parseFlags(fs, args, stderr) {
 		return 1
 	}
 
