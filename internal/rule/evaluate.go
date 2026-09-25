@@ -74,6 +74,11 @@ func (p *Payload) SetField(name, value string) bool {
 	if p.fields == nil {
 		p.fields = make(map[string][]candidate)
 	}
+	return p.set(name, value)
+}
+
+// set writes a value SetField has accepted, and reports whether it wrote.
+func (p *Payload) set(name, value string) bool {
 	switch name {
 	case "command":
 		p.setCommand(value)
@@ -82,22 +87,9 @@ func (p *Payload) SetField(name, value string) bool {
 		// to a rule however the call spelled it.
 		p.fields[name] = []candidate{{spellings: []string{path.Clean(value)}}}
 	case "tool":
-		// One call, however many names it answers to: each is a Spelling of
-		// the one Candidate, so a not_ term fires only when no name matches.
-		if len(p.fields[name]) == 0 {
-			p.fields[name] = []candidate{{}}
-		}
-		if c := &p.fields[name][0]; !slices.Contains(c.spellings, value) {
-			c.spellings = append(c.spellings, value)
-		}
+		p.setTool(value)
 	case "url":
-		// Each url is its own Candidate, and so is the domain read from it.
-		p.fields[name] = append(p.fields[name], candidate{spellings: []string{value}})
-		if host, ok := domainOf(value); ok {
-			p.fields["domain"] = append(p.fields["domain"], candidate{spellings: []string{host}})
-		} else {
-			p.SetField("unreadable", "domain")
-		}
+		p.setURL(value)
 	case "network_grant":
 		// Each grant is its own Candidate.
 		g := grant(value)
@@ -113,6 +105,30 @@ func (p *Payload) SetField(name, value string) bool {
 		p.fields[name] = []candidate{{spellings: []string{value}}}
 	}
 	return true
+}
+
+// setTool adds a name the call answers to.
+func (p *Payload) setTool(value string) {
+	// One call, however many names it answers to: each is a Spelling of
+	// the one Candidate, so a not_ term fires only when no name matches.
+	if len(p.fields["tool"]) == 0 {
+		p.fields["tool"] = []candidate{{}}
+	}
+	if c := &p.fields["tool"][0]; !slices.Contains(c.spellings, value) {
+		c.spellings = append(c.spellings, value)
+	}
+}
+
+// setURL adds a url and the domain read from it, or declares the domain
+// unreadable.
+func (p *Payload) setURL(value string) {
+	// Each url is its own Candidate, and so is the domain read from it.
+	p.fields["url"] = append(p.fields["url"], candidate{spellings: []string{value}})
+	if host, ok := domainOf(value); ok {
+		p.fields["domain"] = append(p.fields["domain"], candidate{spellings: []string{host}})
+	} else {
+		p.SetField("unreadable", "domain")
+	}
 }
 
 // grant normalizes a network_grant to the host alone: lowercased, without its
@@ -149,12 +165,15 @@ func domainOf(raw string) (string, bool) {
 	if strings.Trim(last, "0123456789") == "" || isHex && strings.Trim(hex, "0123456789abcdef") == "" {
 		return "", false
 	}
-	if strings.ContainsFunc(host, func(r rune) bool {
-		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '.' && r != '-'
-	}) {
+	if strings.ContainsFunc(host, outsideHost) {
 		return "", false
 	}
 	return host, true
+}
+
+// outsideHost reports whether r falls outside [a-z0-9.-].
+func outsideHost(r rune) bool {
+	return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '.' && r != '-'
 }
 
 // SetRename fills path with both files a rename names, source then
@@ -299,11 +318,7 @@ func (rs *Ruleset) Evaluate(payloads []Payload) (matched []Match, outcome Outcom
 				continue
 			}
 			hit = true
-			for _, c := range p.fields["path"] {
-				if !slices.Contains(m.Files, c.spellings[0]) {
-					m.Files = append(m.Files, c.spellings[0])
-				}
-			}
+			m.addFiles(p)
 		}
 		if !hit {
 			continue
@@ -325,6 +340,15 @@ type Match struct {
 	*Rule
 
 	Files []string
+}
+
+// addFiles adds every path a matched payload names that Files lacks.
+func (m *Match) addFiles(p Payload) {
+	for _, c := range p.fields["path"] {
+		if !slices.Contains(m.Files, c.spellings[0]) {
+			m.Files = append(m.Files, c.spellings[0])
+		}
+	}
 }
 
 // matches reports whether this rule's matcher selects the payload. Whether the

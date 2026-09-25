@@ -112,83 +112,104 @@ type term struct {
 // convertHookify reads one upstream file and returns the rule's name and the
 // handrail rule file to write under it.
 func convertHookify(path string) (name, file string, err error) {
-	data, err := os.ReadFile(path)
+	h, err := readHookify(path)
 	if err != nil {
 		return "", "", err
 	}
-	doc, body, err := parseFrontmatter(data)
-	if err != nil {
-		return "", "", err
-	}
-
-	var event, pattern, action, toolMatcher string
-	var conditions *node
-	enabled := true
-	for _, kv := range doc.mapping {
-		switch kv.key {
-		case "name":
-			err = scalarInto(kv, &name)
-		case "event":
-			err = scalarInto(kv, &event)
-		case "pattern":
-			err = scalarInto(kv, &pattern)
-		case "action":
-			err = scalarInto(kv, &action)
-		case "tool_matcher":
-			err = scalarInto(kv, &toolMatcher)
-		case "enabled":
-			var v string
-			if err = scalarInto(kv, &v); err == nil {
-				// Upstream lowercases before comparing, so False and FALSE
-				// disable a rule there. Reading them as enabled would arm a
-				// guardrail its author had switched off.
-				enabled = !strings.EqualFold(v, "false")
-			}
-		case "conditions":
-			if kv.val.seq == nil {
-				err = fmt.Errorf("line %d: conditions must be a list", kv.line)
-			}
-			conditions = kv.val
-		}
-		// Upstream ignores a key it does not know, so converting cannot lose
-		// meaning by ignoring it too.
-		if err != nil {
-			return "", "", err
-		}
-	}
-
+	name = h.name
 	if name == "" {
 		return "", "", errors.New("rule has no name")
 	}
 	if !isRuleName(name) {
 		return "", "", fmt.Errorf("name %q is not a usable filename", name)
 	}
-	terms, err := hookifyConditions(conditions, event, pattern)
+	terms, err := hookifyConditions(h.conditions, h.event, h.pattern)
 	if err != nil {
 		return "", "", err
 	}
-	ev, kind, err := hookifyEvent(event, terms)
+	ev, kind, err := hookifyEvent(h.event, terms)
 	if err != nil {
 		return "", "", err
 	}
 	// The canonical event, not the upstream one: an all rule has no upstream
 	// event to weigh a tool matcher against, and the inferred one is what the
 	// converted rule will actually carry.
-	if kind, err = hookifyToolMatcher(toolMatcher, ev, kind); err != nil {
+	if kind, err = hookifyToolMatcher(h.toolMatcher, ev, kind); err != nil {
 		return "", "", err
 	}
 	// Upstream treats anything that is not "block" as a warning.
+	action := h.action
 	if action != "block" {
 		action = Warn.String()
 	}
 
-	file = renderRule(ev, kind, action, enabled, terms, strings.TrimSpace(body))
+	file = renderRule(ev, kind, action, h.enabled, terms, strings.TrimSpace(h.body))
 	// The converted file is parsed back before it is written: an import that
 	// needs hand-fixing before handrail check passes is not an import.
 	if _, err := Parse(name, []byte(file)); err != nil {
 		return "", "", fmt.Errorf("converted rule is invalid: %w", err)
 	}
 	return name, file, nil
+}
+
+// hookifyFile is one upstream file as far as the Importer reads it.
+type hookifyFile struct {
+	name, event, pattern, action, toolMatcher string
+	conditions                                *node
+	enabled                                   bool
+	body                                      string
+}
+
+// readHookify reads one upstream file's frontmatter and body.
+func readHookify(path string) (*hookifyFile, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	doc, body, err := parseFrontmatter(data)
+	if err != nil {
+		return nil, err
+	}
+	h := &hookifyFile{enabled: true, body: body}
+	for _, kv := range doc.mapping {
+		if err := h.set(kv); err != nil {
+			return nil, err
+		}
+	}
+	return h, nil
+}
+
+// set reads one upstream frontmatter field.
+func (h *hookifyFile) set(kv pair) error {
+	switch kv.key {
+	case "name":
+		return scalarInto(kv, &h.name)
+	case "event":
+		return scalarInto(kv, &h.event)
+	case "pattern":
+		return scalarInto(kv, &h.pattern)
+	case "action":
+		return scalarInto(kv, &h.action)
+	case "tool_matcher":
+		return scalarInto(kv, &h.toolMatcher)
+	case "enabled":
+		var v string
+		if err := scalarInto(kv, &v); err != nil {
+			return err
+		}
+		// Upstream lowercases before comparing, so False and FALSE
+		// disable a rule there. Reading them as enabled would arm a
+		// guardrail its author had switched off.
+		h.enabled = !strings.EqualFold(v, "false")
+	case "conditions":
+		h.conditions = kv.val
+		if kv.val.seq == nil {
+			return fmt.Errorf("line %d: conditions must be a list", kv.line)
+		}
+	}
+	// Upstream ignores a key it does not know, so converting cannot lose
+	// meaning by ignoring it too.
+	return nil
 }
 
 // isRuleName reports whether name can be a rule file's basename. Identity is the
@@ -212,54 +233,64 @@ func isRuleName(name string) bool {
 // the event, and a rule left with no condition at all never matches there.
 func hookifyConditions(list *node, event, pattern string) ([]term, error) {
 	if list == nil || len(list.seq) == 0 {
-		if pattern == "" {
-			return nil, errors.New("rule has no conditions, which upstream never matches")
-		}
-		// Upstream's own inference, verbatim, which docs/spec.md section 8 asks
-		// for. On a prompt or stop rule it names content, a field neither event
-		// carries: the shorthand is inert upstream too, and inventing a field
-		// the author never wrote would import a guardrail they never had.
-		field := "content"
-		switch event {
-		case "bash":
-			field = "command"
-		case "file":
-			field = "new_text"
-		}
-		t, err := convertCondition(field, "regex_match", pattern)
-		if err != nil {
-			return nil, err
-		}
-		return []term{t}, nil
+		return hookifyPattern(event, pattern)
 	}
 
 	terms := make([]term, 0, len(list.seq))
 	for _, item := range list.seq {
-		if item.isScalar || item.seq != nil {
-			return nil, fmt.Errorf("line %d: condition must be a mapping", item.line)
-		}
-		field, op, value := "", "regex_match", ""
-		for _, kv := range item.mapping {
-			var err error
-			switch kv.key {
-			case "field":
-				err = scalarInto(kv, &field)
-			case "operator":
-				err = scalarInto(kv, &op)
-			case "pattern":
-				err = scalarInto(kv, &value)
-			}
-			if err != nil {
-				return nil, err
-			}
-		}
-		t, err := convertCondition(field, op, value)
+		t, err := hookifyCondition(item)
 		if err != nil {
 			return nil, err
 		}
 		terms = append(terms, t)
 	}
 	return terms, nil
+}
+
+// hookifyPattern converts the pattern shorthand into its one condition.
+func hookifyPattern(event, pattern string) ([]term, error) {
+	if pattern == "" {
+		return nil, errors.New("rule has no conditions, which upstream never matches")
+	}
+	// Upstream's own inference, verbatim, which docs/spec.md section 8 asks
+	// for. On a prompt or stop rule it names content, a field neither event
+	// carries: the shorthand is inert upstream too, and inventing a field
+	// the author never wrote would import a guardrail they never had.
+	field := "content"
+	switch event {
+	case "bash":
+		field = "command"
+	case "file":
+		field = "new_text"
+	}
+	t, err := convertCondition(field, "regex_match", pattern)
+	if err != nil {
+		return nil, err
+	}
+	return []term{t}, nil
+}
+
+// hookifyCondition converts one entry of the condition list.
+func hookifyCondition(item *node) (term, error) {
+	if !item.isMapping() {
+		return term{}, fmt.Errorf("line %d: condition must be a mapping", item.line)
+	}
+	field, op, value := "", "regex_match", ""
+	for _, kv := range item.mapping {
+		var err error
+		switch kv.key {
+		case "field":
+			err = scalarInto(kv, &field)
+		case "operator":
+			err = scalarInto(kv, &op)
+		case "pattern":
+			err = scalarInto(kv, &value)
+		}
+		if err != nil {
+			return term{}, err
+		}
+	}
+	return convertCondition(field, op, value)
 }
 
 // convertCondition maps one upstream field and operator onto handrail's.
@@ -328,10 +359,13 @@ func hookifyEvent(event string, terms []term) (canonical, kind string, err error
 	case "stop":
 		return "Stop", "", nil
 	case "", "all":
-	default:
-		return "", "", fmt.Errorf("unknown event %q", event)
+		return inferEvent(terms)
 	}
+	return "", "", fmt.Errorf("unknown event %q", event)
+}
 
+// inferEvent reads an all rule's event from its condition fields.
+func inferEvent(terms []term) (canonical, kind string, err error) {
 	// Upstream fires an all rule only where its fields exist, so the fields are
 	// the rule's real event. Fields spanning two events name no single one.
 	var from string
