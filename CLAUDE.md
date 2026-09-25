@@ -10,7 +10,7 @@ alone. `GLOSSARY.md` defines the vocabulary.
 ```bash
 mise run test    # go test -race -shuffle=on ./...
 mise run cover   # the same run with coverage, fails under 95%
-mise run lint    # go mod tidy -diff and verify, golangci-lint run, then fmt --diff; with mise run test, past 2 minutes: raise the Bash timeout
+mise run lint    # go mod tidy -diff and verify, go fix -diff, golangci-lint run, then fmt --diff; with mise run test, past 2 minutes: raise the Bash timeout
 mise run vuln    # govulncheck through go run, so it stays out of go.mod
 mise run fuzz    # 30s per parser fuzz target; a crash input lands in testdata/fuzz/, commit it
 mise run build   # the release build

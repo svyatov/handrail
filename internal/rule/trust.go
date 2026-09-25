@@ -15,11 +15,23 @@ import (
 // cannot put its committed rules in front of the agent until the user grants
 // that path once.
 
+var (
+	errNewlinePath = errors.New("cannot trust a path containing a newline")
+	errNoStateDir  = errors.New("no state directory: set HOME or XDG_STATE_HOME")
+)
+
+// The registry is the user's alone, so nobody else may read or list it.
+const (
+	registryDirMode = 0o700
+	registryMode    = 0o600
+)
+
 func trustFile() string {
 	dir := xdgSubdir("XDG_STATE_HOME", filepath.Join(".local", "state"))
 	if dir == "" {
 		return ""
 	}
+
 	return filepath.Join(dir, "trusted")
 }
 
@@ -30,10 +42,12 @@ func isTrusted(root string) bool {
 	if file == "" {
 		return false
 	}
+
 	data, err := os.ReadFile(file)
 	if err != nil {
 		return false
 	}
+
 	return slices.Contains(strings.Split(string(data), "\n"), root)
 }
 
@@ -49,35 +63,45 @@ func (rs *Ruleset) TrustNotice() string {
 				rs.Root)
 		}
 	}
+
 	return ""
 }
 
 // Trust records a project root as trusted, reporting whether that was new. The
 // grant is keyed by the root alone, so granting one needs no ruleset: reading
 // the rules is what the grant gates, not a prerequisite for making it.
-func Trust(root string) (added bool, err error) {
+func Trust(root string) (bool, error) {
 	// One path per line, so a newline in a path would write a second line and
 	// grant a path nobody asked for. A directory may legally hold one.
 	if strings.Contains(root, "\n") {
-		return false, fmt.Errorf("cannot trust a path containing a newline: %q", root)
+		return false, fmt.Errorf("%w: %q", errNewlinePath, root)
 	}
+
 	if isTrusted(root) {
 		return false, nil
 	}
+
 	file := trustFile()
 	if file == "" {
-		return false, errors.New("no state directory: set HOME or XDG_STATE_HOME")
+		return false, errNoStateDir
 	}
-	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
-		return false, err
-	}
-	f, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+
+	err := os.MkdirAll(filepath.Dir(file), registryDirMode)
 	if err != nil {
 		return false, err
 	}
-	if _, err := fmt.Fprintln(f, root); err != nil {
-		_ = f.Close()
+
+	out, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, registryMode)
+	if err != nil {
 		return false, err
 	}
-	return true, f.Close()
+
+	_, err = fmt.Fprintln(out, root)
+	if err != nil {
+		_ = out.Close()
+
+		return false, err
+	}
+
+	return true, out.Close()
 }

@@ -39,10 +39,11 @@ run = [
 ]
 
 [tasks.lint]
-description = "A tidy and verified go.mod, golangci-lint, the formatter check, the paths the skills quote from the code, the flag tables' source comments, and no em or en dash"
+description = "A tidy and verified go.mod, no pending go fix modernization, golangci-lint, the formatter check, the paths the skills quote from the code, the flag tables' source comments, and no em or en dash"
 run = [
   "go mod tidy -diff",
   "go mod verify",
+  "go fix -diff ./...",
   "golangci-lint run",
   "golangci-lint fmt --diff",
   "scripts/check-doc-paths.sh",

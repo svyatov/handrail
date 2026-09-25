@@ -17,15 +17,22 @@ import (
 // found" long before it gets here, so these are the guards behind that.
 func TestAdapterWithoutAHomeDirectory(t *testing.T) {
 	t.Setenv("HOME", "")
-	a := Adapter{Name: "nowhere", dir: ".nowhere", file: "settings.json"}
 
-	if got := a.ConfigPath(); got != "" {
+	adapter := Adapter{
+		Name: "nowhere", quirks: nil, title: "", dir: ".nowhere", homeEnv: "", file: "settings.json",
+		aliases: nil, agentTypeKey: "", agentPromptKey: "", events: nil, patchInShell: false,
+	}
+
+	if got := adapter.ConfigPath(); got != "" {
 		t.Errorf("ConfigPath() = %q, want empty", got)
 	}
-	if a.Installed() {
+
+	if adapter.Installed() {
 		t.Error("Installed() = true, want false")
 	}
-	if _, _, err := a.Install("/usr/local/bin/handrail"); err == nil {
+
+	_, err := adapter.Install("/usr/local/bin/handrail")
+	if err == nil {
 		t.Error("Install() succeeded with nowhere to write")
 	}
 }
@@ -36,18 +43,20 @@ func TestAdapterWithoutAHomeDirectory(t *testing.T) {
 // detection and sync go to ~/<dir> while the harness reads elsewhere. Only a
 // walk of the table can catch that, which the compiled binary cannot do.
 func TestEveryAdapterFollowsItsRelocationVariable(t *testing.T) {
-	for _, a := range Adapters() {
-		t.Run(a.Name, func(t *testing.T) {
-			if a.homeEnv == "" {
-				t.Fatalf("%s has no homeEnv, so its relocation variable is ignored", a.Name)
+	for _, adapter := range Adapters() {
+		t.Run(adapter.Name, func(t *testing.T) {
+			if adapter.homeEnv == "" {
+				t.Fatalf("%s has no homeEnv, so its relocation variable is ignored", adapter.Name)
 			}
-			dir := t.TempDir()
-			t.Setenv(a.homeEnv, dir)
 
-			if got, want := a.ConfigPath(), filepath.Join(dir, a.file); got != want {
+			dir := t.TempDir()
+			t.Setenv(adapter.homeEnv, dir)
+
+			if got, want := adapter.ConfigPath(), filepath.Join(dir, adapter.file); got != want {
 				t.Errorf("ConfigPath() = %q, want %q", got, want)
 			}
-			if !a.Installed() {
+
+			if !adapter.Installed() {
 				t.Error("Installed() = false for the directory the variable names")
 			}
 		})
@@ -56,19 +65,24 @@ func TestEveryAdapterFollowsItsRelocationVariable(t *testing.T) {
 
 func TestWriteReportsAnUnusableParent(t *testing.T) {
 	t.Parallel()
+
 	file := filepath.Join(t.TempDir(), "settings.json")
-	if err := os.WriteFile(file, []byte("{}\n"), 0o600); err != nil {
+
+	err := os.WriteFile(file, []byte("{}\n"), 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
 	// The parent of the target is a regular file, so the directory it names
 	// cannot be created and never could be.
-	if err := write(filepath.Join(file, "settings.json"), []byte("{}\n")); err == nil {
+	err = write(filepath.Join(file, "settings.json"), []byte("{}\n"))
+	if err == nil {
 		t.Error("write() succeeded through a regular file")
 	}
 }
 
 func TestShellQuote(t *testing.T) {
 	t.Parallel()
+
 	cases := []struct{ name, in, want string }{
 		{"an ordinary path is its own first word", "/usr/local/bin/handrail", "/usr/local/bin/handrail"},
 		{"a space is ordinary on macOS", "/Users/a b/bin/handrail", "'/Users/a b/bin/handrail'"},
@@ -78,6 +92,7 @@ func TestShellQuote(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := shellQuote(c.in); got != c.want {
 				t.Errorf("shellQuote(%q) = %q, want %q", c.in, got, c.want)
 			}
@@ -90,14 +105,24 @@ func TestShellQuote(t *testing.T) {
 // than delivered as whatever its missing row would read as.
 func TestAMissingEventDegradesToSkip(t *testing.T) {
 	t.Parallel()
-	a := Adapter{Name: "partial", title: "Partial", events: []eventCaps{{name: "PreToolUse", deny: permissionDeny, inject: true}}}
-	r := &rule.Rule{Name: "not-done", Event: "Stop", Action: rule.Block}
 
-	if got := a.Action(r); got != rule.Allow {
+	adapter := Adapter{
+		Name: "partial", quirks: nil, title: "Partial", dir: "", homeEnv: "", file: "",
+		aliases: nil, agentTypeKey: "", agentPromptKey: "", patchInShell: false,
+		events: []eventCaps{{name: "PreToolUse", deny: permissionDeny, inject: true, ask: false, silent: false}},
+	}
+	notDone := &rule.Rule{
+		Name: "not-done", Path: "", Tier: "", ShadowedBy: nil, Replaces: nil, DroppedBy: nil, DemotedFrom: "",
+		Event: "Stop", Kind: "", Action: rule.Block, Enabled: false, AgentOnly: false, LostAgentOnly: false,
+		Conditions: nil, Examples: nil, Message: "",
+	}
+
+	if got := adapter.Action(notDone); got != rule.Allow {
 		t.Errorf("Action() = %s, want allow", got)
 	}
+
 	want := "block degraded to skip for not-done: Partial has no Stop event"
-	if got := a.Report([]*rule.Rule{r}); len(got) != 1 || got[0] != want {
+	if got := adapter.Report([]*rule.Rule{notDone}); len(got) != 1 || got[0] != want {
 		t.Errorf("Report() = %q, want [%q]", got, want)
 	}
 }

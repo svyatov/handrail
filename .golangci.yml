@@ -1,31 +1,16 @@
 version: "2"
 
 # Every linter is on, so one a new golangci-lint release adds starts checking
-# without anyone opting in. Each one turned off names its reason: it fires on a
-# deliberate choice of this codebase, not on a mistake.
+# without anyone opting in. Only deprecated linters are off, each for the one
+# that replaces it. A finding is fixed in the code; a setting below narrows a
+# linter only where the fix would be noise or would change what users see.
 
 linters:
   default: all
   disable:
-    - err113 # parser errors carry a line number; a sentinel per message adds nothing
-    - exhaustruct # zero values are valid by design, see rule.Payload
-    - exhaustruct_v5 # the same linter under its new name
-    - funcorder # a helper method sits beside the exported method it serves
-    - gochecknoglobals # the globals are lookup tables and the ldflags version
-    - goconst # the repeated strings are shell command names, which are data
-    - gomodguard # deprecated; gomodguard_v2 replaces it, and depguard owns the import budget
-    - ireturn # syntax.Node is the shell library's own interface
-    - lll # gofumpt owns layout
-    - mnd # the numbers are exit codes and byte offsets the code names in place
-    - nlreturn # blank-line style
-    - noinlineerr # `if err := f(); err != nil` is the Go idiom
-    - nonamedreturns # named results document two-value returns, see gocritic
-    - tagliatelle # JSON tag case is set by each harness's hook protocol, not by us
-    - testpackage # the unit tests are white-box on purpose (ADR 0009)
-    - varnamelen # short names in short scopes are the Go idiom
-    - wrapcheck # an os error already names its path
-    - wsl # blank-line style
-    - wsl_v5 # blank-line style
+    - exhaustruct # deprecated; exhaustruct_v5 replaces it
+    - gomodguard # deprecated; depguard owns the import budget
+    - wsl # deprecated; wsl_v5 replaces it
 
   settings:
     depguard:
@@ -64,6 +49,15 @@ linters:
       # A default branch is the decision that the remaining cases are alike.
       default-signifies-exhaustive: true
 
+    exhaustruct_v5:
+      # testscript.Params has fields that are meant to stay zero. A flag table
+      # entry sets only the few fields its program uses, and a capability row
+      # only what its harness can do.
+      ignore-patterns:
+        - github\.com/rogpeppe/go-internal/.*
+        - github\.com/svyatov/handrail/internal/shell\.grammar
+        - github\.com/svyatov/handrail/internal/harness\.eventCaps
+
     forbidigo:
       # The CLI seam: run() returns an exit code so every command is callable
       # from a test, and printing goes to the writers it was handed. os.Exit is
@@ -79,10 +73,6 @@ linters:
         - diagnostic
         - style
         - opinionated
-      disabled-checks:
-        # Named results document what a two-value return means; this wants them
-        # gone or all named, and several signatures read better half-named.
-        - unnamedResult
 
     godox:
       # BUG also matches prose such as "a bug in the installed config".
@@ -103,17 +93,48 @@ linters:
 
     govet:
       enable-all: true
-      disable:
-        - fieldalignment # field order follows meaning; no struct here is hot
-        - shadow # every hit is an `err` redeclared in an inner if
+
+    ireturn:
+      # The defaults, plus the node interface the shell parser hands back.
+      allow:
+        - anon
+        - error
+        - empty
+        - stdlib
+        - mvdan.cc/sh/v3/syntax.Node
 
     nolintlint:
       require-explanation: true
       require-specific: true
 
+    tagliatelle:
+      # The --json output is handrail's own published shape, in snake case. The
+      # hook responses follow each harness's protocol, which is camel case.
+      case:
+        rules:
+          json: snake
+        overrides:
+          - pkg: internal/harness
+            rules:
+              json: camel
+
+    wrapcheck:
+      # An error from handrail's own packages already carries its context. An
+      # os error names the operation and the path, and the rest are wrapped or
+      # printed by their callers, so extra context would only change the text
+      # users see.
+      ignore-package-globs:
+        - github.com/svyatov/handrail/*
+        - encoding/json
+        - fmt
+        - os
+        - path/filepath
+        - regexp
+        - text/tabwriter
+
     revive:
-      # An explicit list. `enable-all-rules` yields 475 findings here, 351 of
-      # them add-constant and line-length-limit, which is noise, not review.
+      # An explicit list: `enable-all-rules` is mostly add-constant and
+      # line-length-limit, which is noise, not review.
       rules:
         - name: blank-imports
         - name: bool-literal-in-expr
@@ -177,6 +198,27 @@ linters:
         linters:
           - gosec
         text: G204
+      # A string repeated across table rows is test data, not a constant.
+      - path: _test\.go$
+        linters:
+          - goconst
+      # The same in the flag tables: a flag name shared by programs is data.
+      # scripts/check-flag-sources.sh finds these tables by their var form.
+      - path: ^internal/shell/(files|wrap)\.go$
+        linters:
+          - goconst
+      # Lookup tables the hook path reads on every call, so a function that
+      # builds them would allocate them per call; and the two vars GoReleaser
+      # sets through -ldflags -X, which reaches only package variables.
+      - linters:
+          - gochecknoglobals
+        text: ^(adapters|programs|wrappers|sum|grep|mise|commit|date) is a global variable
+      # These structs' field order is the order of their JSON keys, or, for
+      # Failure, embeddedstructfieldcheck pins the embedded field first. The
+      # finding is only about where pointer bytes sit, not the struct size.
+      - linters:
+          - govet
+        text: "fieldalignment: (checkRule|checkExamples|checkExample|testOutput|hookOutput|Failure) has"
 
 formatters:
   enable:

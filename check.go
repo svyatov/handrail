@@ -54,102 +54,122 @@ type checkOutput struct {
 func cmdCheck(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+
 	asJSON := fs.Bool("json", false, "print the effective ruleset as JSON")
 	if !parseFlags(fs, args, stderr) {
 		return 1
 	}
 
-	rs, err := loadRules(stderr)
+	ruleset, err := loadRules(stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
+
 		return 1
 	}
 
-	problems := rs.Invalid()
+	problems := ruleset.Invalid()
+
 	var examplesFailed bool
+
 	if *asJSON {
 		var out checkOutput
-		out, examplesFailed = checkReport(rs, problems)
+
+		out, examplesFailed = checkReport(ruleset, problems)
 		if code := writeJSON(stdout, stderr, out); code != 0 {
 			return code
 		}
 	} else {
-		if err := printRuleset(stdout, rs.Rules); err != nil {
+		err = printRuleset(stdout, ruleset.Rules)
+		if err != nil {
 			fmt.Fprintf(stderr, "handrail: %v\n", err)
+
 			return 1
 		}
+
 		reportProblems(problems, stderr)
-		reportTierMoves(rs, stderr)
-		examplesFailed = reportExamples(slices.Concat(rs.Rules, rs.Untrusted), stderr)
+		reportTierMoves(ruleset, stderr)
+		examplesFailed = reportExamples(slices.Concat(ruleset.Rules, ruleset.Untrusted), stderr)
 	}
 
 	if examplesFailed || len(problems) > 0 {
 		return 1
 	}
+
 	return 0
 }
 
 // checkReport is check --json's shape of the ruleset and its problems, and
 // whether any Example failed.
-func checkReport(rs *rule.Ruleset, problems []rule.Problem) (checkOutput, bool) {
+func checkReport(ruleset *rule.Ruleset, problems []rule.Problem) (checkOutput, bool) {
 	var examplesFailed bool
+
 	out := checkOutput{
-		Rules:  make([]checkRule, 0, len(rs.Rules)),
+		Rules:  make([]checkRule, 0, len(ruleset.Rules)),
 		Errors: make([]checkError, 0, len(problems)),
 	}
-	for _, r := range rs.Rules {
+	for _, r := range ruleset.Rules {
 		cr := checkRuleOf(r)
 		examplesFailed = examplesFailed || len(cr.Examples.Failed) > 0
 		out.Rules = append(out.Rules, cr)
 	}
+
 	for _, p := range problems {
 		out.Errors = append(out.Errors, checkError{Path: p.Path, Message: p.Message})
 	}
 	// An untrusted tier's rules are not in the effective ruleset, so a
 	// failing Example there has no rule entry to sit on.
-	for _, r := range rs.Untrusted {
+	for _, r := range ruleset.Untrusted {
 		for _, e := range harness.FailingExamples(r) {
 			examplesFailed = true
+
 			out.Errors = append(out.Errors, checkError{Path: r.Path, Message: exampleFailure(r, e)})
 		}
 	}
+
 	return out, examplesFailed
 }
 
 // checkRuleOf is one rule of the effective ruleset in check --json's shape,
 // with its Examples run.
-func checkRuleOf(r *rule.Rule) checkRule {
-	examples := checkExamples{Passed: len(r.Examples), Failed: []checkExample{}}
-	for _, e := range harness.FailingExamples(r) {
+func checkRuleOf(entry *rule.Rule) checkRule {
+	examples := checkExamples{Passed: len(entry.Examples), Failed: []checkExample{}}
+	for _, failure := range harness.FailingExamples(entry) {
 		// A drifted Example belongs to the rule this one replaces, so
 		// it fails here and counts nothing toward this rule's passes.
 		var from *string
-		if e.From == r {
+
+		if failure.From == entry {
 			examples.Passed--
 		} else {
-			from = &e.From.Path
+			from = &failure.From.Path
 		}
-		fields := make(map[string]any, len(e.Fields))
-		for _, f := range e.Fields {
+
+		fields := make(map[string]any, len(failure.Fields))
+		for _, f := range failure.Fields {
 			fields[f.Name] = f.Value()
 		}
-		examples.Failed = append(examples.Failed, checkExample{Expect: e.Expect, Fields: fields, Line: e.Line, From: from})
+
+		examples.Failed = append(examples.Failed,
+			checkExample{Expect: failure.Expect, Fields: fields, Line: failure.Line, From: from})
 	}
+
 	var demoted *string
-	if r.DemotedFrom != "" {
-		demoted = &r.DemotedFrom
+	if entry.DemotedFrom != "" {
+		demoted = &entry.DemotedFrom
 	}
+
 	return checkRule{
-		Rule:        r.Name,
-		Tier:        r.Tier,
-		Event:       r.Event,
-		Kind:        r.Kind,
-		Action:      r.Action.String(),
-		Enabled:     r.Enabled,
-		ShadowedBy:  pathOf(r.ShadowedBy),
-		DroppedBy:   pathOf(r.DroppedBy),
+		Rule:        entry.Name,
+		Tier:        entry.Tier,
+		Event:       entry.Event,
+		Kind:        entry.Kind,
+		Action:      entry.Action.String(),
+		Enabled:     entry.Enabled,
+		Trial:       false,
+		ShadowedBy:  pathOf(entry.ShadowedBy),
+		DroppedBy:   pathOf(entry.DroppedBy),
 		DemotedFrom: demoted,
-		Path:        r.Path,
+		Path:        entry.Path,
 		Examples:    examples,
 	}
 }
@@ -159,6 +179,7 @@ func pathOf(r *rule.Rule) *string {
 	if r == nil {
 		return nil
 	}
+
 	return &r.Path
 }
 
@@ -166,12 +187,15 @@ func pathOf(r *rule.Rule) *string {
 // and reports whether any failed.
 func reportExamples(rules []*rule.Rule, stderr io.Writer) bool {
 	failed := false
+
 	for _, r := range rules {
 		for _, e := range harness.FailingExamples(r) {
 			fmt.Fprintf(stderr, "handrail: %s: %s\n", r.Path, exampleFailure(r, e))
+
 			failed = true
 		}
 	}
+
 	return failed
 }
 
@@ -180,27 +204,32 @@ func reportExamples(rules []*rule.Rule, stderr io.Writer) bool {
 // with the reason. Neither is an error: the repository's author cannot see the
 // Global file, so the user could not fix it either, and a demoted file is still
 // read.
-func reportTierMoves(rs *rule.Ruleset, stderr io.Writer) {
-	for _, r := range slices.Concat(rs.Rules, rs.Untrusted) {
-		if r.DemotedFrom != "" {
-			fmt.Fprintf(stderr, "handrail: %s: read as Project-shared: %s\n", r.Path, rs.Demoted)
+func reportTierMoves(ruleset *rule.Ruleset, stderr io.Writer) {
+	for _, entry := range slices.Concat(ruleset.Rules, ruleset.Untrusted) {
+		if entry.DemotedFrom != "" {
+			fmt.Fprintf(stderr, "handrail: %s: read as Project-shared: %s\n", entry.Path, ruleset.Demoted)
 		}
-		if r.DroppedBy != nil {
+
+		if entry.DroppedBy != nil {
 			fmt.Fprintf(stderr, "handrail: %s: dropped: a Project-shared rule may not replace the Global rule %s\n",
-				r.Path, r.DroppedBy.Path)
+				entry.Path, entry.DroppedBy.Path)
 		}
 	}
 }
 
 // exampleFailure names a failing Example of r the way a rule file problem is
 // named, adding the file that holds it when that is the rule r replaces.
-func exampleFailure(r *rule.Rule, e harness.Failure) string {
-	line := fmt.Sprintf("line %d", e.Line)
-	if e.From != r {
-		line += " of " + e.From.Path
+func exampleFailure(r *rule.Rule, failure harness.Failure) string {
+	line := fmt.Sprintf("line %d", failure.Line)
+	if failure.From != r {
+		line += " of " + failure.From.Path
 	}
-	return fmt.Sprintf("%s: %s example fails: %s", line, e.Expect, e.Example)
+
+	return fmt.Sprintf("%s: %s example fails: %s", line, failure.Expect, failure.Example)
 }
+
+// columnGap is the spaces between printRuleset's columns.
+const columnGap = 2
 
 // printRuleset renders the effective ruleset annotated with tier, shadowing,
 // and disabling: what check reports, and what sync repeats once it has written.
@@ -208,20 +237,25 @@ func printRuleset(w io.Writer, rules []*rule.Rule) error {
 	if len(rules) == 0 {
 		return nil
 	}
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "TIER\tRULE\tEVENT\tKIND\tACTION\tSTATUS")
-	for _, r := range rules {
+
+	table := tabwriter.NewWriter(w, 0, 0, columnGap, ' ', 0)
+	fmt.Fprintln(table, "TIER\tRULE\tEVENT\tKIND\tACTION\tSTATUS")
+
+	for _, entry := range rules {
 		status := "enabled"
+
 		switch {
-		case r.ShadowedBy != nil:
-			status = "shadowed by " + r.ShadowedBy.Tier
-		case r.DroppedBy != nil:
-			status = "dropped by " + r.DroppedBy.Tier
-		case !r.Enabled:
+		case entry.ShadowedBy != nil:
+			status = "shadowed by " + entry.ShadowedBy.Tier
+		case entry.DroppedBy != nil:
+			status = "dropped by " + entry.DroppedBy.Tier
+		case !entry.Enabled:
 			status = "disabled"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			r.Tier, r.Name, cmp.Or(r.Event, "-"), cmp.Or(r.Kind, "*"), r.Action, status)
+
+		fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			entry.Tier, entry.Name, cmp.Or(entry.Event, "-"), cmp.Or(entry.Kind, "*"), entry.Action, status)
 	}
-	return tw.Flush()
+
+	return table.Flush()
 }

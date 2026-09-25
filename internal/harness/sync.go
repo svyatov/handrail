@@ -23,10 +23,12 @@ func (a Adapter) userDir() string {
 			return dir
 		}
 	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
+
 	return filepath.Join(home, a.dir)
 }
 
@@ -36,7 +38,9 @@ func (a Adapter) Installed() bool {
 	if dir == "" {
 		return false
 	}
+
 	fi, err := os.Stat(dir)
+
 	return err == nil && fi.IsDir()
 }
 
@@ -50,28 +54,44 @@ func (a Adapter) path(file string) string {
 	if dir == "" || file == "" {
 		return ""
 	}
+
 	return filepath.Join(dir, file)
 }
 
 // ConfigPath is the one file sync writes: user-level, never project-level.
 func (a Adapter) ConfigPath() string { return a.path(a.file) }
 
+// commandKey is the key a hook entry holds its command line under.
+const commandKey = "command"
+
+// Installation is what Install did: how many hook entries it wrote, and
+// whether the file needed changing.
+type Installation struct {
+	Entries int
+	Changed bool
+}
+
 // Install puts exactly one hook entry per event of its table into the harness's
-// user-level config, invoking bin. It reports how many entries it wrote and
-// whether the file needed changing. Every other key in the file is left exactly
+// user-level config, invoking bin. Every other key in the file is left exactly
 // as it was: these are the user's settings, and handrail is one tenant among
 // several.
-func (a Adapter) Install(bin string) (entries int, changed bool, err error) {
+func (a Adapter) Install(bin string) (Installation, error) {
+	var none Installation
+
 	path := a.ConfigPath()
-	old, settings, err := a.read()
+
+	cfg, err := a.read()
 	if err != nil {
-		return 0, false, err
+		return none, err
 	}
+
+	settings := cfg.settings
 
 	hooks, _ := settings["hooks"].(map[string]any)
 	if hooks == nil {
 		hooks = map[string]any{}
 	}
+
 	for _, c := range a.events {
 		event := c.name
 		groups := a.prune(hooks[event], event)
@@ -79,45 +99,64 @@ func (a Adapter) Install(bin string) (entries int, changed bool, err error) {
 		// and handrail classifies the tool itself, so one shape fits all eight.
 		hooks[event] = append(groups, map[string]any{
 			"hooks": []any{map[string]any{
-				"type":    "command",
-				"command": a.command(bin, event),
+				"type":     "command",
+				commandKey: a.command(bin, event),
 			}},
 		})
 	}
+
 	settings["hooks"] = hooks
 
 	// Map keys marshal in sorted order, so the same ruleset yields the same
 	// bytes: idempotence is what keeps a hash-trusting harness from re-prompting.
 	next, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
-		return 0, false, err
+		return none, err
 	}
+
 	next = append(next, '\n')
-	if string(next) == string(old) {
-		return len(a.events), false, nil
+	if string(next) == string(cfg.raw) {
+		return Installation{Entries: len(a.events), Changed: false}, nil
 	}
-	return len(a.events), true, write(path, next)
+
+	return Installation{Entries: len(a.events), Changed: true}, write(path, next)
 }
 
-// read parses the harness's config, returning the bytes it came from so Install
-// can tell an unchanged file from a rewritten one. A file that is not there yet
-// is an empty config, not a failure.
-func (a Adapter) read() (raw []byte, settings map[string]any, err error) {
+// errNoHome fails a sync on a machine with no home directory to put config in.
+var errNoHome = errors.New("no home directory: set HOME")
+
+// config is the harness's config as read: the settings, and the bytes they
+// came from so Install can tell an unchanged file from a rewritten one.
+type config struct {
+	settings map[string]any
+	raw      []byte
+}
+
+// read parses the harness's config. A file that is not there yet is an empty
+// config, not a failure.
+func (a Adapter) read() (config, error) {
+	cfg := config{settings: map[string]any{}, raw: nil}
+
 	path := a.ConfigPath()
 	if path == "" {
-		return nil, nil, errors.New("no home directory: set HOME")
+		return cfg, errNoHome
 	}
-	raw, err = os.ReadFile(path)
+
+	var err error
+
+	cfg.raw, err = os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, nil, err
+		return cfg, err
 	}
-	settings = map[string]any{}
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &settings); err != nil {
-			return nil, nil, fmt.Errorf("%s: %w", path, err)
+
+	if len(cfg.raw) > 0 {
+		err = json.Unmarshal(cfg.raw, &cfg.settings)
+		if err != nil {
+			return cfg, fmt.Errorf("%s: %w", path, err)
 		}
 	}
-	return raw, settings, nil
+
+	return cfg, nil
 }
 
 // command is the hook entry sync writes for one event, and therefore the one
@@ -136,10 +175,12 @@ func (a Adapter) entryBinary(command, event string) (string, bool) {
 	if !found {
 		return "", false
 	}
+
 	bin := shellUnquote(tail)
 	if !strings.HasPrefix(filepath.Base(bin), "handrail") {
 		return "", false
 	}
+
 	return bin, true
 }
 
@@ -147,29 +188,36 @@ func (a Adapter) entryBinary(command, event string) (string, bool) {
 // invokes, in the order sync wrote them. An event handrail has no entry for
 // comes back empty, which is what doctor calls a missing entry.
 func (a Adapter) Entries() ([]Entry, error) {
-	_, settings, err := a.read()
+	cfg, err := a.read()
 	if err != nil {
 		return nil, err
 	}
-	hooks, _ := settings["hooks"].(map[string]any)
+
+	hooks, _ := cfg.settings["hooks"].(map[string]any)
+
 	out := make([]Entry, 0, len(a.events))
 	for _, c := range a.events {
 		event := c.name
-		e := Entry{Event: event}
+		entry := Entry{Event: event, Binary: ""}
+
 		groups, _ := hooks[event].([]any)
 		for _, g := range groups {
 			group, _ := g.(map[string]any)
+
 			inner, _ := group["hooks"].([]any)
 			for _, h := range inner {
 				hook, _ := h.(map[string]any)
-				cmd, _ := hook["command"].(string)
+
+				cmd, _ := hook[commandKey].(string)
 				if bin, ok := a.entryBinary(cmd, event); ok {
-					e.Binary = bin
+					entry.Binary = bin
 				}
 			}
 		}
-		out = append(out, e)
+
+		out = append(out, entry)
 	}
+
 	return out, nil
 }
 
@@ -183,66 +231,93 @@ type Entry struct {
 // a binary that no longer exists is exactly the one that must go.
 func (a Adapter) prune(groups any, event string) []any {
 	list, _ := groups.([]any)
+
 	kept := make([]any, 0, len(list))
-	for _, g := range list {
-		group, ok := g.(map[string]any)
-		if !ok {
-			kept = append(kept, g)
+	for _, rawGroup := range list {
+		group, isGroup := rawGroup.(map[string]any)
+		if !isGroup {
+			kept = append(kept, rawGroup)
+
 			continue
 		}
+
 		inner, ok := group["hooks"].([]any)
 		if !ok {
-			kept = append(kept, g)
+			kept = append(kept, rawGroup)
+
 			continue
 		}
+
 		keptInner := make([]any, 0, len(inner))
-		for _, h := range inner {
-			if hook, ok := h.(map[string]any); ok {
-				cmd, _ := hook["command"].(string)
+		for _, rawHook := range inner {
+			if hook, ok := rawHook.(map[string]any); ok {
+				cmd, _ := hook[commandKey].(string)
 				if _, ours := a.entryBinary(cmd, event); ours {
 					continue
 				}
 			}
-			keptInner = append(keptInner, h)
+
+			keptInner = append(keptInner, rawHook)
 		}
 		// A group handrail emptied was handrail's own; one the user shares with
 		// us keeps its remaining hooks.
 		if len(keptInner) == 0 {
 			continue
 		}
+
 		group["hooks"] = keptInner
 		kept = append(kept, group)
 	}
+
 	return kept
 }
 
 // write replaces path atomically, so an interrupted sync cannot leave the user
 // with half a settings file.
 func write(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// The modes a missing directory and a new settings file are created with.
+	const (
+		dirMode     = 0o755
+		newFileMode = 0o600
+	)
+
+	err := os.MkdirAll(filepath.Dir(path), dirMode)
+	if err != nil {
 		return err
 	}
 	// Replacing the file must not silently change who can read it: handrail is a
 	// guest in this file, so an existing mode is the user's decision to keep.
-	mode := os.FileMode(0o600)
-	if fi, err := os.Stat(path); err == nil {
+	mode := os.FileMode(newFileMode)
+
+	fi, err := os.Stat(path)
+	if err == nil {
 		mode = fi.Mode().Perm()
 	}
+
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".handrail-settings-*")
 	if err != nil {
 		return err
 	}
+
 	defer func() { _ = os.Remove(tmp.Name()) }()
-	if _, err := tmp.Write(data); err != nil {
+
+	_, err = tmp.Write(data)
+	if err != nil {
 		_ = tmp.Close()
+
 		return err
 	}
-	if err := tmp.Close(); err != nil {
+
+	err = tmp.Close()
+	if err != nil {
 		return err
 	}
-	if err := os.Chmod(tmp.Name(), mode); err != nil {
+
+	err = os.Chmod(tmp.Name(), mode)
+	if err != nil {
 		return err
 	}
+
 	return os.Rename(tmp.Name(), path)
 }
 
@@ -253,6 +328,7 @@ func shellQuote(s string) string {
 	if s != "" && !strings.ContainsAny(s, " \t\n\"'\\$`&;|<>()*?[]{}~#!") {
 		return s
 	}
+
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
@@ -261,6 +337,7 @@ func shellUnquote(s string) string {
 	if len(s) < 2 || !strings.HasPrefix(s, "'") || !strings.HasSuffix(s, "'") {
 		return s
 	}
+
 	return strings.ReplaceAll(s[1:len(s)-1], `'\''`, "'")
 }
 
@@ -275,6 +352,7 @@ func (a Adapter) Delivered(matched []rule.Match) rule.Outcome {
 	for _, m := range matched {
 		o = max(o, a.Action(m.Rule))
 	}
+
 	return o
 }
 
@@ -284,17 +362,20 @@ func (a Adapter) Delivered(matched []rule.Match) rule.Outcome {
 // cannot fire cannot be degraded. The hot path stays quiet.
 func (a Adapter) Report(rules []*rule.Rule) []string {
 	var out []string
-	for _, r := range rules {
-		to := a.Action(r)
-		if to == r.Action {
+
+	for _, effective := range rules {
+		delivered := a.Action(effective)
+		if delivered == effective.Action {
 			continue
 		}
 		// A skipped rule delivers nothing, which a report says as skip.
-		name := to.String()
-		if to == rule.Allow {
+		name := delivered.String()
+		if delivered == rule.Allow {
 			name = "skip"
 		}
-		out = append(out, fmt.Sprintf("%s degraded to %s for %s: %s", r.Action, name, r.Name, a.reason(r.Event, to)))
+
+		out = append(out, fmt.Sprintf("%s degraded to %s for %s: %s",
+			effective.Action, name, effective.Name, a.reason(effective.Event, delivered)))
 	}
 	// An audience is not an action: the rule still enforces, and only the
 	// human loses the line.
@@ -303,5 +384,6 @@ func (a Adapter) Report(rules []*rule.Rule) []string {
 			out = append(out, c.name+" cannot tell the human: "+a.title+" shows the user no hook output there")
 		}
 	}
+
 	return append(out, a.quirks...)
 }

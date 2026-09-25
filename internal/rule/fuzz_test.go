@@ -19,17 +19,20 @@ func FuzzParse(f *testing.F) {
 	if err != nil {
 		f.Fatal(err)
 	}
+
 	for _, path := range scripts {
 		a, err := txtar.ParseFile(path)
 		if err != nil {
 			f.Fatal(err)
 		}
+
 		for _, file := range a.Files {
 			if strings.HasSuffix(file.Name, ".md") {
 				f.Add(file.Data)
 			}
 		}
 	}
+
 	f.Fuzz(func(t *testing.T, data []byte) {
 		r, err := rule.Parse("fuzz", data)
 		if (r == nil) == (err == nil) {

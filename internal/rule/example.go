@@ -7,6 +7,16 @@ import (
 	"strings"
 )
 
+// Why a written call is not one a live call could be.
+var (
+	errExampleEmpty     = errors.New("example has no fields")
+	errEntriesNotSingle = errors.New("entries must be single values")
+	errDomainWritten    = errors.New("domain comes from a written url, so write the url")
+	errPathList         = errors.New("a path list is a rename: its source and its destination")
+	errNeedsValue       = errors.New("needs a value")
+	errOnlyTrue         = errors.New("can only be true")
+)
+
 // Example is one call a rule carries as its own proof, and whether the rule's
 // matcher selects it: Expect is "match" or "no_match". Fields are the fields
 // as written, kind included; Kind is the kind the call takes.
@@ -33,74 +43,94 @@ func (r *Rule) Selects(payloads []Payload) bool {
 // parseExamples reads the examples: mapping, a match: and a no_match: list of
 // calls. An Example no live call could be is an error, because it would prove
 // the rule against a call that never arrives.
-func parseExamples(kv pair) ([]Example, error) {
-	if !kv.val.isMapping() {
-		return nil, fmt.Errorf("line %d: examples must be a mapping", kv.line)
+func parseExamples(entry pair) ([]Example, error) {
+	if !entry.val.isMapping() {
+		return nil, fmt.Errorf("line %d: examples %w", entry.line, errNotMapping)
 	}
+
 	var out []Example
-	for _, list := range kv.val.mapping {
+
+	for _, list := range entry.val.mapping {
 		if list.key != "match" && list.key != "no_match" {
-			return nil, fmt.Errorf("line %d: unknown examples key %q", list.line, list.key)
+			return nil, fmt.Errorf("line %d: %w examples key %q", list.line, errUnknown, list.key)
 		}
+
 		if list.val.seq == nil {
-			return nil, fmt.Errorf("line %d: %s must be a list", list.line, list.key)
+			return nil, fmt.Errorf("line %d: %s %w", list.line, list.key, errNotList)
 		}
+
 		for _, item := range list.val.seq {
 			if !item.isMapping() {
-				return nil, fmt.Errorf("line %d: example must be a mapping", item.line)
+				return nil, fmt.Errorf("line %d: example %w", item.line, errNotMapping)
 			}
+
 			e, err := parseExample(list.key, item)
 			if err != nil {
 				return nil, err
 			}
+
 			out = append(out, e)
 		}
 	}
+
 	return out, nil
 }
 
 func parseExample(expect string, item *node) (Example, error) {
-	e := Example{Expect: expect, Line: item.line}
+	example := Example{Expect: expect, Kind: "", Fields: nil, Line: item.line}
+
 	seen := make(map[string]bool, len(item.mapping))
-	for _, f := range item.mapping {
-		if seen[f.key] {
-			return e, fmt.Errorf("line %d: duplicate field %q", f.line, f.key)
+	for _, field := range item.mapping {
+		if seen[field.key] {
+			return example, fmt.Errorf("line %d: %w %q", field.line, errDuplicateField, field.key)
 		}
-		seen[f.key] = true
-		values, err := exampleValues(f)
+
+		seen[field.key] = true
+
+		values, err := exampleValues(field)
 		if err != nil {
-			return e, err
+			return example, err
 		}
-		if err := checkField(f.key, values, f.val.seq != nil); err != nil {
-			return e, fmt.Errorf("line %d: %w", f.line, err)
+
+		err = checkField(field.key, values, field.val.seq != nil)
+		if err != nil {
+			return example, fmt.Errorf("line %d: %w", field.line, err)
 		}
-		if f.key == "kind" {
-			e.Kind = values[0]
+
+		if field.key == keyKind {
+			example.Kind = values[0]
 		}
-		e.Fields = append(e.Fields, ExampleField{Name: f.key, Values: values})
+
+		example.Fields = append(example.Fields, ExampleField{Name: field.key, Values: values})
 	}
-	if !slices.ContainsFunc(e.Fields, func(f ExampleField) bool { return f.Name != "kind" }) {
-		return e, fmt.Errorf("line %d: example has no fields", item.line)
+
+	if !slices.ContainsFunc(example.Fields, func(f ExampleField) bool { return f.Name != keyKind }) {
+		return example, fmt.Errorf("line %d: %w", item.line, errExampleEmpty)
 	}
-	return e, nil
+
+	return example, nil
 }
 
 // exampleValues reads one written field's YAML as its values: a scalar, or a
 // list of scalars.
-func exampleValues(f pair) ([]string, error) {
+func exampleValues(field pair) ([]string, error) {
 	switch {
-	case f.val.isScalar:
-		return []string{f.val.scalar}, nil
-	case f.val.seq == nil:
-		return nil, fmt.Errorf("line %d: %s must be a single value", f.line, f.key)
+	case field.val.isScalar:
+		return []string{field.val.scalar}, nil
+	case field.val.seq == nil:
+		return nil, fmt.Errorf("line %d: %s %w", field.line, field.key, errNotSingle)
 	}
+
 	var values []string
-	for _, v := range f.val.seq {
+
+	for _, v := range field.val.seq {
 		if !v.isScalar {
-			return nil, fmt.Errorf("line %d: %s entries must be single values", v.line, f.key)
+			return nil, fmt.Errorf("line %d: %s %w", v.line, field.key, errEntriesNotSingle)
 		}
+
 		values = append(values, v.scalar)
 	}
+
 	return values, nil
 }
 
@@ -108,17 +138,20 @@ func exampleValues(f pair) ([]string, error) {
 // test --field writes them, to what a live call could carry. A field written
 // more than once is a list.
 func CheckCall(event string, fields []ExampleField) error {
-	for _, f := range fields {
-		if err := checkField(f.Name, f.Values, len(f.Values) > 1); err != nil {
+	for _, field := range fields {
+		err := checkField(field.Name, field.Values, len(field.Values) > 1)
+		if err != nil {
 			return err
 		}
+
 		switch {
-		case f.Name == "kind" && !ToolEvent(event):
-			return errors.New("kind applies only to PreToolUse and PostToolUse")
-		case f.Name != "kind" && !carries(event, f.Name):
-			return fmt.Errorf("%s never carries %s", event, f.Name)
+		case field.Name == keyKind && !ToolEvent(event):
+			return errKindNotTool
+		case field.Name != keyKind && !carries(event, field.Name):
+			return fmt.Errorf("%s %w %s", event, errNeverCarries, field.Name)
 		}
 	}
+
 	return nil
 }
 
@@ -130,67 +163,76 @@ func CheckCall(event string, fields []ExampleField) error {
 func checkField(name string, values []string, list bool) error {
 	switch {
 	case name == "domain":
-		return errors.New("domain comes from a written url, so write the url")
-	case name == "kind":
+		return errDomainWritten
+	case name == keyKind:
 	case !IsField(name):
-		return fmt.Errorf("unknown field %q", name)
+		return fmt.Errorf("%w field %q", errUnknown, name)
 	}
+
 	if list {
-		if err := checkList(name, values); err != nil {
+		err := checkList(name, values)
+		if err != nil {
 			return err
 		}
 	}
-	for _, v := range values {
-		if err := checkValue(name, v); err != nil {
+
+	for _, value := range values {
+		err := checkValue(name, value)
+		if err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
 // checkList reports why a field cannot be written as a list.
 func checkList(name string, values []string) error {
 	switch {
-	case !slices.Contains([]string{"url", "network_grant", "unreadable", "path"}, name):
-		return fmt.Errorf("%s must be a single value", name)
-	case name == "path" && len(values) != 2:
-		return errors.New("a path list is a rename: its source and its destination")
+	case !slices.Contains([]string{fieldURL, fieldNetworkGrant, fieldUnreadable, fieldPath}, name):
+		return fmt.Errorf("%s %w", name, errNotSingle)
+	case name == fieldPath && len(values) != 2:
+		return errPathList
 	}
+
 	return nil
 }
 
 // checkValue reports why a field could not carry one value.
-func checkValue(name, v string) error {
-	if blank(name, v) {
-		return fmt.Errorf("%s needs a value", name)
+func checkValue(name, value string) error {
+	if blank(name, value) {
+		return fmt.Errorf("%s %w", name, errNeedsValue)
 	}
+
 	switch name {
-	case "kind":
-		if !IsKind(v) {
-			return fmt.Errorf("unknown kind %q", v)
+	case keyKind:
+		if !IsKind(value) {
+			return fmt.Errorf("%w kind %q", errUnknown, value)
 		}
 	case "writes_empty", "deletes", "unsandboxed":
-		if v != "true" {
-			return fmt.Errorf("%s can only be true", name)
+		if value != "true" {
+			return fmt.Errorf("%s %w", name, errOnlyTrue)
 		}
-	case "unreadable":
-		if !IsField(v) && v != "payload" && v != "rules" {
-			return fmt.Errorf("unknown unreadable value %q", v)
+	case fieldUnreadable:
+		if !IsField(value) && value != "payload" && value != "rules" {
+			return fmt.Errorf("%w unreadable value %q", errUnknown, value)
 		}
 	}
+
 	return nil
 }
 
-// blank reports whether v is no value for the field, as written or once the
+// blank reports whether value is no value for the field, as written or once the
 // Adapter has normalized it.
-func blank(name, v string) bool {
+func blank(name, value string) bool {
 	switch name {
-	case "network_grant":
-		return grant(v) == ""
-	case "response":
-		return strings.TrimSpace(v) == ""
+	case fieldNetworkGrant:
+		return grant(value) == ""
+	case fieldResponse:
+		return strings.TrimSpace(value) == ""
 	}
-	return v == ""
+
+	return value == ""
 }
 
 // String is the Example's fields as a report names them, each quoted, a list
@@ -200,6 +242,7 @@ func (e Example) String() string {
 	for _, f := range e.Fields {
 		parts = append(parts, fmt.Sprintf("%s=%q", f.Name, f.Value()))
 	}
+
 	return strings.Join(parts, ", ")
 }
 
@@ -214,5 +257,6 @@ func (f ExampleField) Value() any {
 	if len(f.Values) == 1 {
 		return f.Values[0]
 	}
+
 	return f.Values
 }

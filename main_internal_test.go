@@ -16,28 +16,32 @@ import (
 // and nothing the caller does makes the next one succeed.
 type failWriter struct{}
 
-func (failWriter) Write([]byte) (int, error) { return 0, errors.New("no space left on device") }
+func (failWriter) Write([]byte) (int, error) { return 0, errNoSpace }
+
+var errNoSpace = errors.New("no space left on device")
 
 //nolint:paralleltest // sandboxHome sets the process environment and working directory
 func TestCommandsReportAnUnwritableStdout(t *testing.T) {
 	cases := []struct {
-		name string
 		run  func(stdout, stderr io.Writer) int
+		name string
 	}{
-		{"check", func(stdout, stderr io.Writer) int { return cmdCheck(nil, nil, stdout, stderr) }},
-		{"check --json", func(stdout, stderr io.Writer) int { return cmdCheck([]string{"--json"}, nil, stdout, stderr) }},
-		{"test --json", func(stdout, stderr io.Writer) int {
+		{func(stdout, stderr io.Writer) int { return cmdCheck(nil, nil, stdout, stderr) }, "check"},
+		{func(stdout, stderr io.Writer) int { return cmdCheck([]string{"--json"}, nil, stdout, stderr) }, "check --json"},
+		{func(stdout, stderr io.Writer) int {
 			return cmdTest([]string{"PreToolUse", "--json"}, nil, stdout, stderr)
-		}},
-		{"sync", func(stdout, stderr io.Writer) int { return cmdSync(nil, nil, stdout, stderr) }},
+		}, "test --json"},
+		{func(stdout, stderr io.Writer) int { return cmdSync(nil, nil, stdout, stderr) }, "sync"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			sandboxHome(t)
+
 			var stderr writerSpy
 			if code := c.run(failWriter{}, &stderr); code != 1 {
 				t.Errorf("exit code = %d, want 1", code)
 			}
+
 			if stderr.n == 0 {
 				t.Error("the failure was not reported on stderr")
 			}
@@ -51,6 +55,7 @@ type writerSpy struct{ n int }
 
 func (w *writerSpy) Write(p []byte) (int, error) {
 	w.n += len(p)
+
 	return len(p), nil
 }
 
@@ -76,5 +81,6 @@ func sandboxHome(t *testing.T) string {
 	t.Setenv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
 	t.Chdir(repo)
+
 	return repo
 }

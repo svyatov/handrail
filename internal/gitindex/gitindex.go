@@ -18,45 +18,67 @@ import (
 	"strings"
 )
 
-// Dirs returns the git directory of the working tree at root, which holds its
-// index, and the common one, which holds config and info/exclude. Both are ""
-// when root is not a working tree. A linked worktree or a submodule keeps its
-// .git elsewhere and leaves a pointer file behind; a linked worktree then
-// shares everything but its index and HEAD with the main checkout.
-func Dirs(root string) (own, common string, err error) {
+var (
+	errNoGitDir        = errors.New("names no git directory")
+	errTruncated       = errors.New("truncated git index")
+	errTruncatedExt    = errors.New("truncated git index extension")
+	errTruncatedLink   = errors.New("truncated git index link extension")
+	errTruncatedBitmap = errors.New("truncated git index bitmap")
+	errNotIndex        = errors.New("not a git index")
+	errCutPastPrevious = errors.New("corrupt git index: a path cuts more than the previous one holds")
+)
+
+// GitDirs are the git directories of a working tree: Own holds its index, and
+// Common holds config and info/exclude. Both are "" when there is no working
+// tree. A linked worktree or a submodule keeps its .git elsewhere and leaves a
+// pointer file behind; a linked worktree then shares everything but its index
+// and HEAD with the main checkout.
+type GitDirs struct {
+	Own, Common string
+}
+
+// Dirs returns the git directories of the working tree at root.
+func Dirs(root string) (GitDirs, error) {
 	git := filepath.Join(root, ".git")
+
 	fi, err := os.Stat(git)
 	if err != nil {
-		return "", "", nil //nolint:nilerr // no .git is not a failure, it is "not a working tree"
+		return GitDirs{Own: "", Common: ""}, nil //nolint:nilerr // no .git is not a failure, it is "not a working tree"
 	}
+
 	if fi.IsDir() {
-		return git, git, nil
+		return GitDirs{Own: git, Common: git}, nil
 	}
 
 	data, err := os.ReadFile(git)
 	if err != nil {
-		return "", "", err
+		return GitDirs{Own: "", Common: ""}, err
 	}
-	own = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(data)), "gitdir:"))
+
+	own := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(data)), "gitdir:"))
 	if own == "" {
-		return "", "", fmt.Errorf("%s names no git directory", git)
+		return GitDirs{Own: "", Common: ""}, fmt.Errorf("%s %w", git, errNoGitDir)
 	}
+
 	if !filepath.IsAbs(own) {
 		own = filepath.Join(root, own)
 	}
 
 	shared, err := os.ReadFile(filepath.Join(own, "commondir"))
 	if errors.Is(err, fs.ErrNotExist) {
-		return own, own, nil // a submodule: its own git dir is the whole story
+		return GitDirs{Own: own, Common: own}, nil // a submodule: its own git dir is the whole story
 	}
+
 	if err != nil {
-		return "", "", err
+		return GitDirs{Own: "", Common: ""}, err
 	}
-	common = strings.TrimSpace(string(shared))
+
+	common := strings.TrimSpace(string(shared))
 	if !filepath.IsAbs(common) {
 		common = filepath.Join(own, common)
 	}
-	return own, filepath.Clean(common), nil
+
+	return GitDirs{Own: own, Common: filepath.Clean(common)}, nil
 }
 
 // Under reports whether the index of the working tree at root tracks dir, a
@@ -69,34 +91,40 @@ func Dirs(root string) (own, common string, err error) {
 // after its entries. Where a shared index exists, .git/index is read whole,
 // then the shared index with the early stop.
 func Under(root, dir string) (bool, error) {
-	own, common, err := Dirs(root)
-	if err != nil || own == "" {
+	dirs, err := Dirs(root)
+	if err != nil || dirs.Own == "" {
 		return false, err
 	}
-	index := filepath.Join(own, "index")
-	if _, err := os.Stat(index); errors.Is(err, fs.ErrNotExist) {
+
+	index := filepath.Join(dirs.Own, "index")
+
+	_, err = os.Stat(index)
+	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}
-	hashLen, err := hashLen(common)
+
+	hashLen, err := hashLen(dirs.Common)
 	if err != nil {
 		return false, err
 	}
-	s := scan{hashLen: hashLen, below: dir + "/"}
+
+	search := scan{below: dir + "/", hashLen: hashLen}
 
 	// ponytail: a shared index left behind by --no-split-index makes this read
 	// a plain index whole until git expires it (two weeks by default); the
 	// answer stays right, only the cost grows.
-	shared, err := filepath.Glob(filepath.Join(own, "sharedindex.*"))
+	shared, err := filepath.Glob(filepath.Join(dirs.Own, "sharedindex.*"))
 	if err != nil || len(shared) == 0 {
-		return s.file(index, nil)
+		return search.file(index, nil)
 	}
-	return s.split(own, index)
+
+	return search.split(dirs.Own, index)
 }
 
 // scan is one Under question, asked of one index file at a time.
 type scan struct {
-	hashLen int
 	below   string // dir with a trailing slash
+	hashLen int
 }
 
 // under reports whether an entry tracks dir: a path below it, dir itself, or
@@ -110,33 +138,39 @@ func (s scan) under(name string) bool {
 	hasPrefix := func(str, prefix string) bool {
 		return len(str) >= len(prefix) && strings.EqualFold(str[:len(prefix)], prefix)
 	}
+
 	return hasPrefix(name, s.below) || hasPrefix(s.below, strings.TrimSuffix(name, "/")+"/")
 }
 
 // file reads the index at path up to the first entry past dir, passing over
 // the entries whose position deleted holds.
 func (s scan) file(path string, deleted bitmap) (bool, error) {
-	f, err := os.Open(path)
+	indexFile, err := os.Open(path)
 	if err != nil {
 		return false, err
 	}
-	defer f.Close()
-	d, err := newDecoder(f, s.hashLen)
+	defer indexFile.Close()
+
+	dec, err := newDecoder(indexFile, s.hashLen)
 	if err != nil {
 		return false, err
 	}
-	for i := range uint64(d.count) {
-		name, err := d.next()
+
+	for pos := range uint64(dec.count) {
+		name, err := dec.next()
 		if err != nil {
 			return false, err
 		}
-		if !deleted.has(i) && s.under(name) {
+
+		if !deleted.has(pos) && s.under(name) {
 			return true, nil
 		}
+
 		if name > s.below {
 			return false, nil
 		}
 	}
+
 	return false, nil
 }
 
@@ -147,26 +181,32 @@ func (s scan) split(own, index string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	d, err := newDecoder(bytes.NewReader(data), s.hashLen)
+
+	dec, err := newDecoder(bytes.NewReader(data), s.hashLen)
 	if err != nil {
 		return false, err
 	}
-	for range d.count {
-		name, err := d.next()
-		if err != nil {
-			return false, err
+
+	for range dec.count {
+		name, nextErr := dec.next()
+		if nextErr != nil {
+			return false, nextErr
 		}
+
 		if s.under(name) {
 			return true, nil
 		}
 	}
-	if len(data)-s.hashLen < d.off {
-		return false, errors.New("truncated git index")
+
+	if len(data)-s.hashLen < dec.off {
+		return false, errTruncated
 	}
-	base, deleted, err := link(data[d.off:len(data)-s.hashLen], s.hashLen)
+
+	base, deleted, err := link(data[dec.off:len(data)-s.hashLen], s.hashLen)
 	if err != nil || base == "" {
 		return false, err
 	}
+
 	return s.file(filepath.Join(own, "sharedindex."+base), deleted)
 }
 
@@ -179,19 +219,25 @@ func link(ext []byte, hashLen int) (string, bitmap, error) {
 	for len(ext) >= 8 {
 		size := uint64(binary.BigEndian.Uint32(ext[4:8]))
 		if size > uint64(len(ext[8:])) {
-			return "", nil, errors.New("truncated git index extension")
+			return "", nil, errTruncatedExt
 		}
+
 		sig, body := string(ext[:4]), ext[8:8+size]
 		ext = ext[8+size:]
+
 		if sig != "link" {
 			continue
 		}
+
 		if len(body) < hashLen {
-			return "", nil, errors.New("truncated git index link extension")
+			return "", nil, errTruncatedLink
 		}
+
 		deleted, err := ewah(body[hashLen:])
+
 		return hex.EncodeToString(body[:hashLen]), deleted, err
 	}
+
 	return "", nil, nil
 }
 
@@ -203,8 +249,10 @@ type bitmap [][2]uint64
 func (m *bitmap) add(start, end uint64) {
 	if n := len(*m); n > 0 && (*m)[n-1][1] == start {
 		(*m)[n-1][1] = end
+
 		return
 	}
+
 	*m = append(*m, [2]uint64{start, end})
 }
 
@@ -220,6 +268,7 @@ func (m *bitmap) has(pos uint64) bool {
 			return 0
 		}
 	})
+
 	return found
 }
 
@@ -227,139 +276,194 @@ func (m *bitmap) has(pos uint64) bool {
 // count, then the words: each marker word says how many words of all ones or
 // all zeros follow, stored as nothing, and how many literal words follow it,
 // stored as themselves, low bit first.
-func ewah(b []byte) (bitmap, error) {
-	if len(b) < 8 {
-		return nil, errors.New("truncated git index bitmap")
-	}
-	bits := uint64(binary.BigEndian.Uint32(b))
-	words := uint64(binary.BigEndian.Uint32(b[4:]))
-	if words > uint64(len(b[8:]))/8 {
-		return nil, errors.New("truncated git index bitmap")
-	}
-	word := func(i uint64) uint64 { return binary.BigEndian.Uint64(b[8+8*i:]) }
+func ewah(data []byte) (bitmap, error) {
+	const (
+		headerLen     = 8         // the 32-bit bit count and the 32-bit word count
+		wordBits      = 64        // bits in a word, run or literal
+		runMask       = 1<<32 - 1 // a marker's bits 1-32, once shifted down, count its run's words
+		literalsShift = 33        // a marker's bits 33-63 count its literal words
+	)
 
-	var set bitmap
-	var pos uint64
-	for i := uint64(0); i < words; {
-		marker := word(i)
-		i++
-		end := pos + (marker>>1&0xffffffff)*64
+	if len(data) < headerLen {
+		return nil, errTruncatedBitmap
+	}
+
+	bits := uint64(binary.BigEndian.Uint32(data))
+
+	words := uint64(binary.BigEndian.Uint32(data[4:]))
+	if words > uint64(len(data[headerLen:]))/8 {
+		return nil, errTruncatedBitmap
+	}
+
+	word := func(i uint64) uint64 { return binary.BigEndian.Uint64(data[headerLen+8*i:]) }
+
+	var (
+		set bitmap
+		pos uint64
+	)
+
+	for idx := uint64(0); idx < words; {
+		marker := word(idx)
+		idx++
+
+		end := pos + (marker>>1&runMask)*wordBits
 		if marker&1 != 0 && pos < min(end, bits) {
 			set.add(pos, min(end, bits))
 		}
+
 		pos = end
-		literals := marker >> 33
-		if literals > words-i {
-			return nil, errors.New("truncated git index bitmap")
+
+		literals := marker >> literalsShift
+		if literals > words-idx {
+			return nil, errTruncatedBitmap
 		}
+
 		for range literals {
-			for bit := range uint64(64) {
-				if word(i)>>bit&1 != 0 {
+			for bit := range uint64(wordBits) {
+				if word(idx)>>bit&1 != 0 {
 					set.add(pos+bit, pos+bit+1)
 				}
 			}
-			pos += 64
-			i++
+
+			pos += wordBits
+			idx++
 		}
 	}
+
 	return set, nil
 }
 
 // decoder reads index entries one at a time, in index order.
 type decoder struct {
 	r       *bufio.Reader
-	off     int // bytes read so far, where the extensions start once every entry is
+	prev    string // the last path read, which a v4 path is cut from
+	off     int    // bytes read so far, where the extensions start once every entry is
+	hashLen int
 	version uint32
 	count   uint32
-	hashLen int
-	prev    string // the last path read, which a v4 path is cut from
 }
 
 // hashLen is the length of an object name in the repository whose common git
 // directory is common: 32 bytes where its config sets extensions.objectFormat
 // to sha256, else SHA-1's 20. Section and key names are case-insensitive.
 func hashLen(common string) (int, error) {
+	const sha1Len, sha256Len = 20, 32
+
 	data, err := os.ReadFile(filepath.Join(common, "config"))
 	if err != nil {
 		return 0, err
 	}
+
 	var section string
+
 	for line := range strings.Lines(string(data)) {
 		line = strings.TrimSpace(line)
 		if rest, ok := strings.CutPrefix(line, "["); ok {
 			section, _, _ = strings.Cut(rest, "]")
 			section = strings.ToLower(strings.TrimSpace(section))
+
 			continue
 		}
+
 		key, value, _ := strings.Cut(line, "=")
 		if section == "extensions" && strings.EqualFold(strings.TrimSpace(key), "objectformat") &&
 			strings.EqualFold(strings.TrimSpace(value), "sha256") {
-			return 32, nil
+			return sha256Len, nil
 		}
 	}
-	return 20, nil
+
+	return sha1Len, nil
 }
 
 func newDecoder(r io.Reader, hashLen int) (*decoder, error) {
-	d := &decoder{r: bufio.NewReader(r), hashLen: hashLen}
-	header, err := d.read(12)
+	const headerLen = 12 // "DIRC", the version and the entry count, 4 bytes each
+
+	dec := &decoder{r: bufio.NewReader(r), prev: "", off: 0, hashLen: hashLen, version: 0, count: 0}
+
+	header, err := dec.read(headerLen)
 	if err != nil {
 		return nil, err
 	}
+
 	if string(header[:4]) != "DIRC" {
-		return nil, errors.New("not a git index")
+		return nil, errNotIndex
 	}
-	d.version = binary.BigEndian.Uint32(header[4:])
-	d.count = binary.BigEndian.Uint32(header[8:])
-	return d, nil
+
+	dec.version = binary.BigEndian.Uint32(header[4:])
+	dec.count = binary.BigEndian.Uint32(header[8:])
+
+	return dec, nil
 }
 
-// read returns the next n bytes.
-func (d *decoder) read(n int) ([]byte, error) {
-	b := make([]byte, n)
-	if _, err := io.ReadFull(d.r, b); err != nil {
+// read returns the next size bytes.
+func (d *decoder) read(size int) ([]byte, error) {
+	buf := make([]byte, size)
+
+	_, err := io.ReadFull(d.r, buf)
+	if err != nil {
 		return nil, fmt.Errorf("truncated git index: %w", err)
 	}
-	d.off += n
-	return b, nil
+
+	d.off += size
+
+	return buf, nil
 }
 
 // path reads a NUL-terminated path, NUL included in what it counts.
 func (d *decoder) path() (string, error) {
-	b, err := d.r.ReadBytes(0)
+	raw, err := d.r.ReadBytes(0)
 	if err != nil {
 		return "", fmt.Errorf("truncated git index: %w", err)
 	}
-	d.off += len(b)
-	return string(b[:len(b)-1]), nil
+
+	d.off += len(raw)
+
+	return string(raw[:len(raw)-1]), nil
 }
 
 // next returns the path of the next entry. An entry is 40 bytes of stat data,
 // the object name, 2 bytes of flags, from v3 2 more when the flags say so, and
 // the NUL-terminated path, padded with NULs to a multiple of 8 bytes.
 func (d *decoder) next() (string, error) {
-	fixed := 40 + d.hashLen + 2
-	b, err := d.read(fixed)
+	const (
+		statLen        = 40 // ten 32-bit fields: ctime and mtime in two each, dev, ino, mode, uid, gid, size
+		flagsLen       = 2
+		pathCutVersion = 4 // from v4 a path is cut from the previous one
+		entryAlign     = 8
+	)
+
+	fixed := statLen + d.hashLen + flagsLen
+
+	entry, err := d.read(fixed)
 	if err != nil {
 		return "", err
 	}
-	if d.version >= 3 && binary.BigEndian.Uint16(b[fixed-2:])&0x4000 != 0 {
-		if _, err := d.read(2); err != nil {
+
+	if d.version >= 3 && binary.BigEndian.Uint16(entry[fixed-flagsLen:])&0x4000 != 0 {
+		_, err = d.read(flagsLen)
+		if err != nil {
 			return "", err
 		}
-		fixed += 2
+
+		fixed += flagsLen
 	}
-	if d.version == 4 {
+
+	if d.version == pathCutVersion {
 		return d.nextV4()
 	}
+
 	name, err := d.path()
 	if err != nil {
 		return "", err
 	}
+
 	size := fixed + len(name) + 1
-	if _, err := d.read((size+7)&^7 - size); err != nil {
+
+	_, err = d.read((size+entryAlign-1)&^(entryAlign-1) - size)
+	if err != nil {
 		return "", err
 	}
+
 	return name, nil
 }
 
@@ -370,31 +474,44 @@ func (d *decoder) nextV4() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	if cut > uint64(len(d.prev)) {
-		return "", errors.New("corrupt git index: a path cuts more than the previous one holds")
+		return "", errCutPastPrevious
 	}
+
 	rest, err := d.path()
 	if err != nil {
 		return "", err
 	}
+
 	d.prev = d.prev[:uint64(len(d.prev))-cut] + rest
+
 	return d.prev, nil
 }
 
 // varint reads git's offset encoding: 7 bits a byte, most significant first,
 // each continuation adding one so no value has two spellings.
 func (d *decoder) varint() (uint64, error) {
-	var v uint64
+	const (
+		bitsPerByte = 7
+		more        = 0x80 // the high bit: another byte follows
+	)
+
+	var value uint64
+
 	for {
 		b, err := d.read(1)
 		if err != nil {
 			return 0, err
 		}
+
 		c := b[0]
-		v = v<<7 | uint64(c&0x7f)
-		if c&0x80 == 0 {
-			return v, nil
+
+		value = value<<bitsPerByte | uint64(c&^more)
+		if c&more == 0 {
+			return value, nil
 		}
-		v++
+
+		value++
 	}
 }

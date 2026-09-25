@@ -35,45 +35,54 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
-// commands are the entrypoints run dispatches to. Only hook and test read
-// stdin; the rest take it to share one signature.
-var commands = map[string]func(args []string, stdin io.Reader, stdout, stderr io.Writer) int{
-	"sync":    cmdSync,
-	"hook":    cmdHook,
-	"check":   cmdCheck,
-	"test":    cmdTest,
-	"trust":   cmdTrust,
-	"import":  cmdImport,
-	"doctor":  cmdDoctor,
-	"version": cmdVersion,
-}
-
 // run is the CLI seam: every command dispatches from here, and the exit code
 // is the return value rather than an os.Exit deep in a subcommand.
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	// commands are the entrypoints run dispatches to. Only hook and test read
+	// stdin; the rest take it to share one signature. run is called once per
+	// process, so building the table here costs what a package-level one would.
+	commands := map[string]func(args []string, stdin io.Reader, stdout, stderr io.Writer) int{
+		"sync":    cmdSync,
+		"hook":    cmdHook,
+		"check":   cmdCheck,
+		"test":    cmdTest,
+		"trust":   cmdTrust,
+		"import":  cmdImport,
+		"doctor":  cmdDoctor,
+		"version": cmdVersion,
+	}
+
 	if len(args) == 0 {
 		fmt.Fprint(stderr, usage)
+
 		return 1
 	}
+
 	cmd, ok := commands[args[0]]
 	if !ok {
 		fmt.Fprintf(stderr, "handrail: unknown command %q\n\n", args[0])
 		fmt.Fprint(stderr, usage)
+
 		return 1
 	}
+
 	return cmd(args[1:], stdin, stdout, stderr)
 }
 
 // parseFlags parses a command's flags and refuses a positional argument after
 // them, reporting whether the command may go on.
-func parseFlags(fs *flag.FlagSet, args []string, stderr io.Writer) bool {
-	if err := fs.Parse(args); err != nil {
+func parseFlags(flags *flag.FlagSet, args []string, stderr io.Writer) bool {
+	err := flags.Parse(args)
+	if err != nil {
 		return false
 	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "handrail %s: unexpected argument %q\n", fs.Name(), fs.Arg(0))
+
+	if flags.NArg() > 0 {
+		fmt.Fprintf(stderr, "handrail %s: unexpected argument %q\n", flags.Name(), flags.Arg(0))
+
 		return false
 	}
+
 	return true
 }
 
@@ -91,36 +100,47 @@ func loadRules(stderr io.Writer) (*rule.Ruleset, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	rs := rule.Load(cwd)
 	if notice := rs.TrustNotice(); notice != "" {
 		fmt.Fprintln(stderr, notice)
 	}
+
 	return rs, nil
 }
 
 // loadValidRules is test's authoring-time contract: every tier parses, or the
 // command stops without acting. check and sync report problems and keep going,
 // check because reporting them is its whole job, sync because its hooks
-// depend on no rule.
-func loadValidRules(stderr io.Writer) (*rule.Ruleset, int) {
-	rs, err := loadRules(stderr)
+// depend on no rule. It is nil when the command stops, the reason already on
+// stderr.
+func loadValidRules(stderr io.Writer) *rule.Ruleset {
+	ruleset, err := loadRules(stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
-		return nil, 1
+
+		return nil
 	}
-	if problems := rs.Invalid(); len(problems) > 0 {
+
+	if problems := ruleset.Invalid(); len(problems) > 0 {
 		reportProblems(problems, stderr)
-		return nil, 1
+
+		return nil
 	}
-	return rs, 0
+
+	return ruleset
 }
 
 func writeJSON(stdout, stderr io.Writer, v any) int {
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
+
+	err := enc.Encode(v)
+	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
+
 		return 1
 	}
+
 	return 0
 }

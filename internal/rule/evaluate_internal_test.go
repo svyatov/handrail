@@ -23,7 +23,9 @@ import (
 // it.
 func TestEveryOperatorTheParserAcceptsAlsoMatches(t *testing.T) {
 	t.Parallel()
+
 	const command = "deploy prod now"
+
 	matching := map[string]string{
 		"matches":     `^deploy\s`,
 		"contains":    "prod",
@@ -32,22 +34,23 @@ func TestEveryOperatorTheParserAcceptsAlsoMatches(t *testing.T) {
 		"ends_with":   "now",
 		"glob":        "deploy*",
 	}
-	payload := Payload{Event: "PreToolUse", Kind: "shell"}
+	payload := Payload{Event: "PreToolUse", Kind: "shell", fields: nil, files: nil, StopHookActive: false}
 	payload.SetField("command", command)
 
-	for _, op := range operators {
-		t.Run(op, func(t *testing.T) {
+	for _, operator := range operators() {
+		t.Run(operator, func(t *testing.T) {
 			t.Parallel()
-			value, ok := matching[op]
+
+			value, ok := matching[operator]
 			if !ok {
-				t.Fatalf("no value that matches %q, so this operator is untested", op)
+				t.Fatalf("no value that matches %q, so this operator is untested", operator)
 			}
 			// The negated spelling shares the switch and inverts the answer, so
 			// an operator missing from it reads as "always matches" there.
 			for _, c := range []struct {
 				key  string
 				want bool
-			}{{op, true}, {"not_" + op, false}} {
+			}{{operator, true}, {"not_" + operator, false}} {
 				if got := parseOne(t, c.key, value).matches(payload); got != c.want {
 					t.Errorf("%s: %s matches(%q) = %v, want %v", c.key, value, command, got, c.want)
 				}
@@ -59,24 +62,28 @@ func TestEveryOperatorTheParserAcceptsAlsoMatches(t *testing.T) {
 // parseOne builds a one-Term rule the way a rule file does, so the compile
 // switch is on the path too: an operator needing a regexp and not getting one
 // panics in matches rather than quietly missing.
-func parseOne(t *testing.T, op, value string) *Rule {
+func parseOne(t *testing.T, operator, value string) *Rule {
 	t.Helper()
+
 	doc := strings.Join([]string{
 		"---",
 		"event: PreToolUse",
 		"kind: shell",
 		"conditions:",
 		"  - field: command",
-		"    " + op + ": '" + value + "'",
+		"    " + operator + ": '" + value + "'",
 		"---",
 		"Say something.",
 	}, "\n")
-	r, err := Parse("op-under-test", []byte(doc))
+
+	parsed, err := Parse("op-under-test", []byte(doc))
 	if err != nil {
-		t.Fatalf("Parse(%s: %s) = %v", op, value, err)
+		t.Fatalf("Parse(%s: %s) = %v", operator, value, err)
 	}
-	if len(r.Conditions) != 1 || len(r.Conditions[0].Terms) != 1 {
-		t.Fatalf("Parse(%s) produced %d conditions, want one term", op, len(r.Conditions))
+
+	if len(parsed.Conditions) != 1 || len(parsed.Conditions[0].Terms) != 1 {
+		t.Fatalf("Parse(%s) produced %d conditions, want one term", operator, len(parsed.Conditions))
 	}
-	return r
+
+	return parsed
 }
