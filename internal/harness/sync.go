@@ -275,12 +275,7 @@ func (d Degradation) String() string {
 
 // Action is the action the harness delivers for r: the rule's own, or the
 // nearest one it can deliver where it cannot deliver that.
-func (a Adapter) Action(r *rule.Rule) rule.Outcome {
-	if r.Action == rule.Block && a.caps(r.Event).deny == noDenial {
-		return rule.Warn
-	}
-	return r.Action
-}
+func (a Adapter) Action(r *rule.Rule) rule.Outcome { return a.degrade(r.Event, r.Action) }
 
 // Delivered is the Outcome the harness delivers for the matched rules: the
 // strongest action it delivers among them.
@@ -301,7 +296,7 @@ func (a Adapter) Degradations(rules []*rule.Rule) []Degradation {
 		c := a.caps(r.Event)
 		if to := a.Action(r); to != r.Action {
 			out = append(out, Degradation{
-				Rule: r.Name, From: r.Action.String(), To: to.String(), Reason: a.blockReason(r.Event),
+				Rule: r.Name, From: r.Action.String(), To: to.String(), Reason: a.reason(r.Event, to),
 			})
 		}
 		// The message still reaches the user, on stderr, but the agent is gone by

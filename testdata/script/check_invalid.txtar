@@ -16,7 +16,7 @@ stderr 'bad-regexp\.md: line 5: invalid regexp'
 stderr 'unknown-event\.md: line 2: unknown event "PreTool"'
 stderr 'missing-event\.md: line 1: missing required field "event"'
 stderr 'unknown-kind\.md: line 3: unknown kind "bash"'
-stderr 'unknown-action\.md: line 4: unknown action "ask"'
+stderr 'unknown-action\.md: line 4: unknown action "defer"'
 stderr 'bad-enabled\.md: line 3: enabled must be true or false'
 stderr 'nested-any\.md: line 7: any groups cannot nest'
 stderr 'conditions-not-a-list\.md: line 3: conditions must be a list'
@@ -173,9 +173,9 @@ No such tool kind.
 ---
 event: PreToolUse
 kind: shell
-action: ask
+action: defer
 ---
-No ask action in v1.
+No defer action.
 -- .handrail/bad-enabled.md --
 ---
 event: PreToolUse

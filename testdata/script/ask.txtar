@@ -1,0 +1,84 @@
+# ask hands a PreToolUse call to the human, and where a harness cannot ask it
+# blocks, so the call never proceeds without a human yes.
+
+# ask is an Action on PreToolUse.
+exec handrail check
+stdout '^global +ask-push +PreToolUse +shell +ask +enabled$'
+
+# Only a tool call can be approved, so ask on any other event is invalid.
+cp ask-later.md home/.config/handrail/ask-later.md
+! exec handrail check
+stderr 'ask-later\.md: line 3: ask applies only to PreToolUse'
+rm home/.config/handrail/ask-later.md
+
+# Claude Code asks: the human reads the rule in the approval prompt, and the
+# agent gets it as context, so a refusal still tells it why.
+stdin push.json
+exec handrail hook claude PreToolUse
+! stderr .
+stdout '"permissionDecision": "ask"'
+stdout '"permissionDecisionReason": "handrail ask: ask-push \(global\)\\nPushes publish work; the human approves each one\."'
+stdout '"additionalContext": "handrail ask: ask-push \(global\)\\nPushes publish work; the human approves each one\."'
+
+# What handrail tells the human rides in the approval prompt, not beside it.
+cp ask-later.md home/.config/handrail/ask-later.md
+stdin push.json
+exec handrail hook claude PreToolUse
+stdout '"permissionDecisionReason": "handrail ask: .*skipped the broken rule .*ask-later\.md'
+! stdout 'systemMessage'
+rm home/.config/handrail/ask-later.md
+
+# Codex cannot ask, and fails open when told to, so there the ask blocks, and
+# its reason says the rule wanted approval.
+stdin push.json
+exec sh -c 'handrail hook codex PreToolUse; echo code=$?'
+stdout '^code=2$'
+stderr '^handrail ask: ask-push \(global\)$'
+stderr '^Pushes publish work; the human approves each one\.$'
+stderr '^handrail: the rule asks for approval, and Codex CLI cannot ask for it, so the call is denied\.$'
+
+# sync reports that substitution, on Codex alone, with the same reason.
+exec handrail sync
+stdout '^codex: ask degraded to block for ask-push: the rule asks for approval, and Codex CLI cannot ask for it, so the call is denied$'
+! stdout 'claude: ask degraded'
+
+# test exits 3 on ask, and the human line is the approval prompt's text.
+exec sh -c 'handrail test PreToolUse --kind shell --field "command=git push"; echo code=$?'
+stdout '^ask  ask-push  global$'
+stdout '^outcome: ask$'
+stdout '^human:\n  handrail ask: ask-push \(global\)\n  Pushes publish work; the human approves each one\.$'
+stdout '^code=3$'
+
+# --harness codex reports what hook does there: a block, degraded from ask,
+# whose reason says so.
+exec sh -c 'handrail test PreToolUse --kind shell --field "command=git push" --harness codex --json; echo code=$?'
+stdout '"action": "block"'
+stdout '"degraded_from": "ask"'
+stdout '"outcome": "block"'
+stdout '"human": "handrail ask: ask-push \(global\)\\nPushes publish work; the human approves each one\.\\nhandrail: the rule asks for approval, and Codex CLI cannot ask for it, so the call is denied\."'
+stdout '^code=2$'
+
+-- push.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git push"}}
+-- .git/HEAD --
+ref: refs/heads/main
+-- home/.claude/settings.json --
+{}
+-- home/.codex/hooks.json --
+{}
+-- ask-later.md --
+---
+event: PostToolUse
+action: ask
+---
+Too late to approve anything.
+-- home/.config/handrail/ask-push.md --
+---
+event: PreToolUse
+kind: shell
+action: ask
+conditions:
+  - field: command
+    starts_with: git push
+---
+Pushes publish work; the human approves each one.

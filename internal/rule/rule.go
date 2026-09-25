@@ -140,7 +140,7 @@ func Parse(name string, data []byte) (*Rule, error) {
 
 	r := &Rule{Name: name, Action: Warn, Enabled: true, Message: strings.TrimSpace(body)}
 	seen := make(map[string]bool, len(doc.mapping))
-	var kindLine int
+	var kindLine, actionLine int
 	for _, kv := range doc.mapping {
 		if seen[kv.key] {
 			return nil, fmt.Errorf("line %d: duplicate field %q", kv.line, kv.key)
@@ -164,14 +164,16 @@ func Parse(name string, data []byte) (*Rule, error) {
 				return nil, fmt.Errorf("line %d: unknown kind %q", kv.line, r.Kind)
 			}
 		case "action":
+			actionLine = kv.line
 			var v string
 			if err := scalarInto(kv, &v); err != nil {
 				return nil, err
 			}
-			// ask is in the vocabulary before a rule file may write it.
 			switch v {
 			case "warn":
 				r.Action = Warn
+			case "ask":
+				r.Action = Ask
 			case "block":
 				r.Action = Block
 			default:
@@ -212,7 +214,7 @@ func Parse(name string, data []byte) (*Rule, error) {
 		}
 	}
 
-	if err := r.checkEvent(kindLine); err != nil {
+	if err := r.checkEvent(kindLine, actionLine); err != nil {
 		return nil, err
 	}
 
@@ -231,18 +233,22 @@ func Parse(name string, data []byte) (*Rule, error) {
 	return r, nil
 }
 
-// checkEvent holds the kind, the conditions and the Examples to what the rule's
-// event can carry, and gives each Example the kind it takes: the one it
-// writes, else the rule's. With neither, the spec's other and no kind read
-// alike, since only a rule naming a kind reads one. A rule with no event is a
-// disabled stub, with no event to hold anything to.
-func (r *Rule) checkEvent(kindLine int) error {
+// checkEvent holds the kind, the action, the conditions and the Examples to
+// what the rule's event can carry, and gives each Example the kind it takes:
+// the one it writes, else the rule's. With neither, the spec's other and no
+// kind read alike, since only a rule naming a kind reads one. A rule with no
+// event is a disabled stub, with no event to hold anything to.
+func (r *Rule) checkEvent(kindLine, actionLine int) error {
 	if r.Event == "" {
 		return nil
 	}
 	tool := ToolEvent(r.Event)
 	if r.Kind != "" && !tool {
 		return fmt.Errorf("line %d: kind applies only to PreToolUse and PostToolUse", kindLine)
+	}
+	// Only a tool call not yet made is something a human can approve.
+	if r.Action == Ask && r.Event != "PreToolUse" {
+		return fmt.Errorf("line %d: ask applies only to PreToolUse", actionLine)
 	}
 	for _, c := range r.Conditions {
 		for _, t := range c.Terms {
