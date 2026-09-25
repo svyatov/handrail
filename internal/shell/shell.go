@@ -40,23 +40,16 @@ func Patch(line string) (dir, body string, ok bool) {
 	if err != nil || len(f.Stmts) != 1 {
 		return "", "", false
 	}
-	r, st := reader{text: line}, f.Stmts[0]
-	if and, isList := st.Cmd.(*syntax.BinaryCmd); isList {
-		cd, isCall := and.X.Cmd.(*syntax.CallExpr)
-		if and.Op != syntax.AndStmt || !isCall || len(cd.Args) != 2 || cd.Args[0].Lit() != "cd" || !literal(cd.Args[1]) {
-			return "", "", false
-		}
-		dir, st = r.word(cd.Args[1]), and.Y
-	}
-	call, isCall := st.Cmd.(*syntax.CallExpr)
-	if !isCall || len(call.Args) != 1 || len(st.Redirs) != 1 {
+	r := reader{text: line}
+	dir, st, ok := r.patchDir(f.Stmts[0])
+	if !ok {
 		return "", "", false
 	}
-	rd := st.Redirs[0]
-	if name := call.Args[0].Lit(); name != "apply_patch" && name != "applypatch" || rd.Op != syntax.Hdoc || rd.Hdoc == nil {
+	body, ok = r.patchBody(st)
+	if !ok {
 		return "", "", false
 	}
-	return dir, r.src(rd.Hdoc, rd.Hdoc), true
+	return dir, body, true
 }
 
 // File is one file a command's syntax names: the target of a redirect to a
@@ -84,6 +77,33 @@ type reader struct {
 	depth int
 }
 
+// patchDir reads the cd <dir> && a patch statement may open with, and returns
+// the directory, or empty, and the statement that follows.
+func (r *reader) patchDir(st *syntax.Stmt) (string, *syntax.Stmt, bool) {
+	and, isList := st.Cmd.(*syntax.BinaryCmd)
+	if !isList {
+		return "", st, true
+	}
+	cd, isCall := and.X.Cmd.(*syntax.CallExpr)
+	if and.Op != syntax.AndStmt || !isCall || len(cd.Args) != 2 || cd.Args[0].Lit() != "cd" || !literal(cd.Args[1]) {
+		return "", nil, false
+	}
+	return r.word(cd.Args[1]), and.Y, true
+}
+
+// patchBody reads the heredoc a lone apply_patch or applypatch is fed.
+func (r *reader) patchBody(st *syntax.Stmt) (string, bool) {
+	call, isCall := st.Cmd.(*syntax.CallExpr)
+	if !isCall || len(call.Args) != 1 || len(st.Redirs) != 1 {
+		return "", false
+	}
+	rd := st.Redirs[0]
+	if name := call.Args[0].Lit(); name != "apply_patch" && name != "applypatch" || rd.Op != syntax.Hdoc || rd.Hdoc == nil {
+		return "", false
+	}
+	return r.src(rd.Hdoc, rd.Hdoc), true
+}
+
 // read parses code and adds its Candidates, and reports whether it parsed.
 func (r *reader) read(code string) bool {
 	// Bash for every command, whatever shell the harness runs, as a declared
@@ -107,12 +127,7 @@ func (r *reader) read(code string) bool {
 			// The walk meets a group before the statements it holds, and
 			// each of them reads the group's input.
 			if _, call := n.Cmd.(*syntax.CallExpr); !call && (r.fed[n] || input(n)) {
-				syntax.Walk(n.Cmd, func(m syntax.Node) bool {
-					if st, ok := m.(*syntax.Stmt); ok {
-						r.fed[st] = true
-					}
-					return true
-				})
+				r.feed(n.Cmd)
 			}
 			r.stmt(n)
 		case *syntax.Redirect:
@@ -121,6 +136,16 @@ func (r *reader) read(code string) bool {
 		return true
 	})
 	return true
+}
+
+// feed marks every statement a group holds as fed.
+func (r *reader) feed(group syntax.Command) {
+	syntax.Walk(group, func(m syntax.Node) bool {
+		if st, ok := m.(*syntax.Stmt); ok {
+			r.fed[st] = true
+		}
+		return true
+	})
 }
 
 // input reports whether a statement redirects its standard input.
@@ -181,26 +206,9 @@ func (r *reader) stmt(st *syntax.Stmt) {
 	case nil, *syntax.BinaryCmd, *syntax.Block, *syntax.Subshell, *syntax.IfClause,
 		*syntax.WhileClause, *syntax.ForClause, *syntax.CaseClause, *syntax.FuncDecl:
 	case *syntax.CallExpr:
-		words := make([]string, 0, len(cmd.Assigns)+len(cmd.Args))
-		for _, a := range cmd.Assigns {
-			words = append(words, r.assign(a))
-		}
-		for _, w := range cmd.Args {
-			words = append(words, r.word(w))
-		}
-		r.add(r.src(from, to), strings.Join(words, " "))
-		if len(cmd.Args) == 0 {
-			return
-		}
-		// Each leading assignment prefix is its own level, so a rule reads the
-		// command with it and without it.
-		if len(cmd.Assigns) > 0 {
-			r.add(r.src(cmd.Args[0], to), strings.Join(words[len(cmd.Assigns):], " "))
-		}
-		c := &call{st: st, args: cmd.Args, words: words[len(cmd.Assigns):], to: to, seen: map[int]bool{0: true}}
-		r.follow(c, 0, len(c.args))
+		r.command(st, cmd, from, to)
 	case *syntax.DeclClause:
-		words := []string{cmd.Variant.Value}
+		words := append(make([]string, 0, 1+len(cmd.Args)), cmd.Variant.Value)
 		for _, a := range cmd.Args {
 			words = append(words, r.assign(a))
 		}
@@ -211,24 +219,37 @@ func (r *reader) stmt(st *syntax.Stmt) {
 	}
 }
 
+// command adds a simple command statement, which runs from one node to
+// another, and follows it into the program it names.
+func (r *reader) command(st *syntax.Stmt, cmd *syntax.CallExpr, from, to syntax.Node) {
+	words := make([]string, 0, len(cmd.Assigns)+len(cmd.Args))
+	for _, a := range cmd.Assigns {
+		words = append(words, r.assign(a))
+	}
+	for _, w := range cmd.Args {
+		words = append(words, r.word(w))
+	}
+	r.add(r.src(from, to), strings.Join(words, " "))
+	if len(cmd.Args) == 0 {
+		return
+	}
+	// Each leading assignment prefix is its own level, so a rule reads the
+	// command with it and without it.
+	if len(cmd.Assigns) > 0 {
+		r.add(r.src(cmd.Args[0], to), strings.Join(words[len(cmd.Assigns):], " "))
+	}
+	c := &call{st: st, args: cmd.Args, words: words[len(cmd.Assigns):], to: to, seen: map[int]bool{0: true}}
+	r.follow(c, 0, len(c.args))
+}
+
 // redirect adds a redirect whose target is a file. fd duplication, heredocs,
 // herestrings and the device files name no file.
 func (r *reader) redirect(rd *syntax.Redirect) {
-	switch rd.Op {
-	case syntax.Hdoc, syntax.DashHdoc, syntax.WordHdoc:
+	if namesNoFile(rd) {
 		return
-	case syntax.DplIn, syntax.DplOut:
-		// Only a bare descriptor duplicates one: Lit is empty for a quoted or
-		// expanded target, which bash may open as a file.
-		if lit := rd.Word.Lit(); lit != "" && strings.Trim(lit, "0123456789") == "" || lit == "-" {
-			return
-		}
-	default:
-		// Every other operator names a file.
 	}
 	target := r.word(rd.Word)
-	if target == "/dev/null" || target == "/dev/stdin" || target == "/dev/stdout" ||
-		target == "/dev/stderr" || target == "/dev/tty" || strings.HasPrefix(target, "/dev/fd/") {
+	if slices.Contains(devices, target) || strings.HasPrefix(target, "/dev/fd/") {
 		return
 	}
 	n := ""
@@ -247,6 +268,26 @@ func (r *reader) redirect(rd *syntax.Redirect) {
 	default:
 		f.Write = true
 		r.file(f)
+	}
+}
+
+// devices are the device files a redirect may name, besides /dev/fd/N.
+var devices = []string{"/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr", "/dev/tty"}
+
+// namesNoFile reports whether a redirect's operator names no file whatever its
+// target: a heredoc, a herestring, or an fd duplication.
+func namesNoFile(rd *syntax.Redirect) bool {
+	switch rd.Op {
+	case syntax.Hdoc, syntax.DashHdoc, syntax.WordHdoc:
+		return true
+	case syntax.DplIn, syntax.DplOut:
+		// Only a bare descriptor duplicates one: Lit is empty for a quoted or
+		// expanded target, which bash may open as a file.
+		lit := rd.Word.Lit()
+		return lit != "" && strings.Trim(lit, "0123456789") == "" || lit == "-"
+	default:
+		// Every other operator names a file.
+		return false
 	}
 }
 
@@ -393,39 +434,42 @@ func ansiC(s string) string {
 			b.WriteByte(s[i])
 			continue
 		}
-		i++
-		if c := strings.IndexByte(`abeEfnrtv\'"?`, s[i]); c >= 0 {
-			b.WriteByte("\a\b\x1b\x1b\f\n\r\t\v\\'\"?"[c])
-			continue
-		}
-		switch s[i] {
-		case 'c':
-			if i+1 < len(s) {
-				i++
-				b.WriteByte(s[i] & 0x1f)
-				continue
-			}
-		case '0', '1', '2', '3', '4', '5', '6', '7':
-			n, end := digits(s, i, 3, 8)
-			b.WriteByte(byte(n & 0xff)) // bash keeps the low eight bits of \777
-			i = end - 1
-			continue
-		case 'x', 'u', 'U':
-			width := [...]int{2, 4, 8}[strings.IndexByte("xuU", s[i])]
-			if n, end := digits(s, i+1, width, 16); end > i+1 {
-				if s[i] == 'x' {
-					b.WriteByte(byte(n & 0xff))
-				} else {
-					b.WriteRune(n)
-				}
-				i = end - 1
-				continue
-			}
-		}
-		b.WriteByte('\\')
-		b.WriteByte(s[i])
+		i = ansiEscape(&b, s, i+1)
 	}
 	return b.String()
+}
+
+// ansiEscape writes what the escape at s[i], just after its backslash, stands
+// for, and returns the index of the escape's last character.
+func ansiEscape(b *strings.Builder, s string, i int) int {
+	if c := strings.IndexByte(`abeEfnrtv\'"?`, s[i]); c >= 0 {
+		b.WriteByte("\a\b\x1b\x1b\f\n\r\t\v\\'\"?"[c])
+		return i
+	}
+	switch s[i] {
+	case 'c':
+		if i+1 < len(s) {
+			b.WriteByte(s[i+1] & 0x1f)
+			return i + 1
+		}
+	case '0', '1', '2', '3', '4', '5', '6', '7':
+		n, end := digits(s, i, 3, 8)
+		b.WriteByte(byte(n & 0xff)) // bash keeps the low eight bits of \777
+		return end - 1
+	case 'x', 'u', 'U':
+		width := [...]int{2, 4, 8}[strings.IndexByte("xuU", s[i])]
+		if n, end := digits(s, i+1, width, 16); end > i+1 {
+			if s[i] == 'x' {
+				b.WriteByte(byte(n & 0xff))
+			} else {
+				b.WriteRune(n)
+			}
+			return end - 1
+		}
+	}
+	b.WriteByte('\\')
+	b.WriteByte(s[i])
+	return i
 }
 
 // digits reads up to maximum digits in base from s[start:], and returns their

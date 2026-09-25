@@ -30,26 +30,7 @@ func (r *reader) program(c *call, g *grammar, i, j int) {
 		return
 	}
 	for _, rd := range s.readings {
-		ops := rd.operands
-		if g.first && !rd.supplied && len(ops) > 0 {
-			ops = ops[1:]
-		}
-		if rd.ends > 0 {
-			ops = slices.DeleteFunc(slices.Clone(ops), func(k int) bool { return k > rd.ends })
-		}
-		write := g.writes && (len(g.writeMode) == 0 || rd.write)
-		for n, k := range ops {
-			f := r.named(c.args[k])
-			f.Write = write && (!g.last || !rd.targeted && n == len(ops)-1)
-			// A lone - is standard input to a program reading it, and a file
-			// named - to one writing it, as rm -- - and cp x - are.
-			if f.Write || c.words[k] != "-" {
-				r.file(f)
-			}
-		}
-		for _, f := range rd.flagged {
-			r.file(f)
-		}
+		s.add(rd)
 	}
 }
 
@@ -91,6 +72,28 @@ func (rd reading) fork() reading {
 	return rd
 }
 
+// files is the operands a reading takes as files: all but a first one that
+// is the pattern or script, and none past the word of an ends flag.
+func (rd reading) files(g *grammar) []int {
+	ops := rd.operands
+	if g.first && !rd.supplied && len(ops) > 0 {
+		ops = ops[1:]
+	}
+	if rd.ends > 0 {
+		ops = slices.DeleteFunc(slices.Clone(ops), func(k int) bool { return k > rd.ends })
+	}
+	return ops
+}
+
+// flagged adds to a reading the file a flag's argument names, if any, as
+// written or read.
+func flagged(rd *reading, f *File, write bool) {
+	if f != nil {
+		f.Write = write
+		rd.flagged = append(rd.flagged, *f)
+	}
+}
+
 // maxReadings bounds the readings of one call, since each flag of uncertain
 // arity doubles them. A call past it is read as one with an unknown flag.
 const maxReadings = 64
@@ -126,11 +129,34 @@ func (s *fileScan) from(k int, rd reading) {
 			k++
 		}
 	}
+	s.keep(rd)
+}
+
+// keep records a reading read to its end, unless it is one too many.
+func (s *fileScan) keep(rd reading) {
 	if len(s.readings) == maxReadings {
 		s.unknown = true
 	}
 	if !s.unknown {
 		s.readings = append(s.readings, rd)
+	}
+}
+
+// add adds the files one reading of the program's arguments names.
+func (s *fileScan) add(rd reading) {
+	ops := rd.files(s.g)
+	write := s.g.writes && (len(s.g.writeMode) == 0 || rd.write)
+	for n, k := range ops {
+		f := s.r.named(s.c.args[k])
+		f.Write = write && (!s.g.last || !rd.targeted && n == len(ops)-1)
+		// A lone - is standard input to a program reading it, and a file
+		// named - to one writing it, as rm -- - and cp x - are.
+		if f.Write || s.c.words[k] != "-" {
+			s.r.file(f)
+		}
+	}
+	for _, f := range rd.flagged {
+		s.r.file(f)
 	}
 }
 
@@ -166,32 +192,42 @@ func (s *fileScan) cluster(k int, rd *reading) int {
 	w := s.c.words[k]
 	for i := 1; i < len(w); i++ {
 		full, a, found := s.g.lookup(w[i:i+1], false)
-		rest := w[i+1:]
-		switch {
-		case !found:
+		if !found {
 			s.unknown = true
 			return k + 1
-		case a == attached:
-			s.apply(rd, k, full, s.part(k, rest))
-			return k + 1
-		case (a == one || a == restOrEither) && rest != "":
-			s.apply(rd, k, full, s.part(k, rest))
-			return k + 1
-		case a == one:
-			s.apply(rd, k, full, s.whole(k+1))
-			return k + 2
-		case a == either && rest != "":
-			fork := rd.fork()
-			s.apply(&fork, k, full, s.part(k, rest))
-			s.from(k+1, fork)
-		case a == either || a == restOrEither:
-			fork := rd.fork()
-			s.apply(&fork, k, full, s.whole(k+1))
-			s.from(k+2, fork)
 		}
-		s.apply(rd, k, full, nil)
+		if next, took := s.short(k, rd, full, a, w[i+1:]); took {
+			return next
+		}
 	}
 	return k + 1
+}
+
+// short reads the short flag full of arity a in the word at k, where rest
+// follows it. It reports whether this reading takes an argument for it, which
+// ends the word, and then returns the word after that argument.
+func (s *fileScan) short(k int, rd *reading, full string, a arity, rest string) (int, bool) {
+	switch {
+	case a == attached:
+		s.apply(rd, k, full, s.part(k, rest))
+		return k + 1, true
+	case (a == one || a == restOrEither) && rest != "":
+		s.apply(rd, k, full, s.part(k, rest))
+		return k + 1, true
+	case a == one:
+		s.apply(rd, k, full, s.whole(k+1))
+		return k + 2, true
+	case a == either && rest != "":
+		fork := rd.fork()
+		s.apply(&fork, k, full, s.part(k, rest))
+		s.from(k+1, fork)
+	case a == either || a == restOrEither:
+		fork := rd.fork()
+		s.apply(&fork, k, full, s.whole(k+1))
+		s.from(k+2, fork)
+	}
+	s.apply(rd, k, full, nil)
+	return 0, false
 }
 
 // whole is the file word k names as a flag's argument, if there is one.
@@ -216,40 +252,41 @@ func (s *fileScan) part(k int, rest string) *File {
 func (s *fileScan) apply(rd *reading, k int, full string, f *File) {
 	switch {
 	case slices.Contains(s.g.input, full) || slices.Contains(s.g.output, full):
-		if f != nil {
-			f.Write = slices.Contains(s.g.output, full)
-			rd.flagged = append(rd.flagged, *f)
-		}
+		flagged(rd, f, slices.Contains(s.g.output, full))
 	case slices.Contains(s.g.ends, full):
 		rd.ends = k
 	case slices.Contains(s.g.pattern, full):
 		rd.supplied = true
 	case slices.Contains(s.g.patternFile, full):
 		rd.supplied = true
-		if f != nil {
-			rd.flagged = append(rd.flagged, *f)
-		}
+		flagged(rd, f, false)
 	case slices.Contains(s.g.writeMode, full):
 		rd.write = true
 	case slices.Contains(s.g.target, full):
 		rd.targeted = true
-		if f != nil {
-			f.Write = true
-			rd.flagged = append(rd.flagged, *f)
-		}
+		flagged(rd, f, true)
 	}
 }
 
 // findFiles adds find's starting points, the operands before its
 // expression, which it reads.
 func (r *reader) findFiles(c *call, i, j int) {
+	for k := r.findOptions(c, i, j); k < j; k++ {
+		if w := c.words[k]; len(w) > 1 && w[0] == '-' || w == "(" || w == "!" {
+			return
+		}
+		r.file(r.named(c.args[k]))
+	}
+}
+
+// findOptions reads find's options from word i and returns the word after
+// them.
+func (r *reader) findOptions(c *call, i, j int) int {
 	k := i
-options:
 	for ; k < j; k++ {
 		switch w := c.words[k]; {
 		case w == "--":
-			k++
-			break options
+			return k + 1
 		case w == "-H", w == "-L", w == "-P", w == "-E", w == "-X", w == "-d", w == "-s", w == "-x",
 			strings.HasPrefix(w, "-O"):
 		case w == "-D":
@@ -260,21 +297,15 @@ options:
 			}
 			k++
 		default:
-			break options
+			return k
 		}
 	}
-	for ; k < j; k++ {
-		if w := c.words[k]; len(w) > 1 && w[0] == '-' || w == "(" || w == "!" {
-			return
-		}
-		r.file(r.named(c.args[k]))
-	}
+	return k
 }
 
 // gitFiles adds the directories git's -C and --work-tree name, and the
 // files its grep and diff subcommands read.
 func (r *reader) gitFiles(c *call, i, j int) {
-	g := programs["git"]
 	for k := i; k < j; k++ {
 		w := c.words[k]
 		if len(w) < 2 || w[0] != '-' {
@@ -283,23 +314,37 @@ func (r *reader) gitFiles(c *call, i, j int) {
 			}
 			return
 		}
-		name, value, attached := strings.Cut(strings.TrimLeft(w, "-"), "=")
-		full, a, found := g.lookup(name, strings.HasPrefix(w, "--"))
-		if !found || !strings.HasPrefix(w, "--") && len(w) > 2 {
+		next, ok := r.gitOption(c, k, j)
+		if !ok {
 			r.unread(c, false, i, j)
 			return
 		}
-		if a != one || attached {
-			if full == "work-tree" && attached {
-				r.file(File{Path: value, Unreadable: r.named(c.args[k]).Unreadable})
-			}
-			continue
+		k = next
+	}
+}
+
+// gitOption reads the global option at word k, adding the directory it
+// names, and returns the last word it takes. ok is false for an option git's
+// table lacks or a cluster of short ones.
+func (r *reader) gitOption(c *call, k, j int) (last int, ok bool) {
+	w := c.words[k]
+	name, value, attached := strings.Cut(strings.TrimLeft(w, "-"), "=")
+	full, a, found := programs["git"].lookup(name, strings.HasPrefix(w, "--"))
+	if !found || !strings.HasPrefix(w, "--") && len(w) > 2 {
+		return k, false
+	}
+	switch {
+	case attached:
+		if full == "work-tree" {
+			r.file(File{Path: value, Unreadable: r.named(c.args[k]).Unreadable})
 		}
+	case a == one:
 		k++
 		if k < j && (full == "C" || full == "work-tree") {
 			r.file(r.named(c.args[k]))
 		}
 	}
+	return k, true
 }
 
 // programs holds the listed file programs' flag tables: each flag's arity
