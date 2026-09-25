@@ -21,12 +21,12 @@ const excludeLine = sharedName + "/" + localName + "/"
 func readExclude(root string) (path string, data []byte, err error) {
 	// A linked worktree shares info/exclude with the main checkout, which is
 	// where git reads it from, so this is the common directory.
-	_, git, err := gitindex.Dirs(root)
-	if err != nil || git == "" {
+	dirs, err := gitindex.Dirs(root)
+	if err != nil || dirs.Common == "" {
 		return "", nil, err
 	}
 
-	path = filepath.Join(git, "info", "exclude")
+	path = filepath.Join(dirs.Common, "info", "exclude")
 
 	data, err = os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {

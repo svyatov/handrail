@@ -15,13 +15,14 @@ func FuzzDecoder(f *testing.F) {
 	}
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
-		d, err := newDecoder(bytes.NewReader(data), 20)
+		dec, err := newDecoder(bytes.NewReader(data), 20)
 		if err != nil {
 			return
 		}
 
-		for range d.count {
-			if _, err := d.next(); err != nil {
+		for range dec.count {
+			_, err = dec.next()
+			if err != nil {
 				return
 			}
 		}
@@ -35,7 +36,8 @@ func FuzzLink(f *testing.F) {
 		bitmapOf(0xffffffff, 0xffffffff<<1|1),
 	} {
 		body := append(make([]byte, 20), bitmap...)
-		f.Add(append(binary.BigEndian.AppendUint32([]byte("link"), uint32(len(body))), body...)) //nolint:gosec // a seed is a few dozen bytes
+		size := uint32(len(body)) //nolint:gosec // a seed is a few dozen bytes
+		f.Add(append(binary.BigEndian.AppendUint32([]byte("link"), size), body...))
 	}
 
 	f.Fuzz(func(_ *testing.T, data []byte) {

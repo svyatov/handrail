@@ -11,14 +11,14 @@ import (
 
 // bitmapOf is an EWAH bitmap of n bits holding the given words.
 func bitmapOf(n uint32, words ...uint64) []byte {
-	b := binary.BigEndian.AppendUint32(nil, n)
+	buf := binary.BigEndian.AppendUint32(nil, n)
 
-	b = binary.BigEndian.AppendUint32(b, uint32(len(words))) //nolint:gosec // a test bitmap holds a handful of words
+	buf = binary.BigEndian.AppendUint32(buf, uint32(len(words))) //nolint:gosec // a test bitmap holds a handful of words
 	for _, w := range words {
-		b = binary.BigEndian.AppendUint64(b, w)
+		buf = binary.BigEndian.AppendUint64(buf, w)
 	}
 
-	return b
+	return buf
 }
 
 // A marker word says "this many words of ones" in 32 bits, so sixteen bytes
