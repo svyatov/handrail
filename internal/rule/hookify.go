@@ -198,7 +198,7 @@ func isRuleName(name string) bool {
 	if strings.HasPrefix(name, ".") {
 		return false
 	}
-	for i := 0; i < len(name); i++ {
+	for i := range len(name) {
 		c := name[i]
 		if !isAlphanumeric(c) && c != '-' && c != '_' && c != '.' {
 			return false

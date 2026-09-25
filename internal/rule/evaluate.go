@@ -211,7 +211,7 @@ func (p *Payload) Unset(name string) {
 
 // Has reports whether the payload carries a canonical field. Not carrying it
 // is the same answer SetField gives when it refuses an empty value.
-func (p Payload) Has(name string) bool { return len(p.fields[name]) > 0 }
+func (p *Payload) Has(name string) bool { return len(p.fields[name]) > 0 }
 
 // withFiles returns the payloads with every file a shell call names after
 // them, each its own file_edit or file_read payload carrying that one path
@@ -265,7 +265,7 @@ type CandidateView struct {
 }
 
 // Fields returns every field the payload carries, each as its Candidates.
-func (p Payload) Fields() map[string][]CandidateView {
+func (p *Payload) Fields() map[string][]CandidateView {
 	out := make(map[string][]CandidateView, len(p.fields))
 	for name, cands := range p.fields {
 		for _, c := range cands {
@@ -323,6 +323,7 @@ func (rs *Ruleset) Evaluate(payloads []Payload) (matched []Match, outcome Outcom
 // Files lists them.
 type Match struct {
 	*Rule
+
 	Files []string
 }
 

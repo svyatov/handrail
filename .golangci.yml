@@ -1,31 +1,37 @@
 version: "2"
 
-# A curated set, not `default: all`. Every linter here is one whose findings a
-# reviewer would have raised by hand; the ones left out are the ones that fire
-# on this codebase's deliberate choices rather than on mistakes.
+# Every linter is on, so one a new golangci-lint release adds starts checking
+# without anyone opting in. Each one turned off names its reason: it fires on a
+# deliberate choice of this codebase, not on a mistake.
 
 linters:
-  enable:
-    - copyloopvar
-    - depguard
-    - errname
-    - errorlint
-    - forbidigo
-    - gocritic
-    - godot
-    - gosec
-    - misspell
-    - modernize
-    - nilerr
-    - perfsprint
-    - predeclared
-    - revive
-    - thelper
-    - unconvert
-    - unparam
-    - usestdlibvars
-    - wastedassign
-    - whitespace
+  default: all
+  disable:
+    - cyclop # the complexity six are enabled once the functions over them are split
+    - err113 # parser errors carry a line number; a sentinel per message adds nothing
+    - exhaustruct # zero values are valid by design, see rule.Payload
+    - exhaustruct_v5 # the same linter under its new name
+    - funcorder # a helper method sits beside the exported method it serves
+    - funlen
+    - gochecknoglobals # the globals are lookup tables and the ldflags version
+    - gocognit
+    - goconst # the repeated strings are shell command names, which are data
+    - gocyclo
+    - gomodguard # deprecated; gomodguard_v2 replaces it, and depguard owns the import budget
+    - ireturn # syntax.Node is the shell library's own interface
+    - lll # gofumpt owns layout
+    - maintidx
+    - mnd # the numbers are exit codes and byte offsets the code names in place
+    - nestif
+    - nlreturn # blank-line style
+    - noinlineerr # `if err := f(); err != nil` is the Go idiom
+    - nonamedreturns # named results document two-value returns, see gocritic
+    - tagliatelle # JSON tag case is set by each harness's hook protocol, not by us
+    - testpackage # the unit tests are white-box on purpose (ADR 0009)
+    - varnamelen # short names in short scopes are the Go idiom
+    - wrapcheck # an os error already names its path
+    - wsl # blank-line style
+    - wsl_v5 # blank-line style
 
   settings:
     depguard:
@@ -60,6 +66,10 @@ linters:
         - fmt.Fprintf
         - fmt.Fprintln
 
+    exhaustive:
+      # A default branch is the decision that the remaining cases are alike.
+      default-signifies-exhaustive: true
+
     forbidigo:
       # The CLI seam: run() returns an exit code so every command is callable
       # from a test, and printing goes to the writers it was handed. os.Exit is
@@ -80,6 +90,12 @@ linters:
         # gone or all named, and several signatures read better half-named.
         - unnamedResult
 
+    godox:
+      # BUG also matches prose such as "a bug in the installed config".
+      keywords:
+        - TODO
+        - FIXME
+
     gosec:
       excludes:
         # handrail's whole job is reading and writing config files at paths the
@@ -90,6 +106,16 @@ linters:
         - G304 # file path from a variable: that variable is the rule path
         - G306 # WriteFile permissions, same reason as G302
         - G703 # path traversal: the path is the repo the user is standing in
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment # field order follows meaning; no struct here is hot
+        - shadow # every hit is an `err` redeclared in an inner if
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
 
     revive:
       # An explicit list. `enable-all-rules` yields 475 findings here, 351 of
@@ -162,3 +188,7 @@ formatters:
   enable:
     - gofumpt
     - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/svyatov/handrail

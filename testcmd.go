@@ -122,7 +122,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	var payloads []rule.Payload
-	var failures []string
+	var failures []string //nolint:prealloc // readCall replaces it on the stdin path
 	if !*fromStdin {
 		// Without a capture, the call is the one an Example with these fields
 		// is, and one that names no kind is a call handrail does not classify.
@@ -246,8 +246,9 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	case rule.Ask:
 		return 3
+	default:
+		return 0
 	}
-	return 0
 }
 
 // printIndented writes text two spaces in, keeping its blank lines blank.

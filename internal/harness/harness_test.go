@@ -1,6 +1,7 @@
 // White box, because write and shellQuote are unexported and the adapters this
 // file constructs are ones no table lists: everything reachable through the CLI
 // is tested through the compiled binary instead (ADR 0009).
+
 package harness
 
 import (
@@ -54,6 +55,7 @@ func TestEveryAdapterFollowsItsRelocationVariable(t *testing.T) {
 }
 
 func TestWriteReportsAnUnusableParent(t *testing.T) {
+	t.Parallel()
 	file := filepath.Join(t.TempDir(), "settings.json")
 	if err := os.WriteFile(file, []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -66,6 +68,7 @@ func TestWriteReportsAnUnusableParent(t *testing.T) {
 }
 
 func TestShellQuote(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ name, in, want string }{
 		{"an ordinary path is its own first word", "/usr/local/bin/handrail", "/usr/local/bin/handrail"},
 		{"a space is ordinary on macOS", "/Users/a b/bin/handrail", "'/Users/a b/bin/handrail'"},
@@ -74,6 +77,7 @@ func TestShellQuote(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			if got := shellQuote(c.in); got != c.want {
 				t.Errorf("shellQuote(%q) = %q, want %q", c.in, got, c.want)
 			}
@@ -85,6 +89,7 @@ func TestShellQuote(t *testing.T) {
 // only here: a rule on an event it lacks degrades to skip, reported rather
 // than delivered as whatever its missing row would read as.
 func TestAMissingEventDegradesToSkip(t *testing.T) {
+	t.Parallel()
 	a := Adapter{Name: "partial", title: "Partial", events: []eventCaps{{name: "PreToolUse", deny: permissionDeny, inject: true}}}
 	r := &rule.Rule{Name: "not-done", Event: "Stop", Action: rule.Block}
 

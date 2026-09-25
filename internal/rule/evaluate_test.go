@@ -1,6 +1,7 @@
 // White box, because the gap this file guards is between two unexported sites
 // that no rule file can put in disagreement: everything a rule file can express
 // is tested through the compiled binary instead (ADR 0009).
+
 package rule
 
 import (
@@ -21,6 +22,7 @@ import (
 // missing entry, which is the reminder to think about what matching means for
 // it.
 func TestEveryOperatorTheParserAcceptsAlsoMatches(t *testing.T) {
+	t.Parallel()
 	const command = "deploy prod now"
 	matching := map[string]string{
 		"matches":     `^deploy\s`,
@@ -35,6 +37,7 @@ func TestEveryOperatorTheParserAcceptsAlsoMatches(t *testing.T) {
 
 	for _, op := range operators {
 		t.Run(op, func(t *testing.T) {
+			t.Parallel()
 			value, ok := matching[op]
 			if !ok {
 				t.Fatalf("no value that matches %q, so this operator is untested", op)
