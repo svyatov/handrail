@@ -36,15 +36,16 @@ func cmdImport(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	fs := flag.NewFlagSet("import", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	flags := flag.NewFlagSet("import", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 
-	if err := fs.Parse(args[1:]); err != nil {
+	err := flags.Parse(args[1:])
+	if err != nil {
 		return 1
 	}
 
-	if fs.NArg() > 1 {
-		fmt.Fprintf(stderr, "handrail import: unexpected argument %q\n", fs.Arg(1))
+	if flags.NArg() > 1 {
+		fmt.Fprintf(stderr, "handrail import: unexpected argument %q\n", flags.Arg(1))
 
 		return 1
 	}
@@ -61,8 +62,8 @@ func cmdImport(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	// Upstream reads .claude/ from the repo root, so that is where the import
 	// looks unless told otherwise.
 	src := filepath.Join(root, ".claude")
-	if fs.NArg() == 1 {
-		if src = fs.Arg(0); !filepath.IsAbs(src) {
+	if flags.NArg() == 1 {
+		if src = flags.Arg(0); !filepath.IsAbs(src) {
 			src = filepath.Join(cwd, src)
 		}
 	}
@@ -81,24 +82,24 @@ func cmdImport(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 
 // reportImport names each converted rule's source and target, and each skipped
 // one's reason, then counts both.
-func reportImport(w io.Writer, root string, results []rule.Imported) {
+func reportImport(stdout io.Writer, root string, results []rule.Imported) {
 	imported, skipped := 0, 0
 
-	for _, r := range results {
-		if r.Reason != "" {
+	for _, result := range results {
+		if result.Reason != "" {
 			skipped++
 
-			fmt.Fprintf(w, "skipped  %s: %s\n", relTo(root, r.Source), r.Reason)
+			fmt.Fprintf(stdout, "skipped  %s: %s\n", relTo(root, result.Source), result.Reason)
 
 			continue
 		}
 
 		imported++
 
-		fmt.Fprintf(w, "imported %s -> %s\n", relTo(root, r.Source), relTo(root, r.Target))
+		fmt.Fprintf(stdout, "imported %s -> %s\n", relTo(root, result.Source), relTo(root, result.Target))
 	}
 
-	fmt.Fprintf(w, "%d imported, %d skipped\n", imported, skipped)
+	fmt.Fprintf(stdout, "%d imported, %d skipped\n", imported, skipped)
 }
 
 // relTo shortens a path for the report, and leaves it alone when it lies

@@ -16,20 +16,22 @@ import (
 // and nothing the caller does makes the next one succeed.
 type failWriter struct{}
 
-func (failWriter) Write([]byte) (int, error) { return 0, errors.New("no space left on device") }
+func (failWriter) Write([]byte) (int, error) { return 0, errNoSpace }
+
+var errNoSpace = errors.New("no space left on device")
 
 //nolint:paralleltest // sandboxHome sets the process environment and working directory
 func TestCommandsReportAnUnwritableStdout(t *testing.T) {
 	cases := []struct {
-		name string
 		run  func(stdout, stderr io.Writer) int
+		name string
 	}{
-		{"check", func(stdout, stderr io.Writer) int { return cmdCheck(nil, nil, stdout, stderr) }},
-		{"check --json", func(stdout, stderr io.Writer) int { return cmdCheck([]string{"--json"}, nil, stdout, stderr) }},
-		{"test --json", func(stdout, stderr io.Writer) int {
+		{func(stdout, stderr io.Writer) int { return cmdCheck(nil, nil, stdout, stderr) }, "check"},
+		{func(stdout, stderr io.Writer) int { return cmdCheck([]string{"--json"}, nil, stdout, stderr) }, "check --json"},
+		{func(stdout, stderr io.Writer) int {
 			return cmdTest([]string{"PreToolUse", "--json"}, nil, stdout, stderr)
-		}},
-		{"sync", func(stdout, stderr io.Writer) int { return cmdSync(nil, nil, stdout, stderr) }},
+		}, "test --json"},
+		{func(stdout, stderr io.Writer) int { return cmdSync(nil, nil, stdout, stderr) }, "sync"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
