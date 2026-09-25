@@ -52,10 +52,7 @@ func (r *reader) follow(c *call, i, j int) {
 		r.shell(c, i+1, j)
 		return
 	case "eval":
-		if i+1 < j && c.words[i+1] == "--" {
-			i++
-		}
-		r.code(c.text(i+1, j))
+		r.eval(c, i+1, j)
 		return
 	case "find":
 		r.find(c, i+1, j)
@@ -70,6 +67,14 @@ func (r *reader) follow(c *call, i, j int) {
 		s := scan{r: r, c: c, g: g, j: j, done: map[int]bool{}}
 		s.from(k)
 	}
+}
+
+// eval reads the code eval runs: its words i up to j, after a leading --.
+func (r *reader) eval(c *call, i, j int) {
+	if i < j && c.words[i] == "--" {
+		i++
+	}
+	r.code(c.text(i, j))
 }
 
 // find adds the command each -exec, -execdir, -ok and -okdir action runs. It
@@ -93,42 +98,62 @@ func (r *reader) find(c *call, i, j int) {
 // script file. -o and -O take an option name, and -s reads standard input
 // whatever the operands.
 func (r *reader) shell(c *call, i, j int) {
-	command, stdin := false, false
+	var o shellOptions
+	k := o.read(c, i, j)
+	switch {
+	case o.command:
+		if k < j {
+			r.code(c.text(k, k+1))
+		}
+	case o.stdin || k >= j:
+		r.stdin(c)
+	}
+}
+
+// shellOptions is what a listed shell's options say it runs.
+type shellOptions struct {
+	command bool // a -c: the first operand is the code
+	stdin   bool // a -s: standard input is the code
+}
+
+// read reads the options from word i up to j, and returns the word after
+// them.
+func (o *shellOptions) read(c *call, i, j int) int {
 	k := i
 	for ; k < j; k++ {
 		w := c.words[k]
 		if w == "-" || w == "--" {
-			k++
-			break
+			return k + 1
 		}
 		if len(w) < 2 || w[0] != '-' && w[0] != '+' {
 			break
 		}
-		if strings.HasPrefix(w, "--") {
-			if w == "--rcfile" || w == "--init-file" {
-				k++
-			}
-			continue
+		k += o.option(w)
+	}
+	return k
+}
+
+// option reads one word of options, and returns how many words their
+// arguments take.
+func (o *shellOptions) option(w string) int {
+	if strings.HasPrefix(w, "--") {
+		if w == "--rcfile" || w == "--init-file" {
+			return 1
 		}
-		for _, f := range w[1:] {
-			switch f {
-			case 'c':
-				command = true
-			case 's':
-				stdin = true
-			case 'o', 'O':
-				k++
-			}
+		return 0
+	}
+	n := 0
+	for _, f := range w[1:] {
+		switch f {
+		case 'c':
+			o.command = true
+		case 's':
+			o.stdin = true
+		case 'o', 'O':
+			n++
 		}
 	}
-	switch {
-	case command:
-		if k < j {
-			r.code(c.text(k, k+1))
-		}
-	case stdin || k >= j:
-		r.stdin(c)
-	}
+	return n
 }
 
 // stdin reads what a shell with no script reads from its standard input. A
@@ -147,15 +172,7 @@ func (r *reader) stdin(c *call) {
 		}
 		switch rd.Op {
 		case syntax.Hdoc, syntax.DashHdoc:
-			if rd.Hdoc == nil {
-				continue
-			}
-			// A quoted delimiter leaves the body as written.
-			if d := rd.Word.Lit(); d == "" || strings.Contains(d, `\`) {
-				r.code(rd.Hdoc.Lit(), true)
-			} else {
-				r.code(r.dquoted(rd.Hdoc.Parts, "$`\\\n"))
-			}
+			r.heredoc(rd)
 		case syntax.WordHdoc:
 			r.code(r.word(rd.Word), literal(rd.Word))
 		case syntax.RdrIn, syntax.RdrInOut, syntax.DplIn:
@@ -163,6 +180,19 @@ func (r *reader) stdin(c *call) {
 		default:
 			// An output redirect feeds the call nothing to read.
 		}
+	}
+}
+
+// heredoc reads the body of a heredoc a shell reads as its script.
+func (r *reader) heredoc(rd *syntax.Redirect) {
+	if rd.Hdoc == nil {
+		return
+	}
+	// A quoted delimiter leaves the body as written.
+	if d := rd.Word.Lit(); d == "" || strings.Contains(d, `\`) {
+		r.code(rd.Hdoc.Lit(), true)
+	} else {
+		r.code(r.dquoted(rd.Hdoc.Parts, "$`\\\n"))
 	}
 }
 
@@ -431,26 +461,32 @@ func (s *scan) from(k int) {
 	case w == "--":
 		s.operands(k + 1)
 	case strings.HasPrefix(w, "--"):
-		name, value, attached := strings.Cut(w[2:], "=")
-		a, full := s.flag(name, true)
-		if slices.Contains(s.g.stop, full) {
-			return
-		}
-		if slices.Contains(s.g.script, full) {
-			s.script(k, value, attached)
-		}
-		if a != none && !attached {
-			s.from(k + 2)
-		}
-		if a != one || attached {
-			s.from(k + 1)
-		}
+		s.long(k, w)
 	case len(w) > 1 && w[0] == '-':
 		s.cluster(k, w)
 	case s.g.permute:
 		s.from(k + 1)
 	default:
 		s.operands(k)
+	}
+}
+
+// long reads a word that is one long flag, its argument attached after an =
+// or else in the next word.
+func (s *scan) long(k int, w string) {
+	name, value, attached := strings.Cut(w[2:], "=")
+	a, full := s.flag(name, true)
+	if slices.Contains(s.g.stop, full) {
+		return
+	}
+	if slices.Contains(s.g.script, full) {
+		s.script(k, value, attached)
+	}
+	if a != none && !attached {
+		s.from(k + 2)
+	}
+	if a != one || attached {
+		s.from(k + 1)
 	}
 }
 
@@ -514,25 +550,11 @@ func (s *scan) script(k int, rest string, attached bool) {
 	s.r.code(text, lit)
 }
 
-// operands skips what comes before the command and adds its level. env reads
-// a lone - as -i.
+// operands skips what comes before the command and adds its level.
 func (s *scan) operands(k int) {
-	k += s.g.operands
-	for s.g.assigns && k < s.j {
-		name, _, ok := strings.Cut(s.c.words[k], "=")
-		if s.c.words[k] != "-" && (!ok || !syntax.ValidName(name)) {
-			break
-		}
-		k++
-	}
+	k = s.assigns(k + s.g.operands)
 	if s.split != "" {
-		words, lit := []string{s.split}, s.splitLiteral
-		for i := k; i < s.j; i++ {
-			quoted, _ := syntax.Quote(s.c.words[i], syntax.LangBash)
-			words = append(words, quoted)
-			lit = lit && literal(s.c.args[i])
-		}
-		s.r.code(strings.Join(words, " "), lit)
+		s.splitCode(k)
 	}
 	switch {
 	case k >= s.j:
@@ -544,4 +566,29 @@ func (s *scan) operands(k int) {
 	default:
 		s.r.level(s.c, k, s.j)
 	}
+}
+
+// assigns skips the NAME=VALUE operands from word k, where the program takes
+// them, and returns the word after them. env reads a lone - as -i.
+func (s *scan) assigns(k int) int {
+	for s.g.assigns && k < s.j {
+		name, _, ok := strings.Cut(s.c.words[k], "=")
+		if s.c.words[k] != "-" && (!ok || !syntax.ValidName(name)) {
+			break
+		}
+		k++
+	}
+	return k
+}
+
+// splitCode reads the code a splitting flag's string starts, with the
+// operands from word k quoted after it.
+func (s *scan) splitCode(k int) {
+	words, lit := []string{s.split}, s.splitLiteral
+	for i := k; i < s.j; i++ {
+		quoted, _ := syntax.Quote(s.c.words[i], syntax.LangBash)
+		words = append(words, quoted)
+		lit = lit && literal(s.c.args[i])
+	}
+	s.r.code(strings.Join(words, " "), lit)
 }
