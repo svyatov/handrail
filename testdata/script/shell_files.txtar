@@ -29,6 +29,17 @@ exec handrail test PreToolUse --kind shell --field 'command=exec 3<> .env'
 stdout '^warn  read-env  project-shared$'
 stdout '^warn  edit-env  project-shared$'
 
+# A statement can be a redirect alone, with no command to read from it.
+exec handrail test PreToolUse --kind shell --field 'command=< .env'
+stdout '^warn  read-env  project-shared$'
+
+# A line the parser had to close is read as far as it goes: a pipe with nothing
+# after it, and a redirect with no target, which names no file.
+exec handrail test PreToolUse --kind shell --field 'command=cat .env |'
+stdout '^warn  read-env  project-shared$'
+exec handrail test PreToolUse --kind shell --field 'command=cat <'
+! stdout 'any-path'
+
 # fd duplication, heredocs, herestrings and the device files name no file.
 exec handrail test PreToolUse --kind shell --field 'command=make 2>&1 >/dev/null <&- </dev/stdin <<< .env 2>/dev/fd/3'
 ! stdout 'any-path'
