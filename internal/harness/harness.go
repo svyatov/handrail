@@ -697,8 +697,8 @@ func (a Adapter) shellEdits(event string, tools []string, input map[string]any) 
 	// this hook and with no second one, so this is the only place its
 	// edits are seen. Claude Code runs the same line as a program.
 	if line, ok := input["command"].(string); ok && a.patchInShell {
-		if dir, patch, ok := shell.Patch(line); ok {
-			return patchPayloads(event, tools, dir, patch)
+		if patch := shell.Patch(line); patch != nil {
+			return patchPayloads(event, tools, patch.Dir, patch.Body)
 		}
 	}
 

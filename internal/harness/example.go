@@ -65,13 +65,13 @@ func withFields(payload rule.Payload, fields []rule.ExampleField, from []Adapter
 	command := setFields(&payload, fields, from)
 	// Codex applies this form itself, so only its knowledge reads the patch.
 	if slices.ContainsFunc(from, func(a Adapter) bool { return a.patchInShell }) && payload.Kind == kindShell {
-		if dir, patch, ok := shell.Patch(command); ok {
+		if patch := shell.Patch(command); patch != nil {
 			var tools []string
 			for _, c := range payload.Fields()["tool"] {
 				tools = append(tools, c.Spellings...)
 			}
 
-			return append([]rule.Payload{payload}, patchPayloads(payload.Event, tools, dir, patch)...)
+			return append([]rule.Payload{payload}, patchPayloads(payload.Event, tools, patch.Dir, patch.Body)...)
 		}
 	}
 
