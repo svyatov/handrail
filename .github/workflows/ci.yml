@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A vulnerability database entry lands without any commit, so an idle main
+  # still gets a weekly govulncheck run to fail on it.
+  schedule:
+    - cron: "23 6 * * 1"
 
 permissions:
   contents: read
@@ -64,6 +68,19 @@ jobs:
 
       - name: Lint and formatting
         run: task lint
+
+  vuln:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+
+      - name: Known vulnerabilities
+        run: task vuln
 
   release-config:
     runs-on: ubuntu-latest

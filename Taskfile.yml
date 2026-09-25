@@ -1,9 +1,10 @@
 # https://taskfile.dev
 #
 # The same commands CI runs, so a local pass means what a green check means.
-# Nothing here installs a Go tool: golangci-lint stays out of go.mod, because a
-# tool directive would put ~200 modules in a go.sum whose first promise is zero
-# third-party dependencies, and upstream recommends against it for that linter.
+# No Go tool goes in go.mod: a tool directive would put ~200 modules in a go.sum
+# whose first promise is zero third-party dependencies, and upstream recommends
+# against it for golangci-lint. A Go-team tool runs as `go run pkg@version`
+# instead, which checks the download against the checksum database.
 version: '3'
 
 vars:
@@ -44,13 +45,20 @@ tasks:
         print "coverage " $3 "% is under the {{.GATE}}% gate"; exit 1 } }'
 
   lint:
-    desc: golangci-lint, the formatter check CI runs separately, the paths the skills quote from the code, the flag tables' source comments, and no em or en dash
+    desc: A tidy and verified go.mod, golangci-lint, the formatter check, the paths the skills quote from the code, the flag tables' source comments, and no em or en dash
     cmds:
+      - go mod tidy -diff
+      - go mod verify
       - golangci-lint run
       - golangci-lint fmt --diff
       - scripts/check-doc-paths.sh
       - scripts/check-flag-sources.sh
       - scripts/check-dashes.sh
+
+  vuln:
+    desc: Known vulnerabilities in the code paths handrail actually calls, in its modules and the standard library
+    cmds:
+      - go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
   release-check:
     desc: Validate .goreleaser.yml, the pinned version, and the changelog section the release body is cut from, so a bad release fails here rather than on a tag
