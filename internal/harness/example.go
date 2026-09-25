@@ -25,13 +25,13 @@ type Failure struct {
 // and so is a call the shadow names in an Example of its own: a no_match one
 // declares the exception the copy was made for, and a match one is tested as
 // the shadow's own.
-func FailingExamples(r *rule.Rule) []Failure {
-	failed := failing(r, r, r.Examples)
-	if r.Enabled && r.Replaces != nil {
-		match := slices.DeleteFunc(slices.Clone(r.Replaces.Examples), func(e rule.Example) bool {
-			return e.Expect != "match" || slices.ContainsFunc(r.Examples, e.SameCall)
+func FailingExamples(tested *rule.Rule) []Failure {
+	failed := failing(tested, tested, tested.Examples)
+	if tested.Enabled && tested.Replaces != nil {
+		match := slices.DeleteFunc(slices.Clone(tested.Replaces.Examples), func(e rule.Example) bool {
+			return e.Expect != "match" || slices.ContainsFunc(tested.Examples, e.SameCall)
 		})
-		failed = append(failed, failing(r, r.Replaces, match)...)
+		failed = append(failed, failing(tested, tested.Replaces, match)...)
 	}
 
 	return failed
@@ -43,7 +43,7 @@ func failing(r, from *rule.Rule, examples []rule.Example) []Failure {
 	var failed []Failure
 
 	for _, e := range examples {
-		call := withFields(rule.Payload{Event: from.Event, Kind: e.Kind}, e.Fields, adapters)
+		call := withFields(rule.Payload{Event: from.Event, Kind: e.Kind, StopHookActive: false}, e.Fields, adapters)
 		if r.Selects(call) != (e.Expect == "match") {
 			failed = append(failed, Failure{Example: e, From: from})
 		}
@@ -61,34 +61,36 @@ func (a Adapter) WithFields(p rule.Payload, fields []rule.ExampleField) []rule.P
 }
 
 // withFields is WithFields read with the knowledge of the Adapters from.
-func withFields(p rule.Payload, fields []rule.ExampleField, from []Adapter) []rule.Payload {
-	command := setFields(&p, fields, from)
+func withFields(payload rule.Payload, fields []rule.ExampleField, from []Adapter) []rule.Payload {
+	command := setFields(&payload, fields, from)
 	// Codex applies this form itself, so only its knowledge reads the patch.
-	if slices.ContainsFunc(from, func(a Adapter) bool { return a.patchInShell }) && p.Kind == "shell" {
+	if slices.ContainsFunc(from, func(a Adapter) bool { return a.patchInShell }) && payload.Kind == kindShell {
 		if dir, patch, ok := shell.Patch(command); ok {
 			var tools []string
-			for _, c := range p.Fields()["tool"] {
+			for _, c := range payload.Fields()["tool"] {
 				tools = append(tools, c.Spellings...)
 			}
 
-			return append([]rule.Payload{p}, patchPayloads(p.Event, tools, dir, patch)...)
+			return append([]rule.Payload{payload}, patchPayloads(payload.Event, tools, dir, patch)...)
 		}
 	}
 
-	return []rule.Payload{p}
+	return []rule.Payload{payload}
 }
 
-// setFields writes fields onto p as the Adapters from carry them, and returns
-// the command it wrote.
-func setFields(p *rule.Payload, fields []rule.ExampleField, from []Adapter) (command string) {
+// setFields writes fields onto payload as the Adapters from carry them, and
+// returns the command it wrote.
+func setFields(payload *rule.Payload, fields []rule.ExampleField, from []Adapter) string {
 	// Every name is cleared before any is written, so a command's derived
 	// unreadable merges with a written one whatever their order.
 	for _, f := range fields {
-		p.Unset(f.Name)
+		payload.Unset(f.Name)
 	}
 
+	var command string
+
 	for _, f := range fields {
-		setField(p, f, from)
+		setField(payload, f, from)
 
 		if f.Name == "command" {
 			command = f.Values[0]
@@ -98,19 +100,19 @@ func setFields(p *rule.Payload, fields []rule.ExampleField, from []Adapter) (com
 	return command
 }
 
-// setField writes one field onto p as the Adapters from carry it.
-func setField(p *rule.Payload, f rule.ExampleField, from []Adapter) {
+// setField writes one field onto payload as the Adapters from carry it.
+func setField(payload *rule.Payload, field rule.ExampleField, from []Adapter) {
 	switch {
-	case f.Name == "kind":
-	case f.Name == "tool":
+	case field.Name == "kind":
+	case field.Name == "tool":
 		for _, a := range from {
-			setTool(p, a.toolNames(f.Values[0]))
+			setTool(payload, a.toolNames(field.Values[0]))
 		}
-	case f.Name == "path" && len(f.Values) == 2:
-		p.SetRename(f.Values[0], f.Values[1])
+	case field.Name == "path" && len(field.Values) == 2:
+		payload.SetRename(field.Values[0], field.Values[1])
 	default:
-		for _, v := range f.Values {
-			p.SetField(f.Name, v)
+		for _, v := range field.Values {
+			payload.SetField(field.Name, v)
 		}
 	}
 }

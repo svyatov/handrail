@@ -130,7 +130,7 @@ func installHooks(targets []harness.Adapter, bin string, effective []*rule.Rule,
 	failed := false
 
 	for _, adapter := range targets {
-		entries, changed, err := adapter.Install(bin)
+		done, err := adapter.Install(bin)
 		if err != nil {
 			fmt.Fprintf(stderr, "handrail: %s: %v\n", adapter.Name, err)
 
@@ -139,10 +139,10 @@ func installHooks(targets []harness.Adapter, bin string, effective []*rule.Rule,
 			continue
 		}
 
-		if changed {
-			fmt.Fprintf(stdout, "%s: wrote %d hook entries to %s\n", adapter.Name, entries, adapter.ConfigPath())
+		if done.Changed {
+			fmt.Fprintf(stdout, "%s: wrote %d hook entries to %s\n", adapter.Name, done.Entries, adapter.ConfigPath())
 		} else {
-			fmt.Fprintf(stdout, "%s: %d hook entries already current in %s\n", adapter.Name, entries, adapter.ConfigPath())
+			fmt.Fprintf(stdout, "%s: %d hook entries already current in %s\n", adapter.Name, done.Entries, adapter.ConfigPath())
 		}
 
 		for _, line := range adapter.Report(effective) {

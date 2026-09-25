@@ -27,9 +27,6 @@ type Adapter struct {
 	dir     string // user-level directory, under the home directory
 	homeEnv string // the variable that relocates that directory, if the harness has one
 	file    string // the one config file sync writes inside it
-	// patchInShell is true where the harness applies an apply_patch heredoc a
-	// shell call sends, rather than running the line.
-	patchInShell bool
 	// aliases lists, per tool name on the wire, every name the harness
 	// documents it also answers to, a former name included. The wire name leads.
 	aliases [][]string
@@ -41,6 +38,9 @@ type Adapter struct {
 	// hook entries for them. Delivery, sync and the degradation report all
 	// read it, so a capability is written down once per harness.
 	events []eventCaps
+	// patchInShell is true where the harness applies an apply_patch heredoc a
+	// shell call sends, rather than running the line.
+	patchInShell bool
 }
 
 // eventCaps is one row of an Adapter's Capability matrix.
@@ -63,6 +63,24 @@ const (
 	continueOnce          // exit 0 with decision: "block" and the reason, the agent's next instruction
 )
 
+// The event, tool and kind names the code branches on, beyond the tables.
+const (
+	eventUserPromptSubmit = "UserPromptSubmit"
+	eventSessionEnd       = "SessionEnd"
+	eventSubagentStart    = "SubagentStart"
+	eventSubagentStop     = "SubagentStop"
+	toolAgent             = "Agent"
+	kindShell             = "shell"
+	kindFileEdit          = "file_edit"
+)
+
+// Errors a payload handrail cannot read at all fails with.
+var (
+	errNullPayload      = errors.New("the payload is null")
+	errCwdNotString     = errors.New("cwd is not a string")
+	errInputNotAnObject = errors.New("tool_input is not an object")
+)
+
 // Both harnesses read the same Claude-shaped hook config and speak the same
 // payload and decision protocol: Codex's hooks engine is Claude-compatible by
 // design, down to the tool names on the wire (developers.openai.com/codex/hooks).
@@ -77,7 +95,8 @@ const (
 var adapters = []Adapter{
 	{
 		Name: "claude", title: "Claude Code", dir: ".claude", homeEnv: "CLAUDE_CONFIG_DIR", file: "settings.json",
-		aliases: [][]string{{"Agent", "Task"}}, agentTypeKey: "subagent_type", agentPromptKey: "prompt",
+		aliases: [][]string{{toolAgent, "Task"}}, agentTypeKey: "subagent_type", agentPromptKey: "prompt",
+		patchInShell: false,
 		events: []eventCaps{
 			{name: "PreToolUse", deny: permissionDeny, inject: true, ask: true},
 			{name: "PostToolUse", inject: true},
@@ -95,7 +114,7 @@ var adapters = []Adapter{
 	},
 	{
 		Name: "codex", title: "Codex CLI", dir: ".codex", homeEnv: "CODEX_HOME", file: "hooks.json", patchInShell: true,
-		aliases:      [][]string{{"apply_patch", "Edit", "Write"}, {"spawn_agent", "Agent"}},
+		aliases:      [][]string{{"apply_patch", "Edit", "Write"}, {"spawn_agent", toolAgent}},
 		agentTypeKey: "agent_type", agentPromptKey: "message",
 		events: []eventCaps{
 			{name: "PreToolUse", deny: permissionDeny, inject: true},
@@ -109,7 +128,8 @@ var adapters = []Adapter{
 		},
 		quirks: []string{
 			"hook errors and timeouts fail open, so a broken guardrail never stops the session",
-			"non-managed hooks need a one-time trust review, and --dangerously-bypass-hook-trust skips that review rather than the hooks",
+			"non-managed hooks need a one-time trust review, " +
+				"and --dangerously-bypass-hook-trust skips that review rather than the hooks",
 			"an enterprise allow_managed_hooks_only requirement ignores user-level hooks, handrail's included",
 		},
 	},
@@ -126,7 +146,9 @@ func Lookup(name string) (Adapter, bool) {
 		}
 	}
 
-	return Adapter{}, false
+	var none Adapter
+
+	return none, false
 }
 
 // Names lists the harness identifiers, for the message a wrong one earns.
@@ -146,37 +168,42 @@ func Names() []string {
 // payload; only an envelope that is not an object, or a tool input that is
 // not one, fails it.
 func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, error) {
-	env, cwd, input, err := decodeEnvelope(data)
+	decoded, err := decodeEnvelope(data)
 	if err != nil {
 		return nil, "", err
 	}
 
-	p := rule.Payload{Event: event}
-	name := toolName(&p, env)
-	p.Kind = classify(name)
+	env, cwd, input := decoded.fields, decoded.cwd, decoded.input
+	payload := rule.Payload{Event: event, Kind: "", StopHookActive: false}
+	name := toolName(&payload, env)
+	payload.Kind = classify(name)
 	tools := a.toolNames(name)
-	setTool(&p, tools)
+	setTool(&payload, tools)
 	// Read by key presence, on any tool, and from the tool input alone: the
 	// envelope's model is the session's, and its agent_type on a tool event
 	// names the subagent calling rather than one the call asks for.
-	set(&p, "agent_type", input, a.agentTypeKey)
-	set(&p, "agent_prompt", input, a.agentPromptKey)
-	set(&p, "model", input, "model")
-	set(&p, "url", input, "url")
-	setToolURL(&p, name, input)
+	set(&payload, "agent_type", input, a.agentTypeKey)
+	set(&payload, "agent_prompt", input, a.agentPromptKey)
+	set(&payload, "model", input, "model")
+	set(&payload, "url", input, "url")
+	setToolURL(&payload, name, input)
 
 	var edits []rule.Payload
 
-	switch p.Kind {
-	case "shell":
-		set(&p, "command", input, "command")
-		setSandbox(&p, input)
+	switch payload.Kind {
+	case kindShell:
+		set(&payload, "command", input, "command")
+		setSandbox(&payload, input)
 		edits = a.shellEdits(event, tools, input)
-	case "file_edit":
-		set(&p, "path", input, "file_path", "notebook_path")
-		set(&p, "content", input, textKeys[:]...)
-		set(&p, "removed_content", input, "old_string")
-		writesEmpty(&p, slices.ContainsFunc(textKeys[:], func(k string) bool {
+	case kindFileEdit:
+		set(&payload, "path", input, "file_path", "notebook_path")
+
+		// The tool input keys a file edit carries its written text under, in
+		// the order content reads them.
+		textKeys := [...]string{"content", "new_string", "new_source"}
+		set(&payload, "content", input, textKeys[:]...)
+		set(&payload, "removed_content", input, "old_string")
+		writesEmpty(&payload, slices.ContainsFunc(textKeys[:], func(k string) bool {
 			_, ok := input[k].(string)
 
 			return ok
@@ -187,58 +214,63 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		// unread, every path and content condition would silently never fire on
 		// that harness's only editing tool.
 		// A non-string envelope reads as an empty one: an edit naming nothing.
-		if raw, ok := input["command"]; ok && !p.Has("path") {
+		if raw, ok := input["command"]; ok && !payload.Has("path") {
 			patch, _ := raw.(string)
 
 			return patchPayloads(event, tools, "", patch), cwd, nil
 		}
 	case "file_read":
-		set(&p, "path", input, "file_path")
+		set(&payload, "path", input, "file_path")
 	case "mcp":
-		setServer(&p, name)
+		setServer(&payload, name)
 	}
 
-	set(&p, "prompt", env, "prompt")
-	setStop(&p, event, env)
+	set(&payload, "prompt", env, "prompt")
+	setStop(&payload, event, env)
 
-	if !setSubagent(&p, event, env) {
+	if !setSubagent(&payload, event, env) {
 		return nil, cwd, nil
 	}
 
-	return append([]rule.Payload{p}, edits...), cwd, nil
+	return append([]rule.Payload{payload}, edits...), cwd, nil
 }
 
-// decodeEnvelope reads a harness payload untyped, along with the two keys whose
+// envelope is a harness payload read untyped, along with the two keys whose
 // wrong type fails it: cwd and tool_input.
-func decodeEnvelope(data []byte) (map[string]any, string, map[string]any, error) {
-	var env map[string]any
-	if err := json.Unmarshal(data, &env); err != nil {
-		return nil, "", nil, err
+type envelope struct {
+	fields map[string]any
+	input  map[string]any
+	cwd    string
+}
+
+// decodeEnvelope reads a harness payload into its envelope. On an error the
+// envelope is whatever was read so far, and the caller discards it.
+func decodeEnvelope(data []byte) (envelope, error) {
+	var env envelope
+
+	err := json.Unmarshal(data, &env.fields)
+	if err != nil {
+		return env, err
 	}
 
-	if env == nil {
-		return nil, "", nil, errors.New("the payload is null")
+	if env.fields == nil {
+		return env, errNullPayload
 	}
 	// cwd picks the project whose rules apply, so one handrail cannot read
 	// fails the payload, which is declared, rather than passing for absent.
-	var (
-		cwd   string
-		input map[string]any
-	)
-
-	if raw, ok := env["cwd"]; ok {
-		if cwd, ok = raw.(string); !ok {
-			return nil, "", nil, errors.New("cwd is not a string")
+	if raw, ok := env.fields["cwd"]; ok {
+		if env.cwd, ok = raw.(string); !ok {
+			return env, errCwdNotString
 		}
 	}
 
-	if raw, ok := env["tool_input"]; ok {
-		if input, ok = raw.(map[string]any); !ok {
-			return nil, "", nil, errors.New("tool_input is not an object")
+	if raw, ok := env.fields["tool_input"]; ok {
+		if env.input, ok = raw.(map[string]any); !ok {
+			return env, errInputNotAnObject
 		}
 	}
 
-	return env, cwd, input, nil
+	return env, nil
 }
 
 // toolName reads the name of the tool called, declaring tool unreadable where
@@ -255,11 +287,11 @@ func toolName(p *rule.Payload, env map[string]any) string {
 }
 
 // setToolURL reads the url a tool carries somewhere other than its url key.
-func setToolURL(p *rule.Payload, tool string, input map[string]any) {
+func setToolURL(payload *rule.Payload, tool string, input map[string]any) {
 	switch tool {
 	case "Monitor":
 		if ws, ok := input["ws"].(map[string]any); ok {
-			set(p, "url", ws, "url")
+			set(payload, "url", ws, "url")
 		}
 	case "webrun":
 		// Most refs name a search result rather than a page; only an absolute
@@ -268,8 +300,9 @@ func setToolURL(p *rule.Payload, tool string, input map[string]any) {
 		for _, o := range open {
 			ref, _ := o.(map[string]any)
 			if s, ok := ref["ref_id"].(string); ok {
-				if u, err := url.Parse(s); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
-					p.SetField("url", s)
+				u, err := url.Parse(s)
+				if err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+					payload.SetField("url", s)
 				}
 			}
 		}
@@ -277,7 +310,7 @@ func setToolURL(p *rule.Payload, tool string, input map[string]any) {
 }
 
 // setSandbox reads what a shell call asks of its sandbox.
-func setSandbox(p *rule.Payload, input map[string]any) {
+func setSandbox(payload *rule.Payload, input map[string]any) {
 	// Claude Code's shells ask their sandbox for more under these keys.
 	// WebSearch's allowed_domains filters results instead, and it is not
 	// a shell.
@@ -285,39 +318,24 @@ func setSandbox(p *rule.Payload, input map[string]any) {
 		grants, readable := raw.([]any)
 		for _, g := range grants {
 			if s, ok := g.(string); ok {
-				p.SetField("network_grant", s)
+				payload.SetField("network_grant", s)
 			} else {
 				readable = false
 			}
 		}
 
 		if !readable {
-			p.SetField("unreadable", "network_grant")
+			payload.SetField("unreadable", "network_grant")
 		}
 	}
 
 	if raw, ok := input["dangerouslyDisableSandbox"]; ok {
 		if off, ok := raw.(bool); !ok {
-			p.SetField("unreadable", "unsandboxed")
+			payload.SetField("unreadable", "unsandboxed")
 		} else if off {
-			p.SetField("unsandboxed", "true")
+			payload.SetField("unsandboxed", "true")
 		}
 	}
-}
-
-// shellEdits reads the edits a shell call's patch heredoc makes, where this
-// harness applies one.
-func (a Adapter) shellEdits(event string, tools []string, input map[string]any) []rule.Payload {
-	// Codex applies a patch heredoc sent through the shell itself, after
-	// this hook and with no second one, so this is the only place its
-	// edits are seen. Claude Code runs the same line as a program.
-	if line, ok := input["command"].(string); ok && a.patchInShell {
-		if dir, patch, ok := shell.Patch(line); ok {
-			return patchPayloads(event, tools, dir, patch)
-		}
-	}
-
-	return nil
 }
 
 // setServer reads the MCP server an mcp__<server>__<tool> call names.
@@ -328,30 +346,30 @@ func setServer(p *rule.Payload, tool string) {
 }
 
 // setStop reads what a stop event carries.
-func setStop(p *rule.Payload, event string, env map[string]any) {
+func setStop(payload *rule.Payload, event string, env map[string]any) {
 	// Codex sends null for a stop with no text, which on this key alone means
 	// absent rather than unreadable.
 	if rule.StopEvent(event) {
-		p.StopHookActive, _ = env["stop_hook_active"].(bool)
+		payload.StopHookActive, _ = env["stop_hook_active"].(bool)
 		if env["last_assistant_message"] != nil {
-			set(p, "response", env, "last_assistant_message")
+			set(payload, "response", env, "last_assistant_message")
 		}
 	}
 }
 
 // setSubagent reads the subagent a subagent event is about, and reports false
 // for an event no rule is about.
-func setSubagent(p *rule.Payload, event string, env map[string]any) bool {
+func setSubagent(payload *rule.Payload, event string, env map[string]any) bool {
 	// On a subagent event the envelope's agent_type names the subagent the
 	// event is about, the meaning it has on a spawn call. One that is empty,
 	// null or absent is Claude Code's own internal agent, which no rule is
 	// about; any other non-string is still declared unreadable.
-	if event == "SubagentStart" || event == "SubagentStop" {
+	if event == eventSubagentStart || event == eventSubagentStop {
 		if v := env["agent_type"]; v == nil || v == "" {
 			return false
 		}
 
-		set(p, "agent_type", env, "agent_type")
+		set(payload, "agent_type", env, "agent_type")
 	}
 
 	return true
@@ -380,12 +398,12 @@ func classify(tool string) string {
 	case "":
 		return ""
 	case "Bash", "PowerShell", "Monitor":
-		return "shell"
+		return kindShell
 	case "Edit", "Write", "NotebookEdit", "apply_patch":
-		return "file_edit"
+		return kindFileEdit
 	case "Read":
 		return "file_read"
-	case "Agent":
+	case toolAgent:
 		return "agent"
 	case "WebFetch", "WebSearch", "webrun":
 		return "network"
@@ -399,37 +417,12 @@ func classify(tool string) string {
 	return "other"
 }
 
-// toolNames lists every name the harness answers to for a call to tool: the
-// name on the wire, then the aliases this harness documents for it. An MCP
-// call also answers to its bare tool name. No Adapter invents a name another
-// harness uses, because tool is the harness's own vocabulary and kind the
-// portable one.
-func (a Adapter) toolNames(tool string) []string {
-	if rest, ok := strings.CutPrefix(tool, "mcp__"); ok {
-		if _, bare, ok := strings.Cut(rest, "__"); ok {
-			return []string{tool, bare}
-		}
-	}
-
-	for _, names := range a.aliases {
-		if names[0] == tool {
-			return names
-		}
-	}
-
-	return []string{tool}
-}
-
 // setTool writes every name the call answers to as a Spelling of tool.
 func setTool(p *rule.Payload, names []string) {
 	for _, n := range names {
 		p.SetField("tool", n)
 	}
 }
-
-// textKeys are the tool input keys a file edit carries its written text under,
-// in the order content reads them.
-var textKeys = [...]string{"content", "new_string", "new_source"}
 
 // writesEmpty sets writes_empty on a call that names the text it writes and
 // whose text was read as empty, the one fact content's absence would otherwise
@@ -453,41 +446,41 @@ func writesEmpty(p *rule.Payload, namesText bool) {
 // is still an edit, one that names nothing handrail can read.
 func patchPayloads(event string, tools []string, dir, patch string) []rule.Payload {
 	var (
-		edits []rule.Payload
-		s     patchSection
+		edits   []rule.Payload
+		section patchSection
 	)
 
 	done := func() {
-		if s.paths != nil {
-			edits = append(edits, s.edit(event, tools))
+		if section.paths != nil {
+			edits = append(edits, section.edit(event, tools))
 		}
 	}
 
 	for line := range strings.SplitSeq(patch, "\n") {
-		verb, file, ok := patchHeader(line)
+		header, ok := patchHeader(line)
 		switch {
 		case !ok:
-			s.read(line)
-		case verb == "Move to:":
-			s.paths = append(s.paths, inDir(dir, file))
+			section.read(line)
+		case header.verb == "Move to:":
+			section.paths = append(section.paths, inDir(dir, header.file))
 		default:
 			done()
 
-			s = patchSection{verb: verb, paths: []string{inDir(dir, file)}}
+			section = patchSection{verb: header.verb, paths: []string{inDir(dir, header.file)}, added: nil, removed: nil}
 		}
 	}
 
 	done()
 
 	if edits == nil {
-		p := rule.Payload{Event: event, Kind: "file_edit"}
-		setTool(&p, tools)
+		unread := rule.Payload{Event: event, Kind: kindFileEdit, StopHookActive: false}
+		setTool(&unread, tools)
 
 		for _, f := range [...]string{"path", "content", "removed_content"} {
-			p.SetField("unreadable", f)
+			unread.SetField("unreadable", f)
 		}
 
-		edits = append(edits, p)
+		edits = append(edits, unread)
 	}
 
 	return edits
@@ -515,20 +508,20 @@ func (s *patchSection) read(line string) {
 
 // edit is the file_edit payload the section makes.
 func (s *patchSection) edit(event string, tools []string) rule.Payload {
-	p := rule.Payload{Event: event, Kind: "file_edit"}
-	setTool(&p, tools)
-	p.SetRename(s.paths[0], s.paths[len(s.paths)-1])
-	p.SetField("content", strings.Join(s.added, "\n"))
-	p.SetField("removed_content", strings.Join(s.removed, "\n"))
+	payload := rule.Payload{Event: event, Kind: kindFileEdit, StopHookActive: false}
+	setTool(&payload, tools)
+	payload.SetRename(s.paths[0], s.paths[len(s.paths)-1])
+	payload.SetField("content", strings.Join(s.added, "\n"))
+	payload.SetField("removed_content", strings.Join(s.removed, "\n"))
 
 	if s.verb == "Delete File:" {
-		p.SetField("deletes", "true")
+		payload.SetField("deletes", "true")
 	}
 	// An added file names its whole text and an edit that removes lines
 	// names what replaces them; a bare rename names no text at all.
-	writesEmpty(&p, s.verb == "Add File:" || len(s.removed) > 0)
+	writesEmpty(&payload, s.verb == "Add File:" || len(s.removed) > 0)
 
-	return p
+	return payload
 }
 
 // inDir joins a relative file to dir, the directory the patch is applied in.
@@ -540,22 +533,28 @@ func inDir(dir, file string) string {
 	return file
 }
 
-// patchHeader reads a patch header: its verb and the file it names. The
-// headers sit at column 0, so an indented line that looks like one is content,
-// not a header.
-func patchHeader(line string) (verb, file string, ok bool) {
+// header is a patch header: its verb and the file it names.
+type header struct {
+	verb, file string
+}
+
+// patchHeader reads a patch header. The headers sit at column 0, so an
+// indented line that looks like one is content, not a header.
+func patchHeader(line string) (header, bool) {
+	var none header
+
 	rest, found := strings.CutPrefix(line, "*** ")
 	if !found {
-		return "", "", false
+		return none, false
 	}
 
 	for _, verb := range []string{"Add File:", "Update File:", "Delete File:", "Move to:"} {
 		if file, found := strings.CutPrefix(rest, verb); found {
-			return verb, strings.TrimSpace(file), true
+			return header{verb: verb, file: strings.TrimSpace(file)}, true
 		}
 	}
 
-	return "", "", false
+	return none, false
 }
 
 // set copies the first key the tool input actually carries into the canonical
@@ -565,58 +564,24 @@ func patchHeader(line string) (verb, file string, ok bool) {
 // rule.Payload.SetField's answer rather than this Adapter's. A key carrying
 // anything but a string, null included, is the source the call chose, so it
 // declares the field unreadable rather than falling through to the next key.
-func set(p *rule.Payload, name string, input map[string]any, keys ...string) {
+func set(payload *rule.Payload, name string, input map[string]any, keys ...string) {
 	for _, k := range keys {
 		v, present := input[k]
 		if !present {
 			continue
 		}
 
-		s, ok := v.(string)
+		text, ok := v.(string)
 		if !ok {
-			p.SetField("unreadable", name)
+			payload.SetField("unreadable", name)
 
 			return
 		}
 
-		if p.SetField(name, s) {
+		if payload.SetField(name, text) {
 			return
 		}
 	}
-}
-
-// caps reads event's row of the Adapter's Capability matrix. An event the
-// matrix lacks has no row, and so can neither block nor inject.
-func (a Adapter) caps(event string) eventCaps {
-	for _, c := range a.events {
-		if c.name == event {
-			return c
-		}
-	}
-
-	return eventCaps{}
-}
-
-// degrade is the Outcome the harness delivers for o on event: o itself, or
-// the nearest one keeping its promise where the harness cannot deliver it. An
-// ask rises to block, since only a denial keeps a call from proceeding without
-// a human yes; a block falls to warn. On an event the harness lacks, every
-// rule is skipped.
-func (a Adapter) degrade(event string, o rule.Outcome) rule.Outcome {
-	c := a.caps(event)
-	if c.name == "" {
-		return rule.Allow
-	}
-
-	if o == rule.Ask && !c.ask {
-		o = rule.Block
-	}
-
-	if o == rule.Block && c.deny == noDenial {
-		o = rule.Warn
-	}
-
-	return o
 }
 
 // Note is what an ask this harness turns into a block adds to its message,
@@ -628,22 +593,6 @@ func (a Adapter) Note(r *rule.Rule) string {
 	}
 
 	return ""
-}
-
-// reason says why the harness delivers to on event in place of the rule's own
-// action, for the degradation report. Only a block is ever reached by rising,
-// from an ask; every other substitution is a denial the harness cannot honour.
-func (a Adapter) reason(event string, to rule.Outcome) string {
-	switch {
-	case to == rule.Allow:
-		return a.title + " has no " + event + " event"
-	case to == rule.Block:
-		return "the rule asks for approval, and " + a.title + " cannot ask for it, so the call is denied"
-	case event == "UserPromptSubmit":
-		return a.title + " cannot fail closed on UserPromptSubmit before the model request (upstream #33630)"
-	}
-
-	return a.title + " has no denial to give on " + event
 }
 
 type hookOutput struct {
@@ -667,6 +616,10 @@ type hookSpecific struct {
 // SessionEnd it is gone.
 func (a Adapter) Injects(event string) bool { return a.caps(event).inject }
 
+// stderrExit is the exit code both harnesses read as a block with its reason
+// on stderr, and the one Claude Code shows the user on SessionEnd.
+const stderrExit = 2
+
 // Deliver writes message and human in the harness's protocol and returns the
 // exit code. A PreToolUse block is a permissionDecision deny whose reason the
 // agent reads, an ask is one whose reason the approval prompt shows, a
@@ -682,10 +635,10 @@ func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, std
 	// SessionEnd has no decision control and both harnesses discard its JSON,
 	// so stderr on exit 2, which Claude Code shows the user, is the one
 	// channel left.
-	if event == "SessionEnd" {
+	if event == eventSessionEnd {
 		_, _ = io.WriteString(stderr, human+"\n")
 
-		return 2
+		return stderrExit
 	}
 
 	out := a.output(event, message, human, outcome)
@@ -697,10 +650,11 @@ func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, std
 	// promise: never turn handrail's own trouble into the harness's. A block
 	// is the exception, since it is the rule's outcome rather than handrail's
 	// trouble: exit 2 still denies on both harnesses.
-	if err := enc.Encode(out); err != nil && a.degrade(event, outcome) == rule.Block {
+	err := enc.Encode(out)
+	if err != nil && a.degrade(event, outcome) == rule.Block {
 		_, _ = io.WriteString(stderr, message+"\n")
 
-		return 2
+		return stderrExit
 	}
 
 	return 0
@@ -708,26 +662,118 @@ func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, std
 
 // output is the hook output Deliver writes on stdout.
 func (a Adapter) output(event, message, human string, outcome rule.Outcome) hookOutput {
-	out := hookOutput{SystemMessage: human}
+	out := hookOutput{Decision: "", Reason: "", SystemMessage: human, HookSpecificOutput: nil}
 	if a.Injects(event) {
-		out.HookSpecificOutput = &hookSpecific{HookEventName: event, AdditionalContext: message}
+		out.HookSpecificOutput = &hookSpecific{
+			HookEventName: event, PermissionDecision: "", PermissionDecisionReason: "", AdditionalContext: message,
+		}
 	}
 
-	switch o := a.degrade(event, outcome); {
-	case o == rule.Ask:
+	switch delivered := a.degrade(event, outcome); {
+	case delivered == rule.Ask:
 		// The human's message rides in the approval prompt, not beside it.
 		out.SystemMessage = ""
 		out.HookSpecificOutput.PermissionDecision = "ask"
 		out.HookSpecificOutput.PermissionDecisionReason = human
-	case o == rule.Block && a.caps(event).deny == decisionBlock:
+	case delivered == rule.Block && a.caps(event).deny == decisionBlock:
 		// The harness shows the reason to the human and erases the prompt, so
 		// no agent is left to hear the rest.
 		out.Decision, out.Reason, out.HookSpecificOutput = "block", human, nil
-	case o == rule.Block && a.caps(event).deny == continueOnce:
+	case delivered == rule.Block && a.caps(event).deny == continueOnce:
 		out.Decision, out.Reason = "block", message
-	case o == rule.Block:
-		out.HookSpecificOutput = &hookSpecific{HookEventName: event, PermissionDecision: "deny", PermissionDecisionReason: message}
+	case delivered == rule.Block:
+		out.HookSpecificOutput = &hookSpecific{
+			HookEventName: event, PermissionDecision: "deny", PermissionDecisionReason: message, AdditionalContext: "",
+		}
 	}
 
 	return out
+}
+
+// shellEdits reads the edits a shell call's patch heredoc makes, where this
+// harness applies one.
+func (a Adapter) shellEdits(event string, tools []string, input map[string]any) []rule.Payload {
+	// Codex applies a patch heredoc sent through the shell itself, after
+	// this hook and with no second one, so this is the only place its
+	// edits are seen. Claude Code runs the same line as a program.
+	if line, ok := input["command"].(string); ok && a.patchInShell {
+		if dir, patch, ok := shell.Patch(line); ok {
+			return patchPayloads(event, tools, dir, patch)
+		}
+	}
+
+	return nil
+}
+
+// toolNames lists every name the harness answers to for a call to tool: the
+// name on the wire, then the aliases this harness documents for it. An MCP
+// call also answers to its bare tool name. No Adapter invents a name another
+// harness uses, because tool is the harness's own vocabulary and kind the
+// portable one.
+func (a Adapter) toolNames(tool string) []string {
+	if rest, ok := strings.CutPrefix(tool, "mcp__"); ok {
+		if _, bare, ok := strings.Cut(rest, "__"); ok {
+			return []string{tool, bare}
+		}
+	}
+
+	for _, names := range a.aliases {
+		if names[0] == tool {
+			return names
+		}
+	}
+
+	return []string{tool}
+}
+
+// caps reads event's row of the Adapter's Capability matrix. An event the
+// matrix lacks has no row, and so can neither block nor inject.
+func (a Adapter) caps(event string) eventCaps {
+	for _, c := range a.events {
+		if c.name == event {
+			return c
+		}
+	}
+
+	var none eventCaps
+
+	return none
+}
+
+// degrade is the Outcome the harness delivers for outcome on event: outcome
+// itself, or the nearest one keeping its promise where the harness cannot
+// deliver it. An ask rises to block, since only a denial keeps a call from
+// proceeding without a human yes; a block falls to warn. On an event the
+// harness lacks, every rule is skipped.
+func (a Adapter) degrade(event string, outcome rule.Outcome) rule.Outcome {
+	row := a.caps(event)
+	if row.name == "" {
+		return rule.Allow
+	}
+
+	if outcome == rule.Ask && !row.ask {
+		outcome = rule.Block
+	}
+
+	if outcome == rule.Block && row.deny == noDenial {
+		outcome = rule.Warn
+	}
+
+	return outcome
+}
+
+// reason says why the harness delivers to on event in place of the rule's own
+// action, for the degradation report. Only a block is ever reached by rising,
+// from an ask; every other substitution is a denial the harness cannot honour.
+func (a Adapter) reason(event string, to rule.Outcome) string {
+	switch {
+	case to == rule.Allow:
+		return a.title + " has no " + event + " event"
+	case to == rule.Block:
+		return "the rule asks for approval, and " + a.title + " cannot ask for it, so the call is denied"
+	case event == eventUserPromptSubmit:
+		return a.title + " cannot fail closed on UserPromptSubmit before the model request (upstream #33630)"
+	}
+
+	return a.title + " has no denial to give on " + event
 }
