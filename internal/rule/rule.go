@@ -253,7 +253,7 @@ func (r *Rule) checkAgentOnly() error {
 	switch {
 	case r.AgentOnly && r.Action != Warn:
 		return fmt.Errorf("line %d: agent_only applies only to warn", r.agentOnlyLine)
-	case r.AgentOnly && StopEvent(r.Event):
+	case r.AgentOnly && (StopEvent(r.Event) || r.Event == "SessionEnd"):
 		return fmt.Errorf("line %d: agent_only is refused on %s, where a warn tells only the human", r.agentOnlyLine, r.Event)
 	}
 	return nil

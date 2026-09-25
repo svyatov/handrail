@@ -89,7 +89,9 @@ func readCall(a harness.Adapter, event string, stdin io.Reader) (payloads []rule
 		failures = append(failures, fmt.Sprintf("handrail: could not parse the %s payload: %v", event, err))
 	}
 	if failures != nil {
-		payloads = []rule.Payload{{Event: event}}
+		// A stop it could not read may already be a continuation, so it is
+		// read as one: no block rule may continue the agent on it.
+		payloads = []rule.Payload{{Event: event, StopHookActive: rule.StopEvent(event)}}
 		payloads[0].SetField("unreadable", "payload")
 	}
 	return payloads, cwd, failures

@@ -1,4 +1,4 @@
-# Everything sync can refuse, it refuses before touching a single config file.
+# What sync refuses, and what it reports and writes through.
 exec handrail trust
 
 # An invalid rule is reported and the hooks are still written, since they

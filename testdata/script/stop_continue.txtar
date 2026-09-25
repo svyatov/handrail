@@ -45,6 +45,15 @@ stdin stop-number.json
 exec handrail hook codex Stop
 stdout 'unread-response'
 
+# A stop handrail cannot read may already be a continuation, so no block rule
+# is evaluated on it, not even one on unreadable: none can loop.
+cp give-up.md home/.config/handrail/give-up.md
+stdin stop-broken.json
+exec handrail hook claude Stop
+! stdout 'decision'
+stdout 'could not parse the Stop payload'
+rm home/.config/handrail/give-up.md
+
 # handrail's own notices there go to the human alone: reaching the agent would
 # be a block handrail invented, and a broken rule would continue every turn.
 cp broken.md home/.config/handrail/broken.md
@@ -58,6 +67,17 @@ exec handrail hook claude Stop
 ! stdout 'hookSpecificOutput'
 stdout '"systemMessage": "handrail warn: claims-done \(global\)\\nhandrail: skipped the broken rule'
 
+-- stop-broken.json --
+{ not json
+-- give-up.md --
+---
+event: Stop
+action: block
+conditions:
+  - field: unreadable
+    equals: payload
+---
+handrail could not read this stop.
 -- broken.md --
 ---
 event: Stop

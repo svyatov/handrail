@@ -269,10 +269,11 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		}
 	}
 	// On a subagent event the envelope's agent_type names the subagent the
-	// event is about, the meaning it has on a spawn call. One with none is
-	// Claude Code's own internal agent, which no rule is about.
-	if strings.HasPrefix(event, "Subagent") {
-		if env["agent_type"] == "" {
+	// event is about, the meaning it has on a spawn call. One that is empty,
+	// null or absent is Claude Code's own internal agent, which no rule is
+	// about; any other non-string is still declared unreadable.
+	if event == "SubagentStart" || event == "SubagentStop" {
+		if v := env["agent_type"]; v == nil || v == "" {
 			return nil, cwd, nil
 		}
 		set(&p, "agent_type", env, "agent_type")
@@ -483,10 +484,10 @@ func (a Adapter) caps(event string) eventCaps {
 // a human yes; a block falls to warn. On an event the harness lacks, every
 // rule is skipped.
 func (a Adapter) degrade(event string, o rule.Outcome) rule.Outcome {
-	if !slices.ContainsFunc(a.events, func(c eventCaps) bool { return c.name == event }) {
+	c := a.caps(event)
+	if c.name == "" {
 		return rule.Allow
 	}
-	c := a.caps(event)
 	if o == rule.Ask && !c.ask {
 		o = rule.Block
 	}

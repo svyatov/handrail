@@ -60,14 +60,6 @@ exec sh -c 'handrail hook claude SessionEnd; echo code=$?'
 stdout '^code=2$'
 cmp stderr end-human.txt
 
-# With no human line there is nothing to send, and the session ends quietly.
-rm home/.config/handrail/farewell.md
-cp quiet-end.md home/.config/handrail/quiet-end.md
-stdin end.json
-exec sh -c 'handrail hook claude SessionEnd; echo code=$?'
-stdout '^code=0$'
-! stderr .
-
 -- .git/HEAD --
 ref: refs/heads/main
 -- rm.json --
@@ -76,12 +68,6 @@ ref: refs/heads/main
 {"hook_event_name": "SessionEnd"}
 -- end-human.txt --
 handrail warn: farewell (global)
--- quiet-end.md --
----
-event: SessionEnd
-agent_only: true
----
-Nobody hears this.
 -- home/.config/handrail/farewell.md --
 ---
 event: SessionEnd

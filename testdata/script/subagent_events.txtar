@@ -22,6 +22,14 @@ exec handrail hook claude SubagentStart
 ! stdout .
 ! stderr .
 
+# An absent or null agent_type names no subagent either.
+stdin start-absent.json
+exec handrail hook claude SubagentStart
+! stdout .
+stdin start-null.json
+exec handrail hook claude SubagentStart
+! stdout .
+
 # test reads that capture as hook does: it yields no call for --field to vary.
 stdin start-internal.json
 ! exec handrail test SubagentStart --stdin --field agent_type=reviewer
@@ -35,6 +43,10 @@ ref: refs/heads/main
 {"hook_event_name": "SubagentStart", "agent_type": "explorer"}
 -- start-internal.json --
 {"hook_event_name": "SubagentStart", "agent_type": ""}
+-- start-absent.json --
+{"hook_event_name": "SubagentStart"}
+-- start-null.json --
+{"hook_event_name": "SubagentStart", "agent_type": null}
 -- home/.config/handrail/zz-every-subagent.md --
 ---
 event: SubagentStart
