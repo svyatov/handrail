@@ -102,7 +102,7 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1
 	}
-	reportDropped(rs, stderr)
+	reportTierMoves(rs, stderr)
 	// A failing Example changes nothing sync writes, so it is reported after.
 	if reportExamples(slices.Concat(rs.Rules, rs.Untrusted), stderr) || failed {
 		return 1

@@ -134,7 +134,7 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 		for _, p := range rs.Problems {
 			fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
 		}
-		reportDropped(rs, stderr)
+		reportTierMoves(rs, stderr)
 		examplesFailed = reportExamples(slices.Concat(rs.Rules, rs.Untrusted), stderr)
 	}
 
@@ -165,12 +165,12 @@ func reportExamples(rules []*rule.Rule, stderr io.Writer) bool {
 	return failed
 }
 
-// reportDropped names each Project-shared file dropped for naming a Global
+// reportTierMoves names each Project-shared file dropped for naming a Global
 // rule, with both paths, and each Project-personal file read as Project-shared,
 // with the reason. Neither is an error: the repository's author cannot see the
 // Global file, so the user could not fix it either, and a demoted file is still
 // read.
-func reportDropped(rs *rule.Ruleset, stderr io.Writer) {
+func reportTierMoves(rs *rule.Ruleset, stderr io.Writer) {
 	for _, r := range slices.Concat(rs.Rules, rs.Untrusted) {
 		if r.DemotedFrom != "" {
 			fmt.Fprintf(stderr, "handrail: %s: read as Project-shared: %s\n", r.Path, rs.Demoted)

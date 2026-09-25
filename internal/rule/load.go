@@ -225,7 +225,7 @@ func demotion(root string) string {
 			return dir + " is a symlink"
 		}
 	}
-	tracked, err := gitindex.Under(root, excludeLine[:len(excludeLine)-1])
+	tracked, err := gitindex.Under(root, sharedName+"/"+localName)
 	switch {
 	case err != nil:
 		return "cannot read the git index: " + err.Error()
