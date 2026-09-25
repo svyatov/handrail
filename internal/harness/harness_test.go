@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/svyatov/handrail/internal/rule"
 )
 
 // A harness that has never run leaves no directory, and a machine with no home
@@ -76,5 +78,21 @@ func TestShellQuote(t *testing.T) {
 				t.Errorf("shellQuote(%q) = %q, want %q", c.in, got, c.want)
 			}
 		})
+	}
+}
+
+// Both harnesses have all eight events today, so a harness lacking one exists
+// only here: a rule on an event it lacks degrades to skip, reported rather
+// than delivered as whatever its missing row would read as.
+func TestAMissingEventDegradesToSkip(t *testing.T) {
+	a := Adapter{Name: "partial", title: "Partial", events: []eventCaps{{name: "PreToolUse", deny: permissionDeny, inject: true}}}
+	r := &rule.Rule{Name: "not-done", Event: "Stop", Action: rule.Block}
+
+	if got := a.Action(r); got != rule.Allow {
+		t.Errorf("Action() = %s, want allow", got)
+	}
+	want := "block degraded to skip for not-done: Partial has no Stop event"
+	if got := a.Report([]*rule.Rule{r}); len(got) != 1 || got[0] != want {
+		t.Errorf("Report() = %q, want [%q]", got, want)
 	}
 }

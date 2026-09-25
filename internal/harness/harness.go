@@ -20,9 +20,9 @@ import (
 // The identifier is the harness's binary name, which is what users type.
 type Adapter struct {
 	Name string
-	// Quirks are the behaviours a user should know about but handrail cannot
+	// quirks are the behaviours a user should know about but handrail cannot
 	// change. Reported next to the degradations, for the same reason.
-	Quirks  []string
+	quirks  []string
 	title   string // how the harness names itself in a report
 	dir     string // user-level directory, under the home directory
 	homeEnv string // the variable that relocates that directory, if the harness has one
@@ -47,8 +47,9 @@ type Adapter struct {
 type eventCaps struct {
 	name   string
 	deny   denial // how a block is delivered, or noDenial where it cannot be
-	inject bool   // whether the harness puts a hook's output in front of the agent
+	inject bool   // whether a hook can put a message in front of the agent without a block
 	ask    bool   // whether a hook can hand the call to the human for approval
+	silent bool   // whether the user sees nothing a hook says, on any channel
 }
 
 // denial is how a harness hears a block on one event. The zero value is the
@@ -57,9 +58,9 @@ type denial int
 
 const (
 	noDenial       denial = iota
-	exitTwo               // exit 2, with the reason on stderr
 	permissionDeny        // exit 0 with permissionDecision: "deny" and the reason
-	decisionBlock         // exit 0 with decision: "block" and the reason
+	decisionBlock         // exit 0 with decision: "block" and the reason, the human's text
+	continueOnce          // exit 0 with decision: "block" and the reason, the agent's next instruction
 )
 
 // Both harnesses read the same Claude-shaped hook config and speak the same
@@ -70,7 +71,9 @@ const (
 // Events that run after the fact or outside a decision point have no denial to
 // give, and Codex cannot fail closed on a prompt before the model request.
 // SessionEnd injects nothing on either: the session is over and the JSON is
-// discarded, so a warning there reaches the user or nobody.
+// discarded, so a warning there reaches the user or nobody. On Stop and
+// SubagentStop any message to the agent makes it continue, so there only a
+// block reaches it.
 var adapters = []Adapter{
 	{
 		Name: "claude", title: "Claude Code", dir: ".claude", homeEnv: "CLAUDE_CONFIG_DIR", file: "settings.json",
@@ -81,9 +84,11 @@ var adapters = []Adapter{
 			{name: "UserPromptSubmit", deny: decisionBlock, inject: true},
 			{name: "SessionStart", inject: true},
 			{name: "SessionEnd"},
-			{name: "Stop", deny: exitTwo, inject: true},
+			{name: "Stop", deny: continueOnce},
+			{name: "SubagentStart", inject: true},
+			{name: "SubagentStop", deny: continueOnce},
 		},
-		Quirks: []string{
+		quirks: []string{
 			"hook errors and timeouts fail open, so a broken guardrail never stops the session",
 			"disableAllHooks and cloud sessions bypass handrail entirely",
 		},
@@ -97,10 +102,12 @@ var adapters = []Adapter{
 			{name: "PostToolUse", inject: true},
 			{name: "UserPromptSubmit", inject: true},
 			{name: "SessionStart", inject: true},
-			{name: "SessionEnd"},
-			{name: "Stop", deny: exitTwo, inject: true},
+			{name: "SessionEnd", silent: true},
+			{name: "Stop", deny: continueOnce},
+			{name: "SubagentStart", inject: true},
+			{name: "SubagentStop", deny: continueOnce},
 		},
-		Quirks: []string{
+		quirks: []string{
 			"hook errors and timeouts fail open, so a broken guardrail never stops the session",
 			"non-managed hooks need a one-time trust review, and --dangerously-bypass-hook-trust skips that review rather than the hooks",
 			"an enterprise allow_managed_hooks_only requirement ignores user-level hooks, handrail's included",
@@ -253,6 +260,24 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		}
 	}
 	set(&p, "prompt", env, "prompt")
+	// Codex sends null for a stop with no text, which on this key alone means
+	// absent rather than unreadable.
+	if rule.StopEvent(event) {
+		p.StopHookActive, _ = env["stop_hook_active"].(bool)
+		if env["last_assistant_message"] != nil {
+			set(&p, "response", env, "last_assistant_message")
+		}
+	}
+	// On a subagent event the envelope's agent_type names the subagent the
+	// event is about, the meaning it has on a spawn call. One that is empty,
+	// null or absent is Claude Code's own internal agent, which no rule is
+	// about; any other non-string is still declared unreadable.
+	if event == "SubagentStart" || event == "SubagentStop" {
+		if v := env["agent_type"]; v == nil || v == "" {
+			return nil, cwd, nil
+		}
+		set(&p, "agent_type", env, "agent_type")
+	}
 	return append([]rule.Payload{p}, edits...), cwd, nil
 }
 
@@ -456,9 +481,13 @@ func (a Adapter) caps(event string) eventCaps {
 // degrade is the Outcome the harness delivers for o on event: o itself, or
 // the nearest one keeping its promise where the harness cannot deliver it. An
 // ask rises to block, since only a denial keeps a call from proceeding without
-// a human yes; a block falls to warn.
+// a human yes; a block falls to warn. On an event the harness lacks, every
+// rule is skipped.
 func (a Adapter) degrade(event string, o rule.Outcome) rule.Outcome {
 	c := a.caps(event)
+	if c.name == "" {
+		return rule.Allow
+	}
 	if o == rule.Ask && !c.ask {
 		o = rule.Block
 	}
@@ -483,6 +512,8 @@ func (a Adapter) Note(r *rule.Rule) string {
 // from an ask; every other substitution is a denial the harness cannot honour.
 func (a Adapter) reason(event string, to rule.Outcome) string {
 	switch {
+	case to == rule.Allow:
+		return a.title + " has no " + event + " event"
 	case to == rule.Block:
 		return "the rule asks for approval, and " + a.title + " cannot ask for it, so the call is denied"
 	case event == "UserPromptSubmit":
@@ -507,46 +538,35 @@ type hookSpecific struct {
 	AdditionalContext        string `json:"additionalContext,omitempty"`
 }
 
-// toStderr reports whether Deliver sends an event's message on exit 2, the
-// harness's own channel. On an event whose denial is exit 2 it is the denial;
-// on SessionEnd, which has no decision control and whose JSON output the
-// harness discards, it is the only way left to reach the user, which is what a
-// warning degrades to where context injection does not exist.
-func (a Adapter) toStderr(event string, outcome rule.Outcome) bool {
-	c := a.caps(event)
-	return (a.degrade(event, outcome) == rule.Block && c.deny == exitTwo) || !c.inject
-}
+// Injects reports whether the agent hears a message on event that is not a
+// block. On Stop and SubagentStop any message to it makes it continue, and on
+// SessionEnd it is gone.
+func (a Adapter) Injects(event string) bool { return a.caps(event).inject }
 
-// Human is the text the user is shown when Deliver sends message and human
-// for event, and "" when nothing reaches them: the whole message on stderr,
-// else human, in the approval prompt or beside the call.
-func (a Adapter) Human(event, message, human string, outcome rule.Outcome) string {
-	if a.toStderr(event, outcome) {
-		return message
-	}
-	return human
-}
-
-// Deliver writes message in the harness's protocol and returns the exit code:
-// a block is exit 2 with the message as the denial reason on stderr, an ask
-// is a permissionDecision whose reason the approval prompt shows, and anything
-// else proceeds. Every path but the stderr one injects the message into the
-// agent's context. Both harnesses document the same channels, exit 2 with a
-// stderr reason and a hookSpecificOutput object, so one implementation serves.
-// human is what the user sees on systemMessage; on the stderr and ask paths it
-// is already part of message, which reaches the user there.
+// Deliver writes message and human in the harness's protocol and returns the
+// exit code. A PreToolUse block is a permissionDecision deny whose reason the
+// agent reads, an ask is one whose reason the approval prompt shows, a
+// UserPromptSubmit block is a decision the human reads, a block on Stop or
+// SubagentStop is a decision whose reason is the agent's next instruction, and
+// anything else proceeds. Where the harness injects, the agent reads message
+// as context. Both harnesses document the same channels, so one
+// implementation serves. human is what the user sees on systemMessage.
 func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, stdout, stderr io.Writer) int {
-	if message == "" {
+	if message == "" && human == "" {
 		return 0
 	}
-	if a.toStderr(event, outcome) {
-		// A failed write leaves nobody to tell, but the outcome still stands: a
-		// block that cannot state its reason is still a block.
-		_, _ = io.WriteString(stderr, message+"\n")
+	// SessionEnd has no decision control and both harnesses discard its JSON,
+	// so stderr on exit 2, which Claude Code shows the user, is the one
+	// channel left.
+	if event == "SessionEnd" {
+		_, _ = io.WriteString(stderr, human+"\n")
 		return 2
 	}
 
-	out := hookOutput{SystemMessage: human, HookSpecificOutput: &hookSpecific{HookEventName: event, AdditionalContext: message}}
+	out := hookOutput{SystemMessage: human}
+	if a.Injects(event) {
+		out.HookSpecificOutput = &hookSpecific{HookEventName: event, AdditionalContext: message}
+	}
 	switch o := a.degrade(event, outcome); {
 	case o == rule.Ask:
 		// The human's message rides in the approval prompt, not beside it.
@@ -557,6 +577,8 @@ func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, std
 		// The harness shows the reason to the human and erases the prompt, so
 		// no agent is left to hear the rest.
 		out.Decision, out.Reason, out.HookSpecificOutput = "block", human, nil
+	case o == rule.Block && a.caps(event).deny == continueOnce:
+		out.Decision, out.Reason = "block", message
 	case o == rule.Block:
 		out.HookSpecificOutput = &hookSpecific{HookEventName: event, PermissionDecision: "deny", PermissionDecisionReason: message}
 	}

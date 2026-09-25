@@ -46,7 +46,7 @@ rm .handrail/local/broken.md
 exec handrail trust
 exec handrail sync
 exec handrail doctor
-stdout '^ok +claude: 6 hook entries current$'
+stdout '^ok +claude: 8 hook entries current$'
 stdout '^ok +project-shared: 1 rule in .*/\.handrail, trusted$'
 stdout '^ok +\.handrail/local/ is excluded in \.git/info/exclude$'
 ! stdout 'problem'

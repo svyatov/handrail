@@ -22,6 +22,10 @@ import (
 type Payload struct {
 	Event string
 	Kind  string
+	// StopHookActive is set when a stop hook already continued the agent, so a
+	// block, which would continue it again, is not evaluated. It is not a
+	// field: the engine applies the loop guard once, so no rule has to.
+	StopHookActive bool
 	// fields is unexported so that SetField is the only way in. The rule it
 	// enforces is a matcher's rule, so it belongs to this package rather than to
 	// each Adapter that fills a payload in.
@@ -59,6 +63,11 @@ type candidate struct {
 // replaced, since a call answers to several names and each failure adds its
 // own.
 func (p *Payload) SetField(name, value string) bool {
+	// The agent's last message is read without the whitespace around it, so
+	// starts_with and ends_with meet its first and last words.
+	if name == "response" {
+		value = strings.TrimSpace(value)
+	}
 	if value == "" {
 		return false
 	}
@@ -278,9 +287,10 @@ func (p Payload) Fields() map[string][]CandidateView {
 // Liveness is checked inline rather than over rs.Effective(), because this is
 // the hot path and the selector would allocate a second slice per event.
 func (rs *Ruleset) Evaluate(payloads []Payload) (matched []Match, outcome Outcome) {
+	continued := slices.ContainsFunc(payloads, func(p Payload) bool { return p.StopHookActive })
 	payloads = rs.Yield(payloads)
 	for _, r := range rs.Rules {
-		if !r.Live() {
+		if !r.Live() || continued && r.Action == Block {
 			continue
 		}
 		m, hit := Match{Rule: r}, false

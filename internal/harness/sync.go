@@ -76,7 +76,7 @@ func (a Adapter) Install(bin string) (entries int, changed bool, err error) {
 		event := c.name
 		groups := a.prune(hooks[event], event)
 		// No matcher: the matcher field is optional on every event that has one,
-		// and handrail classifies the tool itself, so one shape fits all six.
+		// and handrail classifies the tool itself, so one shape fits all eight.
 		hooks[event] = append(groups, map[string]any{
 			"hooks": []any{map[string]any{
 				"type":    "command",
@@ -264,15 +264,6 @@ func shellUnquote(s string) string {
 	return strings.ReplaceAll(s[1:len(s)-1], `'\''`, "'")
 }
 
-// Degradation is one rule this harness cannot enforce at full strength.
-type Degradation struct {
-	Rule, From, To, Reason string
-}
-
-func (d Degradation) String() string {
-	return fmt.Sprintf("%s degraded to %s for %s: %s", d.From, d.To, d.Rule, d.Reason)
-}
-
 // Action is the action the harness delivers for r: the rule's own, or the
 // nearest one it can deliver where it cannot deliver that.
 func (a Adapter) Action(r *rule.Rule) rule.Outcome { return a.degrade(r.Event, r.Action) }
@@ -287,26 +278,30 @@ func (a Adapter) Delivered(matched []rule.Match) rule.Outcome {
 	return o
 }
 
-// Degradations reports where the harness weakens a rule's action, for the
-// rules it is given: pass the Effective ruleset, since a rule that cannot fire
-// cannot be degraded. Sync and doctor print this; the hot path stays quiet.
-func (a Adapter) Degradations(rules []*rule.Rule) []Degradation {
-	var out []Degradation
+// Report is what the harness cannot do, for sync to print and doctor to
+// reprint: each rule it weakens, then each event whose hook output its user
+// never sees, then its quirks. Pass the Effective ruleset, since a rule that
+// cannot fire cannot be degraded. The hot path stays quiet.
+func (a Adapter) Report(rules []*rule.Rule) []string {
+	var out []string
 	for _, r := range rules {
-		c := a.caps(r.Event)
-		if to := a.Action(r); to != r.Action {
-			out = append(out, Degradation{
-				Rule: r.Name, From: r.Action.String(), To: to.String(), Reason: a.reason(r.Event, to),
-			})
+		to := a.Action(r)
+		if to == r.Action {
+			continue
 		}
-		// The message still reaches the user, on stderr, but the agent is gone by
-		// then: an injected warning it can act on is what was lost.
-		if !c.inject {
-			out = append(out, Degradation{
-				Rule: r.Name, From: rule.Warn.String(), To: "notice",
-				Reason: a.title + " discards hook output on " + r.Event + ", so the message goes to the user, not the agent",
-			})
+		// A skipped rule delivers nothing, which a report says as skip.
+		name := to.String()
+		if to == rule.Allow {
+			name = "skip"
+		}
+		out = append(out, fmt.Sprintf("%s degraded to %s for %s: %s", r.Action, name, r.Name, a.reason(r.Event, to)))
+	}
+	// An audience is not an action: the rule still enforces, and only the
+	// human loses the line.
+	for _, c := range a.events {
+		if c.silent {
+			out = append(out, c.name+" cannot tell the human: "+a.title+" shows the user no hook output there")
 		}
 	}
-	return out
+	return append(out, a.quirks...)
 }

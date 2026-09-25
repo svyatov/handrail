@@ -91,13 +91,13 @@ type Term struct {
 	slot  int
 }
 
-// events holds the six core events. Which of them a harness has, and what a
+// events holds the eight core events. Which of them a harness has, and what a
 // hook can do on each, is its Adapter's Capability matrix. The hook path pays for
 // every byte of startup work, so this is an array of constants: static data the
 // linker lays out, with no init to run.
-var events = [...]string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop"}
+var events = [...]string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop", "SubagentStart", "SubagentStop"}
 
-// IsEvent reports whether name is one of the six core events.
+// IsEvent reports whether name is one of the eight core events.
 func IsEvent(name string) bool { return slices.Contains(events[:], name) }
 
 // The three sets below stay switches: each is written down once, so unlike the
@@ -118,7 +118,7 @@ func IsKind(name string) bool {
 func IsField(name string) bool {
 	switch name {
 	case "command", "path", "content", "removed_content", "writes_empty", "deletes",
-		"server", "tool", "prompt", "agent_type", "agent_prompt", "model", "url", "domain", "network_grant", "unsandboxed", "unreadable":
+		"server", "tool", "prompt", "response", "agent_type", "agent_prompt", "model", "url", "domain", "network_grant", "unsandboxed", "unreadable":
 		return true
 	}
 	return false
@@ -250,11 +250,18 @@ func Parse(name string, data []byte) (*Rule, error) {
 // denial whose reason the human cannot see is a support ticket, and an ask
 // without the human has nobody to ask.
 func (r *Rule) checkAgentOnly() error {
-	if r.AgentOnly && r.Action != Warn {
+	switch {
+	case r.AgentOnly && r.Action != Warn:
 		return fmt.Errorf("line %d: agent_only applies only to warn", r.agentOnlyLine)
+	case r.AgentOnly && (StopEvent(r.Event) || r.Event == "SessionEnd"):
+		return fmt.Errorf("line %d: agent_only is refused on %s, where a warn tells only the human", r.agentOnlyLine, r.Event)
 	}
 	return nil
 }
+
+// StopEvent reports whether event ends a turn, where any message to the agent
+// makes it continue.
+func StopEvent(event string) bool { return event == "Stop" || event == "SubagentStop" }
 
 func (r *Rule) checkEvent(kindLine, actionLine int) error {
 	if r.Event == "" {
@@ -267,6 +274,14 @@ func (r *Rule) checkEvent(kindLine, actionLine int) error {
 	// Only a tool call not yet made is something a human can approve.
 	if r.Action == Ask && r.Event != "PreToolUse" {
 		return fmt.Errorf("line %d: ask applies only to PreToolUse", actionLine)
+	}
+	// A block no harness honours is a mislabelled warn. A block one harness
+	// lacks degrades there instead.
+	switch r.Event {
+	case "PostToolUse", "SessionStart", "SessionEnd", "SubagentStart":
+		if r.Action == Block {
+			return fmt.Errorf("line %d: block is refused on %s, where no harness can deny", actionLine, r.Event)
+		}
 	}
 	for _, c := range r.Conditions {
 		for _, t := range c.Terms {
@@ -300,6 +315,12 @@ func carries(event, field string) bool {
 		return true
 	case event == "UserPromptSubmit":
 		return field == "prompt"
+	case event == "Stop":
+		return field == "response"
+	case event == "SubagentStart":
+		return field == "agent_type"
+	case event == "SubagentStop":
+		return field == "agent_type" || field == "response"
 	}
 	return ToolEvent(event) && field != "prompt"
 }

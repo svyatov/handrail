@@ -2,7 +2,7 @@
 # nothing written into the repo.
 exec handrail trust
 exec handrail sync
-stdout 'claude: wrote 6 hook entries'
+stdout 'claude: wrote 8 hook entries'
 
 # One entry per canonical event, each invoking the binary by absolute path.
 grep '"command": "/[^"]* hook claude PreToolUse"' home/.claude/settings.json
@@ -11,6 +11,13 @@ grep '"command": "/[^"]* hook claude UserPromptSubmit"' home/.claude/settings.js
 grep '"command": "/[^"]* hook claude SessionStart"' home/.claude/settings.json
 grep '"command": "/[^"]* hook claude SessionEnd"' home/.claude/settings.json
 grep '"command": "/[^"]* hook claude Stop"' home/.claude/settings.json
+grep '"command": "/[^"]* hook claude SubagentStart"' home/.claude/settings.json
+grep '"command": "/[^"]* hook claude SubagentStop"' home/.claude/settings.json
+
+# No entry is narrowed, so a new rule on any tool or event takes effect on the
+# next event with no re-sync. The one matcher is the user's own.
+grep -count=1 '"matcher"' home/.claude/settings.json
+! grep '"if"' home/.claude/settings.json
 
 # Project config is never touched: the tiers merge in the engine at event time.
 ! exists .claude
@@ -31,24 +38,21 @@ grep '"hooks": "not a list"' home/.claude/settings.json
 grep -count=1 '^\.handrail/local/$' .git/info/exclude
 grep '^# my own patterns$' .git/info/exclude
 
-# Degradation is reported per harness, never applied in silence.
-stdout 'claude: block degraded to warn for late: Claude Code has no denial to give on PostToolUse'
-stdout 'claude: warn degraded to notice for farewell: Claude Code discards hook output on SessionEnd'
+# Claude Code enforces every rule here in full, so only its quirks are
+# reported. SessionEnd tells the human on stderr, so no event is silent.
 stdout 'claude: hook errors and timeouts fail open'
-
-# A rule the harness enforces in full is not reported as degraded. Neither is a
-# rule that enforces nothing: a disabled one degrades from nothing to nothing.
-! stdout 'for early'
-! stdout 'for switched-off'
+! stdout 'degraded'
+! stdout 'cannot tell the human'
 
 # The annotated effective ruleset is printed, same as check.
-stdout '^project-shared +late +PostToolUse'
+stdout '^project-shared +early +PreToolUse'
+stdout '^project-shared +farewell +SessionEnd'
 
 # Re-running changes nothing: the entries are stable, so Codex's hash-based
 # trust prompt (and Claude Code's own diffing) sees one shape forever.
 cp home/.claude/settings.json first.json
 exec handrail sync
-stdout 'claude: 6 hook entries already current'
+stdout 'claude: 8 hook entries already current'
 cmp home/.claude/settings.json first.json
 grep -count=1 '^\.handrail/local/$' .git/info/exclude
 
@@ -57,7 +61,7 @@ grep -count=1 'hook claude PreToolUse' home/.claude/settings.json
 
 # --harness scopes detection to one harness.
 exec handrail sync --harness claude
-stdout 'claude: 6 hook entries already current'
+stdout 'claude: 8 hook entries already current'
 
 # $CLAUDE_CONFIG_DIR moves the config Claude Code reads, so sync and doctor
 # follow it: ~/.claude there is a file the harness never opens, and may not
@@ -65,7 +69,7 @@ stdout 'claude: 6 hook entries already current'
 env CLAUDE_CONFIG_DIR=$WORK/elsewhere/claude
 mkdir $WORK/elsewhere/claude
 exec handrail sync --harness claude
-stdout 'claude: wrote 6 hook entries to .*/elsewhere/claude/settings.json'
+stdout 'claude: wrote 8 hook entries to .*/elsewhere/claude/settings.json'
 exists elsewhere/claude/settings.json
 exec handrail doctor
 stdout '^ok +claude: config at .*/elsewhere/claude/settings\.json$'
@@ -109,12 +113,6 @@ ref: refs/heads/main
     ]
   }
 }
--- .handrail/late.md --
----
-event: PostToolUse
-action: block
----
-Claude Code cannot undo a tool call that already ran.
 -- .handrail/early.md --
 ---
 event: PreToolUse
@@ -126,10 +124,3 @@ This one keeps its teeth.
 event: SessionEnd
 ---
 Nobody is left to read this but the user.
--- .handrail/switched-off.md --
----
-event: PostToolUse
-action: block
-enabled: false
----
-A rule that enforces nothing degrades to nothing.

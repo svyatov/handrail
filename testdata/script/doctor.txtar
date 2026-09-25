@@ -11,12 +11,14 @@ stdout '^ok +handrail dev at /'
 
 # Both harnesses are covered when both are installed, each under its own name.
 stdout '^ok +claude: config at .*/home/\.claude/settings\.json$'
-stdout '^ok +claude: 6 hook entries current$'
+stdout '^ok +claude: 8 hook entries current$'
 stdout '^ok +codex: config at .*/home/\.codex/hooks\.json$'
-stdout '^ok +codex: 6 hook entries current$'
+stdout '^ok +codex: 8 hook entries current$'
 
 # Degradations and fail-open quirks are reprintable here, not only at sync time.
-stdout '^note +claude: block degraded to warn for late: Claude Code has no denial to give on PostToolUse$'
+stdout '^note +codex: block degraded to warn for late: Codex CLI cannot fail closed on UserPromptSubmit before the model request \(upstream #33630\)$'
+! stdout 'claude: block degraded'
+stdout '^note +codex: SessionEnd cannot tell the human: Codex CLI shows the user no hook output there$'
 stdout '^note +claude: hook errors and timeouts fail open'
 stdout '^note +codex: non-managed hooks need a one-time trust review'
 ! stdout 'claude: non-managed hooks'
@@ -37,7 +39,7 @@ mv $WORK/home/.codex $WORK/home/.codex-gone
 exec handrail doctor
 stdout '^note +codex: not installed$'
 ! stdout 'problem'
-! stdout 'codex: 6 hook entries'
+! stdout 'codex: 8 hook entries'
 
 # Outside a git working tree there is nothing to exclude, so nothing is wrong.
 cd $WORK
@@ -58,10 +60,10 @@ A rule every repo on this machine carries.
 ref: refs/heads/main
 -- repo/.handrail/late.md --
 ---
-event: PostToolUse
+event: UserPromptSubmit
 action: block
 ---
-Claude Code cannot undo a tool call that already ran.
+Codex cannot hold a prompt before the model request.
 -- repo/.handrail/shared.md --
 ---
 event: PreToolUse

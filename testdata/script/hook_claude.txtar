@@ -59,21 +59,14 @@ exec handrail hook claude UserPromptSubmit
 stdout '"decision": "block"'
 stdout '"reason": "handrail block: no-yolo'
 
-# PostToolUse cannot deny a call that has already run, so a block there degrades
-# to the strongest thing left: the message, with the turn proceeding.
+# PostToolUse cannot deny a call that has already run, so a warn there tells
+# the agent after the fact, with the turn proceeding.
 stdin post-rm.json
 exec sh -c 'handrail hook claude PostToolUse; echo code=$?'
 stdout '^code=0$'
 stdout '"hookEventName": "PostToolUse"'
-stdout 'handrail block: after-the-fact \(project-shared\)'
+stdout 'handrail warn: after-the-fact \(project-shared\)'
 ! stderr .
-
-# Stop still denies through exit 2, with the reason on stderr.
-stdin stop.json
-exec sh -c 'handrail hook claude Stop; echo code=$?'
-stdout '^code=2$'
-stderr '^handrail block: not-done \(project-shared\)$'
-stderr '^Run the tests before you stop\.$'
 
 # Every matching message is delivered, labeled, in tier order.
 stdin bash-curl.json
@@ -191,19 +184,10 @@ conditions:
     matches: rm\s+-rf
 ---
 Never delete recursively from the filesystem root.
--- stop.json --
-{"hook_event_name": "Stop"}
--- .handrail/not-done.md --
----
-event: Stop
-action: block
----
-Run the tests before you stop.
 -- .handrail/after-the-fact.md --
 ---
 event: PostToolUse
 kind: shell
-action: block
 conditions:
   - field: command
     starts_with: rm -rf

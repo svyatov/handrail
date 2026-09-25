@@ -4,7 +4,7 @@ exec sh -c 'handrail sync; echo code=$?'
 stdout '^code=1$'
 stderr 'drifted\.md: line 11: match example fails: command="sudo rm -rf /"'
 stderr 'shared\.md: line 8: match example fails: command="git push"'
-stdout 'claude: wrote 6 hook entries'
+stdout 'claude: wrote 8 hook entries'
 exists home/.claude/settings.json
 
 -- .git/HEAD --

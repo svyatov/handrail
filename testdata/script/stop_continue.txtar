@@ -1,0 +1,133 @@
+# A block on Stop means "not done": exit 0 with decision: "block", whose reason
+# is the agent's next instruction. The human reads the body beside it.
+stdin stop.json
+exec sh -c 'handrail hook claude Stop; echo code=$?'
+stdout '^code=0$'
+! stderr .
+stdout '"decision": "block"'
+stdout '"reason": "handrail block: not-done \(global\)\\nRun the tests before you stop\."'
+stdout '"systemMessage": "handrail block: not-done \(global\)\\nRun the tests before you stop\."'
+! stdout hookSpecificOutput
+
+# Any message to the agent there makes it continue, so a warn tells only the
+# human, and beside a block the agent hears the block alone.
+stdin stop-claimed.json
+exec handrail hook claude Stop
+stdout '"reason": "handrail block: not-done \(global\)\\nRun the tests before you stop\."'
+stdout '"systemMessage": "handrail warn: claims-done \(global\)\\nhandrail block: not-done'
+! stdout 'Say what you checked'
+
+# Continuing once is the promise: under stop_hook_active no block rule is
+# evaluated, so none can loop. A warn still tells the human.
+stdin stop-again.json
+exec handrail hook claude Stop
+! stdout 'decision'
+! stdout 'not-done'
+stdout '"systemMessage": "handrail warn: claims-done \(global\)"'
+
+# SubagentStop is the same for a subagent, and response is its last message.
+stdin subagent-stop.json
+exec sh -c 'handrail hook claude SubagentStop; echo code=$?'
+stdout '^code=0$'
+stdout '"decision": "block"'
+stdout '"reason": "handrail block: cite-sources \(global\)\\nName the files you read\."'
+! stdout hookSpecificOutput
+
+# Codex continues the same way, and sends null for a stop with no text, which
+# on this key alone is absent rather than unreadable.
+stdin stop.json
+exec handrail hook codex Stop
+stdout '"reason": "handrail block: not-done \(global\)\\nRun the tests before you stop\."'
+stdin stop-null.json
+exec handrail hook codex Stop
+! stdout 'unread-response'
+stdin stop-number.json
+exec handrail hook codex Stop
+stdout 'unread-response'
+
+# A stop handrail cannot read may already be a continuation, so no block rule
+# is evaluated on it, not even one on unreadable: none can loop.
+cp give-up.md home/.config/handrail/give-up.md
+stdin stop-broken.json
+exec handrail hook claude Stop
+! stdout 'decision'
+stdout 'could not parse the Stop payload'
+rm home/.config/handrail/give-up.md
+
+# handrail's own notices there go to the human alone: reaching the agent would
+# be a block handrail invented, and a broken rule would continue every turn.
+cp broken.md home/.config/handrail/broken.md
+stdin stop.json
+exec handrail hook claude Stop
+stdout '"reason": "handrail block: not-done \(global\)\\nRun the tests before you stop\."'
+stdout '"systemMessage": "handrail block: not-done \(global\)\\nRun the tests before you stop\.\\nhandrail: skipped the broken rule'
+stdin stop-again.json
+exec handrail hook claude Stop
+! stdout 'decision'
+! stdout 'hookSpecificOutput'
+stdout '"systemMessage": "handrail warn: claims-done \(global\)\\nhandrail: skipped the broken rule'
+
+-- stop-broken.json --
+{ not json
+-- give-up.md --
+---
+event: Stop
+action: block
+conditions:
+  - field: unreadable
+    equals: payload
+---
+handrail could not read this stop.
+-- broken.md --
+---
+event: Stop
+action: nope
+---
+Broken.
+-- .git/HEAD --
+ref: refs/heads/main
+-- stop.json --
+{"hook_event_name": "Stop", "last_assistant_message": "All done."}
+-- stop-claimed.json --
+{"hook_event_name": "Stop", "last_assistant_message": "  Everything works now.\n"}
+-- subagent-stop.json --
+{"hook_event_name": "SubagentStop", "agent_type": "Explore", "last_assistant_message": "Found it, trust me."}
+-- stop-null.json --
+{"hook_event_name": "Stop", "last_assistant_message": null}
+-- stop-number.json --
+{"hook_event_name": "Stop", "last_assistant_message": 7}
+-- home/.config/handrail/cite-sources.md --
+---
+event: SubagentStop
+action: block
+conditions:
+  - field: agent_type
+    equals: Explore
+  - field: response
+    contains: trust me
+---
+Name the files you read.
+-- home/.config/handrail/unread-response.md --
+---
+event: Stop
+conditions:
+  - field: unreadable
+    equals: response
+---
+The last message could not be read.
+-- stop-again.json --
+{"hook_event_name": "Stop", "stop_hook_active": true, "last_assistant_message": "It works now."}
+-- home/.config/handrail/claims-done.md --
+---
+event: Stop
+conditions:
+  - field: response
+    ends_with: works now.
+---
+Say what you checked.
+-- home/.config/handrail/not-done.md --
+---
+event: Stop
+action: block
+---
+Run the tests before you stop.
