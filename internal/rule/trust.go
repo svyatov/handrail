@@ -20,6 +20,7 @@ func trustFile() string {
 	if dir == "" {
 		return ""
 	}
+
 	return filepath.Join(dir, "trusted")
 }
 
@@ -30,10 +31,12 @@ func isTrusted(root string) bool {
 	if file == "" {
 		return false
 	}
+
 	data, err := os.ReadFile(file)
 	if err != nil {
 		return false
 	}
+
 	return slices.Contains(strings.Split(string(data), "\n"), root)
 }
 
@@ -49,6 +52,7 @@ func (rs *Ruleset) TrustNotice() string {
 				rs.Root)
 		}
 	}
+
 	return ""
 }
 
@@ -61,23 +65,30 @@ func Trust(root string) (added bool, err error) {
 	if strings.Contains(root, "\n") {
 		return false, fmt.Errorf("cannot trust a path containing a newline: %q", root)
 	}
+
 	if isTrusted(root) {
 		return false, nil
 	}
+
 	file := trustFile()
 	if file == "" {
 		return false, errors.New("no state directory: set HOME or XDG_STATE_HOME")
 	}
+
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		return false, err
 	}
+
 	f, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return false, err
 	}
+
 	if _, err := fmt.Fprintln(f, root); err != nil {
 		_ = f.Close()
+
 		return false, err
 	}
+
 	return true, f.Close()
 }

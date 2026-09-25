@@ -23,10 +23,12 @@ func (a Adapter) userDir() string {
 			return dir
 		}
 	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
+
 	return filepath.Join(home, a.dir)
 }
 
@@ -36,7 +38,9 @@ func (a Adapter) Installed() bool {
 	if dir == "" {
 		return false
 	}
+
 	fi, err := os.Stat(dir)
+
 	return err == nil && fi.IsDir()
 }
 
@@ -50,6 +54,7 @@ func (a Adapter) path(file string) string {
 	if dir == "" || file == "" {
 		return ""
 	}
+
 	return filepath.Join(dir, file)
 }
 
@@ -63,6 +68,7 @@ func (a Adapter) ConfigPath() string { return a.path(a.file) }
 // several.
 func (a Adapter) Install(bin string) (entries int, changed bool, err error) {
 	path := a.ConfigPath()
+
 	old, settings, err := a.read()
 	if err != nil {
 		return 0, false, err
@@ -72,6 +78,7 @@ func (a Adapter) Install(bin string) (entries int, changed bool, err error) {
 	if hooks == nil {
 		hooks = map[string]any{}
 	}
+
 	for _, c := range a.events {
 		event := c.name
 		groups := a.prune(hooks[event], event)
@@ -84,6 +91,7 @@ func (a Adapter) Install(bin string) (entries int, changed bool, err error) {
 			}},
 		})
 	}
+
 	settings["hooks"] = hooks
 
 	// Map keys marshal in sorted order, so the same ruleset yields the same
@@ -92,10 +100,12 @@ func (a Adapter) Install(bin string) (entries int, changed bool, err error) {
 	if err != nil {
 		return 0, false, err
 	}
+
 	next = append(next, '\n')
 	if string(next) == string(old) {
 		return len(a.events), false, nil
 	}
+
 	return len(a.events), true, write(path, next)
 }
 
@@ -107,16 +117,19 @@ func (a Adapter) read() (raw []byte, settings map[string]any, err error) {
 	if path == "" {
 		return nil, nil, errors.New("no home directory: set HOME")
 	}
+
 	raw, err = os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, nil, err
 	}
+
 	settings = map[string]any{}
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &settings); err != nil {
 			return nil, nil, fmt.Errorf("%s: %w", path, err)
 		}
 	}
+
 	return raw, settings, nil
 }
 
@@ -136,10 +149,12 @@ func (a Adapter) entryBinary(command, event string) (string, bool) {
 	if !found {
 		return "", false
 	}
+
 	bin := shellUnquote(tail)
 	if !strings.HasPrefix(filepath.Base(bin), "handrail") {
 		return "", false
 	}
+
 	return bin, true
 }
 
@@ -151,25 +166,32 @@ func (a Adapter) Entries() ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	hooks, _ := settings["hooks"].(map[string]any)
+
 	out := make([]Entry, 0, len(a.events))
 	for _, c := range a.events {
 		event := c.name
 		e := Entry{Event: event}
+
 		groups, _ := hooks[event].([]any)
 		for _, g := range groups {
 			group, _ := g.(map[string]any)
+
 			inner, _ := group["hooks"].([]any)
 			for _, h := range inner {
 				hook, _ := h.(map[string]any)
+
 				cmd, _ := hook["command"].(string)
 				if bin, ok := a.entryBinary(cmd, event); ok {
 					e.Binary = bin
 				}
 			}
 		}
+
 		out = append(out, e)
 	}
+
 	return out, nil
 }
 
@@ -183,18 +205,23 @@ type Entry struct {
 // a binary that no longer exists is exactly the one that must go.
 func (a Adapter) prune(groups any, event string) []any {
 	list, _ := groups.([]any)
+
 	kept := make([]any, 0, len(list))
 	for _, g := range list {
 		group, ok := g.(map[string]any)
 		if !ok {
 			kept = append(kept, g)
+
 			continue
 		}
+
 		inner, ok := group["hooks"].([]any)
 		if !ok {
 			kept = append(kept, g)
+
 			continue
 		}
+
 		keptInner := make([]any, 0, len(inner))
 		for _, h := range inner {
 			if hook, ok := h.(map[string]any); ok {
@@ -203,6 +230,7 @@ func (a Adapter) prune(groups any, event string) []any {
 					continue
 				}
 			}
+
 			keptInner = append(keptInner, h)
 		}
 		// A group handrail emptied was handrail's own; one the user shares with
@@ -210,9 +238,11 @@ func (a Adapter) prune(groups any, event string) []any {
 		if len(keptInner) == 0 {
 			continue
 		}
+
 		group["hooks"] = keptInner
 		kept = append(kept, group)
 	}
+
 	return kept
 }
 
@@ -228,21 +258,28 @@ func write(path string, data []byte) error {
 	if fi, err := os.Stat(path); err == nil {
 		mode = fi.Mode().Perm()
 	}
+
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".handrail-settings-*")
 	if err != nil {
 		return err
 	}
+
 	defer func() { _ = os.Remove(tmp.Name()) }()
+
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
+
 		return err
 	}
+
 	if err := tmp.Close(); err != nil {
 		return err
 	}
+
 	if err := os.Chmod(tmp.Name(), mode); err != nil {
 		return err
 	}
+
 	return os.Rename(tmp.Name(), path)
 }
 
@@ -253,6 +290,7 @@ func shellQuote(s string) string {
 	if s != "" && !strings.ContainsAny(s, " \t\n\"'\\$`&;|<>()*?[]{}~#!") {
 		return s
 	}
+
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
@@ -261,6 +299,7 @@ func shellUnquote(s string) string {
 	if len(s) < 2 || !strings.HasPrefix(s, "'") || !strings.HasSuffix(s, "'") {
 		return s
 	}
+
 	return strings.ReplaceAll(s[1:len(s)-1], `'\''`, "'")
 }
 
@@ -275,6 +314,7 @@ func (a Adapter) Delivered(matched []rule.Match) rule.Outcome {
 	for _, m := range matched {
 		o = max(o, a.Action(m.Rule))
 	}
+
 	return o
 }
 
@@ -284,6 +324,7 @@ func (a Adapter) Delivered(matched []rule.Match) rule.Outcome {
 // cannot fire cannot be degraded. The hot path stays quiet.
 func (a Adapter) Report(rules []*rule.Rule) []string {
 	var out []string
+
 	for _, r := range rules {
 		to := a.Action(r)
 		if to == r.Action {
@@ -294,6 +335,7 @@ func (a Adapter) Report(rules []*rule.Rule) []string {
 		if to == rule.Allow {
 			name = "skip"
 		}
+
 		out = append(out, fmt.Sprintf("%s degraded to %s for %s: %s", r.Action, name, r.Name, a.reason(r.Event, to)))
 	}
 	// An audience is not an action: the rule still enforces, and only the
@@ -303,5 +345,6 @@ func (a Adapter) Report(rules []*rule.Rule) []string {
 			out = append(out, c.name+" cannot tell the human: "+a.title+" shows the user no hook output there")
 		}
 	}
+
 	return append(out, a.quirks...)
 }

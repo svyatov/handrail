@@ -17,14 +17,17 @@ import (
 // found" long before it gets here, so these are the guards behind that.
 func TestAdapterWithoutAHomeDirectory(t *testing.T) {
 	t.Setenv("HOME", "")
+
 	a := Adapter{Name: "nowhere", dir: ".nowhere", file: "settings.json"}
 
 	if got := a.ConfigPath(); got != "" {
 		t.Errorf("ConfigPath() = %q, want empty", got)
 	}
+
 	if a.Installed() {
 		t.Error("Installed() = true, want false")
 	}
+
 	if _, _, err := a.Install("/usr/local/bin/handrail"); err == nil {
 		t.Error("Install() succeeded with nowhere to write")
 	}
@@ -41,12 +44,14 @@ func TestEveryAdapterFollowsItsRelocationVariable(t *testing.T) {
 			if a.homeEnv == "" {
 				t.Fatalf("%s has no homeEnv, so its relocation variable is ignored", a.Name)
 			}
+
 			dir := t.TempDir()
 			t.Setenv(a.homeEnv, dir)
 
 			if got, want := a.ConfigPath(), filepath.Join(dir, a.file); got != want {
 				t.Errorf("ConfigPath() = %q, want %q", got, want)
 			}
+
 			if !a.Installed() {
 				t.Error("Installed() = false for the directory the variable names")
 			}
@@ -56,6 +61,7 @@ func TestEveryAdapterFollowsItsRelocationVariable(t *testing.T) {
 
 func TestWriteReportsAnUnusableParent(t *testing.T) {
 	t.Parallel()
+
 	file := filepath.Join(t.TempDir(), "settings.json")
 	if err := os.WriteFile(file, []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -69,6 +75,7 @@ func TestWriteReportsAnUnusableParent(t *testing.T) {
 
 func TestShellQuote(t *testing.T) {
 	t.Parallel()
+
 	cases := []struct{ name, in, want string }{
 		{"an ordinary path is its own first word", "/usr/local/bin/handrail", "/usr/local/bin/handrail"},
 		{"a space is ordinary on macOS", "/Users/a b/bin/handrail", "'/Users/a b/bin/handrail'"},
@@ -78,6 +85,7 @@ func TestShellQuote(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := shellQuote(c.in); got != c.want {
 				t.Errorf("shellQuote(%q) = %q, want %q", c.in, got, c.want)
 			}
@@ -90,12 +98,14 @@ func TestShellQuote(t *testing.T) {
 // than delivered as whatever its missing row would read as.
 func TestAMissingEventDegradesToSkip(t *testing.T) {
 	t.Parallel()
+
 	a := Adapter{Name: "partial", title: "Partial", events: []eventCaps{{name: "PreToolUse", deny: permissionDeny, inject: true}}}
 	r := &rule.Rule{Name: "not-done", Event: "Stop", Action: rule.Block}
 
 	if got := a.Action(r); got != rule.Allow {
 		t.Errorf("Action() = %s, want allow", got)
 	}
+
 	want := "block degraded to skip for not-done: Partial has no Stop event"
 	if got := a.Report([]*rule.Rule{r}); len(got) != 1 || got[0] != want {
 		t.Errorf("Report() = %q, want [%q]", got, want)

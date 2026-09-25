@@ -37,51 +37,66 @@ func parseExamples(kv pair) ([]Example, error) {
 	if !kv.val.isMapping() {
 		return nil, fmt.Errorf("line %d: examples must be a mapping", kv.line)
 	}
+
 	var out []Example
+
 	for _, list := range kv.val.mapping {
 		if list.key != "match" && list.key != "no_match" {
 			return nil, fmt.Errorf("line %d: unknown examples key %q", list.line, list.key)
 		}
+
 		if list.val.seq == nil {
 			return nil, fmt.Errorf("line %d: %s must be a list", list.line, list.key)
 		}
+
 		for _, item := range list.val.seq {
 			if !item.isMapping() {
 				return nil, fmt.Errorf("line %d: example must be a mapping", item.line)
 			}
+
 			e, err := parseExample(list.key, item)
 			if err != nil {
 				return nil, err
 			}
+
 			out = append(out, e)
 		}
 	}
+
 	return out, nil
 }
 
 func parseExample(expect string, item *node) (Example, error) {
 	e := Example{Expect: expect, Line: item.line}
+
 	seen := make(map[string]bool, len(item.mapping))
 	for _, f := range item.mapping {
 		if seen[f.key] {
 			return e, fmt.Errorf("line %d: duplicate field %q", f.line, f.key)
 		}
+
 		seen[f.key] = true
+
 		values, err := exampleValues(f)
 		if err != nil {
 			return e, err
 		}
+
 		if err := checkField(f.key, values, f.val.seq != nil); err != nil {
 			return e, fmt.Errorf("line %d: %w", f.line, err)
 		}
+
 		if f.key == "kind" {
 			e.Kind = values[0]
 		}
+
 		e.Fields = append(e.Fields, ExampleField{Name: f.key, Values: values})
 	}
+
 	if !slices.ContainsFunc(e.Fields, func(f ExampleField) bool { return f.Name != "kind" }) {
 		return e, fmt.Errorf("line %d: example has no fields", item.line)
 	}
+
 	return e, nil
 }
 
@@ -94,13 +109,17 @@ func exampleValues(f pair) ([]string, error) {
 	case f.val.seq == nil:
 		return nil, fmt.Errorf("line %d: %s must be a single value", f.line, f.key)
 	}
+
 	var values []string
+
 	for _, v := range f.val.seq {
 		if !v.isScalar {
 			return nil, fmt.Errorf("line %d: %s entries must be single values", v.line, f.key)
 		}
+
 		values = append(values, v.scalar)
 	}
+
 	return values, nil
 }
 
@@ -112,6 +131,7 @@ func CheckCall(event string, fields []ExampleField) error {
 		if err := checkField(f.Name, f.Values, len(f.Values) > 1); err != nil {
 			return err
 		}
+
 		switch {
 		case f.Name == "kind" && !ToolEvent(event):
 			return errors.New("kind applies only to PreToolUse and PostToolUse")
@@ -119,6 +139,7 @@ func CheckCall(event string, fields []ExampleField) error {
 			return fmt.Errorf("%s never carries %s", event, f.Name)
 		}
 	}
+
 	return nil
 }
 
@@ -135,16 +156,19 @@ func checkField(name string, values []string, list bool) error {
 	case !IsField(name):
 		return fmt.Errorf("unknown field %q", name)
 	}
+
 	if list {
 		if err := checkList(name, values); err != nil {
 			return err
 		}
 	}
+
 	for _, v := range values {
 		if err := checkValue(name, v); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -156,6 +180,7 @@ func checkList(name string, values []string) error {
 	case name == "path" && len(values) != 2:
 		return errors.New("a path list is a rename: its source and its destination")
 	}
+
 	return nil
 }
 
@@ -164,6 +189,7 @@ func checkValue(name, v string) error {
 	if blank(name, v) {
 		return fmt.Errorf("%s needs a value", name)
 	}
+
 	switch name {
 	case "kind":
 		if !IsKind(v) {
@@ -178,6 +204,7 @@ func checkValue(name, v string) error {
 			return fmt.Errorf("unknown unreadable value %q", v)
 		}
 	}
+
 	return nil
 }
 
@@ -190,6 +217,7 @@ func blank(name, v string) bool {
 	case "response":
 		return strings.TrimSpace(v) == ""
 	}
+
 	return v == ""
 }
 
@@ -200,6 +228,7 @@ func (e Example) String() string {
 	for _, f := range e.Fields {
 		parts = append(parts, fmt.Sprintf("%s=%q", f.Name, f.Value()))
 	}
+
 	return strings.Join(parts, ", ")
 }
 
@@ -214,5 +243,6 @@ func (f ExampleField) Value() any {
 	if len(f.Values) == 1 {
 		return f.Values[0]
 	}
+
 	return f.Values
 }

@@ -19,11 +19,13 @@ func FuzzNormalize(f *testing.F) {
 	if err != nil {
 		f.Fatal(err)
 	}
+
 	for _, path := range scripts {
 		a, err := txtar.ParseFile(path)
 		if err != nil {
 			f.Fatal(err)
 		}
+
 		for _, file := range a.Files {
 			if strings.HasSuffix(file.Name, ".json") {
 				for _, event := range []string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop"} {
@@ -32,6 +34,7 @@ func FuzzNormalize(f *testing.F) {
 			}
 		}
 	}
+
 	f.Fuzz(func(_ *testing.T, event string, data []byte) {
 		for _, a := range harness.Adapters() {
 			_, _, _ = a.Normalize(event, data)

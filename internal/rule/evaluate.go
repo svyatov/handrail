@@ -68,12 +68,15 @@ func (p *Payload) SetField(name, value string) bool {
 	if name == "response" {
 		value = strings.TrimSpace(value)
 	}
+
 	if value == "" {
 		return false
 	}
+
 	if p.fields == nil {
 		p.fields = make(map[string][]candidate)
 	}
+
 	return p.set(name, value)
 }
 
@@ -96,6 +99,7 @@ func (p *Payload) set(name, value string) bool {
 		if g == "" {
 			return false
 		}
+
 		p.fields[name] = append(p.fields[name], candidate{spellings: []string{g}})
 	case "unreadable":
 		if !slices.ContainsFunc(p.fields[name], func(c candidate) bool { return c.spellings[0] == value }) {
@@ -104,6 +108,7 @@ func (p *Payload) set(name, value string) bool {
 	default:
 		p.fields[name] = []candidate{{spellings: []string{value}}}
 	}
+
 	return true
 }
 
@@ -114,6 +119,7 @@ func (p *Payload) setTool(value string) {
 	if len(p.fields["tool"]) == 0 {
 		p.fields["tool"] = []candidate{{}}
 	}
+
 	if c := &p.fields["tool"][0]; !slices.Contains(c.spellings, value) {
 		c.spellings = append(c.spellings, value)
 	}
@@ -140,6 +146,7 @@ func grant(value string) string {
 	} else {
 		g, _, _ = strings.Cut(g, ":")
 	}
+
 	return g
 }
 
@@ -153,6 +160,7 @@ func domainOf(raw string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
+
 	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
 	if _, err := netip.ParseAddr(host); err == nil {
 		return host, true
@@ -161,13 +169,16 @@ func domainOf(raw string) (string, bool) {
 	// however it is spelled (2852039166, 0xa9fea9fe, 169.254.43518), and
 	// netip reads only the dotted-decimal form.
 	last := host[strings.LastIndex(host, ".")+1:]
+
 	hex, isHex := strings.CutPrefix(last, "0x")
 	if strings.Trim(last, "0123456789") == "" || isHex && strings.Trim(hex, "0123456789abcdef") == "" {
 		return "", false
 	}
+
 	if strings.ContainsFunc(host, outsideHost) {
 		return "", false
 	}
+
 	return host, true
 }
 
@@ -182,6 +193,7 @@ func outsideHost(r rune) bool {
 // that stays put names its one file once.
 func (p *Payload) SetRename(from, to string) {
 	p.SetField("path", from)
+
 	src := p.fields["path"]
 	if p.SetField("path", to) && (len(src) == 0 || src[0].spellings[0] != p.fields["path"][0].spellings[0]) {
 		p.fields["path"] = append(src, p.fields["path"]...)
@@ -195,6 +207,7 @@ func (p *Payload) setCommand(line string) {
 	read, files, ok := shell.Read(line)
 	p.files = files
 	cands := make([]candidate, 0, len(read)+2)
+
 	cands = append(cands, candidate{spellings: []string{line}, whole: true})
 	for _, spellings := range read {
 		cands = append(cands, candidate{spellings: spellings})
@@ -204,6 +217,7 @@ func (p *Payload) setCommand(line string) {
 	if len(read) == 0 {
 		cands = append(cands, candidate{})
 	}
+
 	p.fields["command"] = cands
 	if !ok {
 		p.SetField("unreadable", "command")
@@ -217,12 +231,16 @@ func (p *Payload) Unset(name string) {
 	if p.fields == nil {
 		return
 	}
+
 	delete(p.fields, name)
+
 	gone := []string{name}
 	if name == "url" {
 		delete(p.fields, "domain")
+
 		gone = append(gone, "domain")
 	}
+
 	p.fields["unreadable"] = slices.DeleteFunc(p.fields["unreadable"], func(c candidate) bool {
 		return slices.Contains(gone, c.spellings[0])
 	})
@@ -242,11 +260,13 @@ func withFiles(payloads []Payload) []Payload {
 		if p.Kind != "shell" {
 			continue
 		}
+
 		for _, f := range p.files {
 			fp := Payload{Event: p.Event, Kind: "file_read", fields: map[string][]candidate{"tool": p.fields["tool"]}}
 			if f.Write {
 				fp.Kind = "file_edit"
 			}
+
 			if f.Unreadable {
 				// As written: an expansion in it may hold a /, so cleaning it
 				// could only invent a path.
@@ -255,9 +275,11 @@ func withFiles(payloads []Payload) []Payload {
 			} else {
 				fp.SetField("path", f.Path)
 			}
+
 			all = append(all, fp)
 		}
 	}
+
 	return all
 }
 
@@ -272,6 +294,7 @@ func (rs *Ruleset) Yield(payloads []Payload) []Payload {
 			payloads[i].SetField("unreadable", "rules")
 		}
 	}
+
 	return payloads
 }
 
@@ -291,6 +314,7 @@ func (p *Payload) Fields() map[string][]CandidateView {
 			out[name] = append(out[name], CandidateView{Spellings: append([]string{}, c.spellings...), Whole: c.whole})
 		}
 	}
+
 	return out
 }
 
@@ -307,19 +331,24 @@ func (p *Payload) Fields() map[string][]CandidateView {
 // the hot path and the selector would allocate a second slice per event.
 func (rs *Ruleset) Evaluate(payloads []Payload) (matched []Match, outcome Outcome) {
 	continued := slices.ContainsFunc(payloads, func(p Payload) bool { return p.StopHookActive })
+
 	payloads = rs.Yield(payloads)
 	for _, r := range rs.Rules {
 		if !r.Live() || continued && r.Action == Block {
 			continue
 		}
+
 		m, hit := Match{Rule: r}, false
 		for _, p := range payloads {
 			if !r.matches(p) {
 				continue
 			}
+
 			hit = true
+
 			m.addFiles(p)
 		}
+
 		if !hit {
 			continue
 		}
@@ -327,9 +356,11 @@ func (rs *Ruleset) Evaluate(payloads []Payload) (matched []Match, outcome Outcom
 		if len(m.Files) == 1 {
 			m.Files = nil
 		}
+
 		matched = append(matched, m)
 		outcome = max(outcome, r.Action)
 	}
+
 	return matched, outcome
 }
 
@@ -357,9 +388,11 @@ func (r *Rule) matches(p Payload) bool {
 	if r.Event != p.Event {
 		return false
 	}
+
 	if r.Kind != "" && r.Kind != p.Kind {
 		return false
 	}
+
 	return r.choose(p, make([]*candidate, 0, len(r.fields)))
 }
 
@@ -373,15 +406,18 @@ func (r *Rule) choose(p Payload, chosen []*candidate) bool {
 	if len(chosen) == len(r.fields) {
 		return r.satisfied(chosen)
 	}
+
 	cands := p.fields[r.fields[len(chosen)]]
 	if len(cands) == 0 {
 		return r.choose(p, append(chosen, nil))
 	}
+
 	for i := range cands {
 		if r.choose(p, append(chosen, &cands[i])) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -393,6 +429,7 @@ func (r *Rule) satisfied(chosen []*candidate) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -405,11 +442,13 @@ func (t *Term) meets(c *candidate) bool {
 	if c == nil || negated && c.whole {
 		return false
 	}
+
 	for _, s := range c.spellings {
 		if t.hit(op, s) {
 			return !negated
 		}
 	}
+
 	return negated
 }
 
@@ -427,5 +466,6 @@ func (t *Term) hit(op, v string) bool {
 	case "ends_with":
 		return strings.HasSuffix(v, t.Value)
 	}
+
 	return false
 }

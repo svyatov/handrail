@@ -125,6 +125,7 @@ func Lookup(name string) (Adapter, bool) {
 			return a, true
 		}
 	}
+
 	return Adapter{}, false
 }
 
@@ -134,6 +135,7 @@ func Names() []string {
 	for _, a := range adapters {
 		names = append(names, a.Name)
 	}
+
 	return names
 }
 
@@ -148,6 +150,7 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 	if err != nil {
 		return nil, "", err
 	}
+
 	p := rule.Payload{Event: event}
 	name := toolName(&p, env)
 	p.Kind = classify(name)
@@ -161,7 +164,9 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 	set(&p, "model", input, "model")
 	set(&p, "url", input, "url")
 	setToolURL(&p, name, input)
+
 	var edits []rule.Payload
+
 	switch p.Kind {
 	case "shell":
 		set(&p, "command", input, "command")
@@ -173,6 +178,7 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		set(&p, "removed_content", input, "old_string")
 		writesEmpty(&p, slices.ContainsFunc(textKeys[:], func(k string) bool {
 			_, ok := input[k].(string)
+
 			return ok
 		}))
 		// Codex passes apply_patch as a shell-like tool, so the whole edit
@@ -183,6 +189,7 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		// A non-string envelope reads as an empty one: an edit naming nothing.
 		if raw, ok := input["command"]; ok && !p.Has("path") {
 			patch, _ := raw.(string)
+
 			return patchPayloads(event, tools, "", patch), cwd, nil
 		}
 	case "file_read":
@@ -190,11 +197,14 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 	case "mcp":
 		setServer(&p, name)
 	}
+
 	set(&p, "prompt", env, "prompt")
 	setStop(&p, event, env)
+
 	if !setSubagent(&p, event, env) {
 		return nil, cwd, nil
 	}
+
 	return append([]rule.Payload{p}, edits...), cwd, nil
 }
 
@@ -205,23 +215,29 @@ func decodeEnvelope(data []byte) (map[string]any, string, map[string]any, error)
 	if err := json.Unmarshal(data, &env); err != nil {
 		return nil, "", nil, err
 	}
+
 	if env == nil {
 		return nil, "", nil, errors.New("the payload is null")
 	}
 	// cwd picks the project whose rules apply, so one handrail cannot read
 	// fails the payload, which is declared, rather than passing for absent.
-	var cwd string
-	var input map[string]any
+	var (
+		cwd   string
+		input map[string]any
+	)
+
 	if raw, ok := env["cwd"]; ok {
 		if cwd, ok = raw.(string); !ok {
 			return nil, "", nil, errors.New("cwd is not a string")
 		}
 	}
+
 	if raw, ok := env["tool_input"]; ok {
 		if input, ok = raw.(map[string]any); !ok {
 			return nil, "", nil, errors.New("tool_input is not an object")
 		}
 	}
+
 	return env, cwd, input, nil
 }
 
@@ -234,6 +250,7 @@ func toolName(p *rule.Payload, env map[string]any) string {
 			p.SetField("unreadable", "tool")
 		}
 	}
+
 	return name
 }
 
@@ -273,10 +290,12 @@ func setSandbox(p *rule.Payload, input map[string]any) {
 				readable = false
 			}
 		}
+
 		if !readable {
 			p.SetField("unreadable", "network_grant")
 		}
 	}
+
 	if raw, ok := input["dangerouslyDisableSandbox"]; ok {
 		if off, ok := raw.(bool); !ok {
 			p.SetField("unreadable", "unsandboxed")
@@ -297,6 +316,7 @@ func (a Adapter) shellEdits(event string, tools []string, input map[string]any) 
 			return patchPayloads(event, tools, dir, patch)
 		}
 	}
+
 	return nil
 }
 
@@ -330,8 +350,10 @@ func setSubagent(p *rule.Payload, event string, env map[string]any) bool {
 		if v := env["agent_type"]; v == nil || v == "" {
 			return false
 		}
+
 		set(p, "agent_type", env, "agent_type")
 	}
+
 	return true
 }
 
@@ -353,6 +375,7 @@ func classify(tool string) string {
 	if strings.HasPrefix(tool, "mcp__") {
 		return "mcp"
 	}
+
 	switch tool {
 	case "":
 		return ""
@@ -372,6 +395,7 @@ func classify(tool string) string {
 	if strings.HasSuffix(tool, "spawn_agent") {
 		return "agent"
 	}
+
 	return "other"
 }
 
@@ -386,11 +410,13 @@ func (a Adapter) toolNames(tool string) []string {
 			return []string{tool, bare}
 		}
 	}
+
 	for _, names := range a.aliases {
 		if names[0] == tool {
 			return names
 		}
 	}
+
 	return []string{tool}
 }
 
@@ -426,13 +452,17 @@ func writesEmpty(p *rule.Payload, namesText bool) {
 // tools, the names of the call that made it. An envelope with no file header
 // is still an edit, one that names nothing handrail can read.
 func patchPayloads(event string, tools []string, dir, patch string) []rule.Payload {
-	var edits []rule.Payload
-	var s patchSection
+	var (
+		edits []rule.Payload
+		s     patchSection
+	)
+
 	done := func() {
 		if s.paths != nil {
 			edits = append(edits, s.edit(event, tools))
 		}
 	}
+
 	for line := range strings.SplitSeq(patch, "\n") {
 		verb, file, ok := patchHeader(line)
 		switch {
@@ -442,18 +472,24 @@ func patchPayloads(event string, tools []string, dir, patch string) []rule.Paylo
 			s.paths = append(s.paths, inDir(dir, file))
 		default:
 			done()
+
 			s = patchSection{verb: verb, paths: []string{inDir(dir, file)}}
 		}
 	}
+
 	done()
+
 	if edits == nil {
 		p := rule.Payload{Event: event, Kind: "file_edit"}
 		setTool(&p, tools)
+
 		for _, f := range [...]string{"path", "content", "removed_content"} {
 			p.SetField("unreadable", f)
 		}
+
 		edits = append(edits, p)
 	}
+
 	return edits
 }
 
@@ -469,6 +505,7 @@ func (s *patchSection) read(line string) {
 	if s.paths == nil {
 		return
 	}
+
 	if strings.HasPrefix(line, "+") {
 		s.added = append(s.added, line[1:])
 	} else if strings.HasPrefix(line, "-") {
@@ -483,12 +520,14 @@ func (s *patchSection) edit(event string, tools []string) rule.Payload {
 	p.SetRename(s.paths[0], s.paths[len(s.paths)-1])
 	p.SetField("content", strings.Join(s.added, "\n"))
 	p.SetField("removed_content", strings.Join(s.removed, "\n"))
+
 	if s.verb == "Delete File:" {
 		p.SetField("deletes", "true")
 	}
 	// An added file names its whole text and an edit that removes lines
 	// names what replaces them; a bare rename names no text at all.
 	writesEmpty(&p, s.verb == "Add File:" || len(s.removed) > 0)
+
 	return p
 }
 
@@ -497,6 +536,7 @@ func inDir(dir, file string) string {
 	if dir != "" && file != "" && !path.IsAbs(file) {
 		return path.Join(dir, file)
 	}
+
 	return file
 }
 
@@ -508,11 +548,13 @@ func patchHeader(line string) (verb, file string, ok bool) {
 	if !found {
 		return "", "", false
 	}
+
 	for _, verb := range []string{"Add File:", "Update File:", "Delete File:", "Move to:"} {
 		if file, found := strings.CutPrefix(rest, verb); found {
 			return verb, strings.TrimSpace(file), true
 		}
 	}
+
 	return "", "", false
 }
 
@@ -529,11 +571,14 @@ func set(p *rule.Payload, name string, input map[string]any, keys ...string) {
 		if !present {
 			continue
 		}
+
 		s, ok := v.(string)
 		if !ok {
 			p.SetField("unreadable", name)
+
 			return
 		}
+
 		if p.SetField(name, s) {
 			return
 		}
@@ -548,6 +593,7 @@ func (a Adapter) caps(event string) eventCaps {
 			return c
 		}
 	}
+
 	return eventCaps{}
 }
 
@@ -561,12 +607,15 @@ func (a Adapter) degrade(event string, o rule.Outcome) rule.Outcome {
 	if c.name == "" {
 		return rule.Allow
 	}
+
 	if o == rule.Ask && !c.ask {
 		o = rule.Block
 	}
+
 	if o == rule.Block && c.deny == noDenial {
 		o = rule.Warn
 	}
+
 	return o
 }
 
@@ -577,6 +626,7 @@ func (a Adapter) Note(r *rule.Rule) string {
 	if r.Action == rule.Ask && a.Action(r) == rule.Block {
 		return "handrail: " + a.reason(r.Event, rule.Block) + "."
 	}
+
 	return ""
 }
 
@@ -592,6 +642,7 @@ func (a Adapter) reason(event string, to rule.Outcome) string {
 	case event == "UserPromptSubmit":
 		return a.title + " cannot fail closed on UserPromptSubmit before the model request (upstream #33630)"
 	}
+
 	return a.title + " has no denial to give on " + event
 }
 
@@ -633,6 +684,7 @@ func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, std
 	// channel left.
 	if event == "SessionEnd" {
 		_, _ = io.WriteString(stderr, human+"\n")
+
 		return 2
 	}
 
@@ -647,8 +699,10 @@ func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, std
 	// trouble: exit 2 still denies on both harnesses.
 	if err := enc.Encode(out); err != nil && a.degrade(event, outcome) == rule.Block {
 		_, _ = io.WriteString(stderr, message+"\n")
+
 		return 2
 	}
+
 	return 0
 }
 
@@ -658,6 +712,7 @@ func (a Adapter) output(event, message, human string, outcome rule.Outcome) hook
 	if a.Injects(event) {
 		out.HookSpecificOutput = &hookSpecific{HookEventName: event, AdditionalContext: message}
 	}
+
 	switch o := a.degrade(event, outcome); {
 	case o == rule.Ask:
 		// The human's message rides in the approval prompt, not beside it.
@@ -673,5 +728,6 @@ func (a Adapter) output(event, message, human string, outcome rule.Outcome) hook
 	case o == rule.Block:
 		out.HookSpecificOutput = &hookSpecific{HookEventName: event, PermissionDecision: "deny", PermissionDecisionReason: message}
 	}
+
 	return out
 }

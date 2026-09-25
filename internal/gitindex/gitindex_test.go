@@ -12,10 +12,12 @@ import (
 // bitmapOf is an EWAH bitmap of n bits holding the given words.
 func bitmapOf(n uint32, words ...uint64) []byte {
 	b := binary.BigEndian.AppendUint32(nil, n)
+
 	b = binary.BigEndian.AppendUint32(b, uint32(len(words))) //nolint:gosec // a test bitmap holds a handful of words
 	for _, w := range words {
 		b = binary.BigEndian.AppendUint64(b, w)
 	}
+
 	return b
 }
 
@@ -24,10 +26,12 @@ func bitmapOf(n uint32, words ...uint64) []byte {
 // time took the hook down.
 func TestALongRunOfOnesCostsOneRun(t *testing.T) {
 	t.Parallel()
+
 	deleted, err := ewah(bitmapOf(0xffffffff, 0xffffffff<<1|1))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(deleted) != 1 || !deleted.has(0) || !deleted.has(0xfffffffe) || deleted.has(0xffffffff) {
 		t.Errorf("ewah() = %v, want the one run [0, 0xffffffff)", deleted)
 	}
@@ -40,6 +44,7 @@ func TestLiteralWordsFollowTheirRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	for pos, want := range map[uint64]bool{0: true, 63: true, 64: true, 65: false, 66: true, 67: false} {
 		if deleted.has(pos) != want {
 			t.Errorf("has(%d) = %v, want %v", pos, !want, want)

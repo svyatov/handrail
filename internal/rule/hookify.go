@@ -37,9 +37,11 @@ func ImportHookify(src, dst string) ([]Imported, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]Imported, 0, len(sources))
 	for _, s := range sources {
 		res := Imported{Source: s}
+
 		name, file, err := convertHookify(s)
 		if err == nil {
 			target := filepath.Join(dst, name+".md")
@@ -47,11 +49,14 @@ func ImportHookify(src, dst string) ([]Imported, error) {
 				res.Target = target
 			}
 		}
+
 		if err != nil {
 			res.Reason = err.Error()
 		}
+
 		out = append(out, res)
 	}
+
 	return out, nil
 }
 
@@ -61,6 +66,7 @@ func hookifySources(src string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if !fi.IsDir() {
 		return []string{src}, nil
 	}
@@ -70,9 +76,11 @@ func hookifySources(src string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if len(files) == 0 {
 		return nil, fmt.Errorf("no hookify.*.local.md rules in %s", src)
 	}
+
 	return files, nil
 }
 
@@ -83,17 +91,22 @@ func writeNew(path, content string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if errors.Is(err, fs.ErrExist) {
 		return fmt.Errorf("the Project-personal tier already has %s", filepath.Base(path))
 	}
+
 	if err != nil {
 		return err
 	}
+
 	if _, err := f.WriteString(content); err != nil {
 		_ = f.Close()
+
 		return err
 	}
+
 	return f.Close()
 }
 
@@ -116,17 +129,21 @@ func convertHookify(path string) (name, file string, err error) {
 	if err != nil {
 		return "", "", err
 	}
+
 	name = h.name
 	if name == "" {
 		return "", "", errors.New("rule has no name")
 	}
+
 	if !isRuleName(name) {
 		return "", "", fmt.Errorf("name %q is not a usable filename", name)
 	}
+
 	terms, err := hookifyConditions(h.conditions, h.event, h.pattern)
 	if err != nil {
 		return "", "", err
 	}
+
 	ev, kind, err := hookifyEvent(h.event, terms)
 	if err != nil {
 		return "", "", err
@@ -149,6 +166,7 @@ func convertHookify(path string) (name, file string, err error) {
 	if _, err := Parse(name, []byte(file)); err != nil {
 		return "", "", fmt.Errorf("converted rule is invalid: %w", err)
 	}
+
 	return name, file, nil
 }
 
@@ -166,16 +184,19 @@ func readHookify(path string) (*hookifyFile, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	doc, body, err := parseFrontmatter(data)
 	if err != nil {
 		return nil, err
 	}
+
 	h := &hookifyFile{enabled: true, body: body}
 	for _, kv := range doc.mapping {
 		if err := h.set(kv); err != nil {
 			return nil, err
 		}
 	}
+
 	return h, nil
 }
 
@@ -219,12 +240,14 @@ func isRuleName(name string) bool {
 	if strings.HasPrefix(name, ".") {
 		return false
 	}
+
 	for i := range len(name) {
 		c := name[i]
 		if !isAlphanumeric(c) && c != '-' && c != '_' && c != '.' {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -242,8 +265,10 @@ func hookifyConditions(list *node, event, pattern string) ([]term, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		terms = append(terms, t)
 	}
+
 	return terms, nil
 }
 
@@ -257,16 +282,19 @@ func hookifyPattern(event, pattern string) ([]term, error) {
 	// carries: the shorthand is inert upstream too, and inventing a field
 	// the author never wrote would import a guardrail they never had.
 	field := "content"
+
 	switch event {
 	case "bash":
 		field = "command"
 	case "file":
 		field = "new_text"
 	}
+
 	t, err := convertCondition(field, "regex_match", pattern)
 	if err != nil {
 		return nil, err
 	}
+
 	return []term{t}, nil
 }
 
@@ -275,9 +303,12 @@ func hookifyCondition(item *node) (term, error) {
 	if !item.isMapping() {
 		return term{}, fmt.Errorf("line %d: condition must be a mapping", item.line)
 	}
+
 	field, op, value := "", "regex_match", ""
+
 	for _, kv := range item.mapping {
 		var err error
+
 		switch kv.key {
 		case "field":
 			err = scalarInto(kv, &field)
@@ -286,10 +317,12 @@ func hookifyCondition(item *node) (term, error) {
 		case "pattern":
 			err = scalarInto(kv, &value)
 		}
+
 		if err != nil {
 			return term{}, err
 		}
 	}
+
 	return convertCondition(field, op, value)
 }
 
@@ -299,10 +332,12 @@ func convertCondition(field, op, value string) (term, error) {
 	if !ok {
 		return term{}, fmt.Errorf("condition field %q has no canonical equivalent", field)
 	}
+
 	converted, ok := hookifyOperator(op)
 	if !ok {
 		return term{}, fmt.Errorf("condition operator %q is not one handrail expresses", op)
 	}
+
 	if converted == "matches" {
 		// Upstream compiles every pattern with IGNORECASE, so the case-sensitive
 		// default here would quietly narrow what the rule catches. The reported
@@ -310,8 +345,10 @@ func convertCondition(field, op, value string) (term, error) {
 		if _, err := regexp.Compile("(?i)" + value); err != nil {
 			return term{}, fmt.Errorf("pattern %q is not an RE2 regexp: %w", value, err)
 		}
+
 		value = "(?i)" + value
 	}
+
 	return term{upstream: field, field: canonical, op: converted, value: value, event: event, kind: kind}, nil
 }
 
@@ -330,6 +367,7 @@ func hookifyField(field string) (canonical, event, kind string, ok bool) {
 	case "user_prompt":
 		return "prompt", "UserPromptSubmit", "", true
 	}
+
 	return "", "", "", false
 }
 
@@ -343,6 +381,7 @@ func hookifyOperator(op string) (string, bool) {
 	case "contains", "not_contains", "equals", "starts_with", "ends_with":
 		return op, true
 	}
+
 	return "", false
 }
 
@@ -361,6 +400,7 @@ func hookifyEvent(event string, terms []term) (canonical, kind string, err error
 	case "", "all":
 		return inferEvent(terms)
 	}
+
 	return "", "", fmt.Errorf("unknown event %q", event)
 }
 
@@ -369,16 +409,20 @@ func inferEvent(terms []term) (canonical, kind string, err error) {
 	// Upstream fires an all rule only where its fields exist, so the fields are
 	// the rule's real event. Fields spanning two events name no single one.
 	var from string
+
 	for _, t := range terms {
 		if canonical == "" {
 			canonical, kind, from = t.event, t.kind, t.upstream
+
 			continue
 		}
+
 		if t.event != canonical || t.kind != kind {
 			return "", "", fmt.Errorf("conditions span more than one event: %q names %s and %q names %s",
 				from, eventKind(canonical, kind), t.upstream, eventKind(t.event, t.kind))
 		}
 	}
+
 	return canonical, kind, nil
 }
 
@@ -386,6 +430,7 @@ func eventKind(event, kind string) string {
 	if kind == "" {
 		return event
 	}
+
 	return event + " " + kind
 }
 
@@ -401,20 +446,26 @@ func hookifyToolMatcher(matcher, event, kind string) (string, error) {
 	if event != "PreToolUse" {
 		return "", fmt.Errorf("tool_matcher %q cannot apply to event %q", matcher, event)
 	}
+
 	matched := ""
+
 	for tool := range strings.SplitSeq(matcher, "|") {
 		k := toolKind(tool)
 		if k == "" {
 			return "", fmt.Errorf("tool_matcher %q names a tool with no canonical kind: %s", matcher, tool)
 		}
+
 		if matched != "" && matched != k {
 			return "", fmt.Errorf("tool_matcher %q spans more than one tool kind", matcher)
 		}
+
 		matched = k
 	}
+
 	if kind != "" && kind != matched {
 		return "", fmt.Errorf("tool_matcher %q names %s, and the rest of the rule names %s", matcher, matched, kind)
 	}
+
 	return matched, nil
 }
 
@@ -430,6 +481,7 @@ func toolKind(tool string) string {
 	case "Read":
 		return "file_read"
 	}
+
 	return ""
 }
 
@@ -439,20 +491,27 @@ func toolKind(tool string) string {
 func renderRule(event, kind, action string, enabled bool, terms []term, message string) string {
 	var b strings.Builder
 	b.WriteString("---\nevent: " + event + "\n")
+
 	if kind != "" {
 		b.WriteString("kind: " + kind + "\n")
 	}
+
 	b.WriteString("action: " + action + "\n")
+
 	if !enabled {
 		b.WriteString("enabled: false\n")
 	}
+
 	if len(terms) > 0 {
 		b.WriteString("conditions:\n")
+
 		for _, t := range terms {
 			b.WriteString("  - field: " + t.field + "\n    " + t.op + ": " + quote(t.value) + "\n")
 		}
 	}
+
 	b.WriteString("---\n" + message + "\n")
+
 	return b.String()
 }
 

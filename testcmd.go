@@ -32,13 +32,17 @@ func (f *fieldSet) Set(s string) error {
 	if !ok {
 		return fmt.Errorf("expected key=value, got %q", s)
 	}
+
 	for i := range *f {
 		if (*f)[i].Name == k {
 			(*f)[i].Values = append((*f)[i].Values, v)
+
 			return nil
 		}
 	}
+
 	*f = append(*f, rule.ExampleField{Name: k, Values: []string{v}})
+
 	return nil
 }
 
@@ -71,6 +75,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	kind := fs.String("kind", "", "tool kind of the synthetic payload")
+
 	var fields fieldSet
 	fs.Var(&fields, "field", "canonical payload field as key=value, repeatable")
 	fromStdin := fs.Bool("stdin", false, "read a harness payload JSON from stdin")
@@ -81,20 +86,27 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if !parseFlags(fs, args, stderr) {
 		return 1
 	}
+
 	if event == "" {
 		fmt.Fprintf(stderr, "handrail test: missing event\n\n%s", testUsage)
+
 		return 1
 	}
+
 	if !rule.IsEvent(event) {
 		fmt.Fprintf(stderr, "handrail test: unknown event %q\n", event)
+
 		return 1
 	}
+
 	a, known := harness.Lookup(*only)
 	if !known {
 		fmt.Fprintf(stderr, "handrail test: unknown harness %q; known: %s\n",
 			*only, strings.Join(harness.Names(), ", "))
+
 		return 1
 	}
+
 	payloads, failures, code := testCall(a, event, *kind, fields, *fromStdin, stdin, stderr)
 	if code != 0 {
 		return code
@@ -115,6 +127,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	} else {
 		printTest(stdout, out)
 	}
+
 	return testExit[outcome]
 }
 
@@ -128,6 +141,7 @@ func leadingEvent(args []string) (event string, rest []string) {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		return args[0], args[1:]
 	}
+
 	return "", args
 }
 
@@ -144,13 +158,16 @@ func testCall(a harness.Adapter, event, kind string, fields fieldSet, fromStdin 
 	// payload test cannot build, and test never builds one hook never meets.
 	if err := rule.CheckCall(event, fields); err != nil {
 		fmt.Fprintf(stderr, "handrail test: %v\n", err)
+
 		return nil, nil, 1
 	}
+
 	for _, f := range fields {
 		if f.Name == "kind" {
 			kind = f.Values[0]
 		}
 	}
+
 	if fromStdin {
 		return captureCall(a, event, kind, fields, stdin, stderr)
 	}
@@ -160,6 +177,7 @@ func testCall(a harness.Adapter, event, kind string, fields fieldSet, fromStdin 
 	if call.Kind == "" && rule.ToolEvent(event) {
 		call.Kind = "other"
 	}
+
 	return a.WithFields(call, fields), nil, 0
 }
 
@@ -170,6 +188,7 @@ func captureCall(a harness.Adapter, event, kind string, fields fieldSet, stdin i
 	// build a payload the Adapter never builds.
 	if kind != "" {
 		fmt.Fprintln(stderr, "handrail test: a capture's tool names its kind, so --stdin takes no kind")
+
 		return nil, nil, 1
 	}
 	// The hook path's own reading, so a capture read here reads exactly as
@@ -183,12 +202,14 @@ func captureCall(a harness.Adapter, event, kind string, fields fieldSet, stdin i
 		// Several payloads, such as a patch's, are no one call to vary:
 		// each is its own edit. None, from an internal agent, is no call.
 		fmt.Fprintf(stderr, "handrail test: the capture yields %d payloads, and --field varies one call; write the call with --field alone\n", len(payloads))
+
 		return nil, nil, 1
 	default:
 		// Flags win over the capture's one payload, and the call is read
 		// again, so a written command yields what the harness makes of it.
 		payloads = a.WithFields(payloads[0], fields)
 	}
+
 	return payloads, failures, 0
 }
 
@@ -199,28 +220,35 @@ func testReport(a harness.Adapter, rs *rule.Ruleset, event string, payloads []ru
 	// The same call the hook path makes, so what test reports is what hook does.
 	matched, _ := rs.Evaluate(payloads)
 	out := testOutput{Payloads: []testPayload{}, Matched: []testMatch{}}
+
 	for _, p := range rs.Yield(payloads) {
 		tp := testPayload{Kind: p.Kind, Fields: p.Fields(), Unreadable: []string{}}
 		for _, c := range tp.Fields["unreadable"] {
 			tp.Unreadable = append(tp.Unreadable, c.Spellings[0])
 		}
+
 		delete(tp.Fields, "unreadable")
 		out.Payloads = append(out.Payloads, tp)
 	}
+
 	for _, r := range matched {
 		action := a.Action(r.Rule)
+
 		m := testMatch{Rule: r.Name, Tier: r.Tier, Action: action.String(), Message: r.Message}
 		if action != r.Action {
 			m.DegradedFrom = new(r.Action.String())
 		}
+
 		out.Matched = append(out.Matched, m)
 	}
 	// The Outcome reported is the one the harness delivers, since that is what
 	// hook does with the evaluated one.
 	outcome := a.Delivered(matched)
 	out.Outcome = outcome.String()
+
 	failures = append(failures, loadNotices(rs)...)
 	_, out.Human = messages(a, rs, event, matched, failures)
+
 	return out, outcome
 }
 
@@ -230,16 +258,21 @@ func printTest(w io.Writer, out testOutput) {
 	for i, p := range out.Payloads {
 		printPayload(w, i, len(out.Payloads), p)
 	}
+
 	for _, m := range out.Matched {
 		fmt.Fprintf(w, "%s  %s  %s", m.Action, m.Rule, m.Tier)
+
 		if m.DegradedFrom != nil {
 			fmt.Fprintf(w, "  degraded from %s", *m.DegradedFrom)
 		}
+
 		fmt.Fprintln(w)
 		printIndented(w, m.Message)
 		fmt.Fprintln(w)
 	}
+
 	fmt.Fprintf(w, "outcome: %s\n", out.Outcome)
+
 	if out.Human == "" {
 		fmt.Fprintln(w, "human: none")
 	} else {
@@ -252,18 +285,23 @@ func printTest(w io.Writer, out testOutput) {
 // field name, and what handrail could not read.
 func printPayload(w io.Writer, i, n int, p testPayload) {
 	fmt.Fprintf(w, "payload %d of %d", i+1, n)
+
 	if p.Kind != "" {
 		fmt.Fprintf(w, ": %s", p.Kind)
 	}
+
 	fmt.Fprintln(w)
+
 	for _, name := range slices.Sorted(maps.Keys(p.Fields)) {
 		for _, c := range p.Fields[name] {
 			printCandidate(w, name, c)
 		}
 	}
+
 	if len(p.Unreadable) > 0 {
 		fmt.Fprintf(w, "  unreadable: %s\n", strings.Join(p.Unreadable, ", "))
 	}
+
 	fmt.Fprintln(w)
 }
 
@@ -277,6 +315,7 @@ func printCandidate(w io.Writer, name string, c rule.CandidateView) {
 	default:
 		fmt.Fprintf(w, "  %s\n", name)
 	}
+
 	for _, s := range c.Spellings {
 		for line := range strings.SplitSeq(s, "\n") {
 			fmt.Fprintf(w, "    %s\n", line)
@@ -289,8 +328,10 @@ func printIndented(w io.Writer, text string) {
 	for line := range strings.SplitSeq(text, "\n") {
 		if line == "" {
 			fmt.Fprintln(w)
+
 			continue
 		}
+
 		fmt.Fprintf(w, "  %s\n", line)
 	}
 }

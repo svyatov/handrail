@@ -25,10 +25,13 @@ func (r *reader) listed(c *call, name string, i, j int) {
 func (r *reader) program(c *call, g *grammar, i, j int) {
 	s := fileScan{r: r, c: c, g: g, j: j}
 	s.from(i, reading{})
+
 	if s.unknown {
 		r.unread(c, g.writes, i, j)
+
 		return
 	}
+
 	for _, rd := range s.readings {
 		s.add(rd)
 	}
@@ -39,12 +42,15 @@ func (r *reader) program(c *call, g *grammar, i, j int) {
 // program can write, else read.
 func (r *reader) unread(c *call, write bool, i, j int) {
 	dashes := false
+
 	for k := i; k < j; k++ {
 		w := c.words[k]
 		if !dashes && (w == "--" || len(w) > 1 && w[0] == '-') {
 			dashes = w == "--"
+
 			continue
 		}
+
 		if write || w != "-" {
 			f := r.named(c.args[k])
 			f.Write, f.Unreadable = write, true
@@ -69,6 +75,7 @@ type reading struct {
 // fork copies a reading for a second way of reading the same flag.
 func (rd reading) fork() reading {
 	rd.operands, rd.flagged = slices.Clone(rd.operands), slices.Clone(rd.flagged)
+
 	return rd
 }
 
@@ -79,9 +86,11 @@ func (rd reading) files(g *grammar) []int {
 	if g.first && !rd.supplied && len(ops) > 0 {
 		ops = ops[1:]
 	}
+
 	if rd.ends > 0 {
 		ops = slices.DeleteFunc(slices.Clone(ops), func(k int) bool { return k > rd.ends })
 	}
+
 	return ops
 }
 
@@ -129,6 +138,7 @@ func (s *fileScan) from(k int, rd reading) {
 			k++
 		}
 	}
+
 	s.keep(rd)
 }
 
@@ -137,6 +147,7 @@ func (s *fileScan) keep(rd reading) {
 	if len(s.readings) == maxReadings {
 		s.unknown = true
 	}
+
 	if !s.unknown {
 		s.readings = append(s.readings, rd)
 	}
@@ -145,6 +156,7 @@ func (s *fileScan) keep(rd reading) {
 // add adds the files one reading of the program's arguments names.
 func (s *fileScan) add(rd reading) {
 	ops := rd.files(s.g)
+
 	write := s.g.writes && (len(s.g.writeMode) == 0 || rd.write)
 	for n, k := range ops {
 		f := s.r.named(s.c.args[k])
@@ -155,6 +167,7 @@ func (s *fileScan) add(rd reading) {
 			s.r.file(f)
 		}
 	}
+
 	for _, f := range rd.flagged {
 		s.r.file(f)
 	}
@@ -163,25 +176,31 @@ func (s *fileScan) add(rd reading) {
 // long reads the long flag at word k and returns the word after it.
 func (s *fileScan) long(k int, rd *reading) int {
 	name, value, attached := strings.Cut(s.c.words[k][2:], "=")
+
 	full, a, found := s.g.lookup(name, true)
 	switch {
 	case !found:
 		s.unknown = true
 	case attached:
 		s.apply(rd, k, full, s.part(k, value))
+
 		return k + 1
 	case a == one:
 		s.apply(rd, k, full, s.whole(k+1))
+
 		return k + 2
 	case a == two:
 		s.apply(rd, k, full, s.whole(k+2))
+
 		return k + 3
 	case a == either:
 		fork := rd.fork()
 		s.apply(&fork, k, full, s.whole(k+1))
 		s.from(k+2, fork)
 	}
+
 	s.apply(rd, k, full, nil)
+
 	return k + 1
 }
 
@@ -194,12 +213,15 @@ func (s *fileScan) cluster(k int, rd *reading) int {
 		full, a, found := s.g.lookup(w[i:i+1], false)
 		if !found {
 			s.unknown = true
+
 			return k + 1
 		}
+
 		if next, took := s.short(k, rd, full, a, w[i+1:]); took {
 			return next
 		}
 	}
+
 	return k + 1
 }
 
@@ -210,12 +232,15 @@ func (s *fileScan) short(k int, rd *reading, full string, a arity, rest string) 
 	switch {
 	case a == attached:
 		s.apply(rd, k, full, s.part(k, rest))
+
 		return k + 1, true
 	case (a == one || a == restOrEither) && rest != "":
 		s.apply(rd, k, full, s.part(k, rest))
+
 		return k + 1, true
 	case a == one:
 		s.apply(rd, k, full, s.whole(k+1))
+
 		return k + 2, true
 	case a == either && rest != "":
 		fork := rd.fork()
@@ -226,7 +251,9 @@ func (s *fileScan) short(k int, rd *reading, full string, a arity, rest string) 
 		s.apply(&fork, k, full, s.whole(k+1))
 		s.from(k+2, fork)
 	}
+
 	s.apply(rd, k, full, nil)
+
 	return 0, false
 }
 
@@ -235,7 +262,9 @@ func (s *fileScan) whole(k int) *File {
 	if k >= s.j {
 		return nil
 	}
+
 	f := s.r.named(s.c.args[k])
+
 	return &f
 }
 
@@ -244,6 +273,7 @@ func (s *fileScan) part(k int, rest string) *File {
 	if rest == "" {
 		return nil
 	}
+
 	return &File{Path: rest, Unreadable: s.r.named(s.c.args[k]).Unreadable}
 }
 
@@ -275,6 +305,7 @@ func (r *reader) findFiles(c *call, i, j int) {
 		if w := c.words[k]; len(w) > 1 && w[0] == '-' || w == "(" || w == "!" {
 			return
 		}
+
 		r.file(r.named(c.args[k]))
 	}
 }
@@ -295,11 +326,13 @@ func (r *reader) findOptions(c *call, i, j int) int {
 			if k+1 < j {
 				r.file(r.named(c.args[k+1]))
 			}
+
 			k++
 		default:
 			return k
 		}
 	}
+
 	return k
 }
 
@@ -312,13 +345,17 @@ func (r *reader) gitFiles(c *call, i, j int) {
 			if sub := programs["git "+w]; sub != nil {
 				r.program(c, sub, k+1, j)
 			}
+
 			return
 		}
+
 		next, ok := r.gitOption(c, k, j)
 		if !ok {
 			r.unread(c, false, i, j)
+
 			return
 		}
+
 		k = next
 	}
 }
@@ -329,10 +366,12 @@ func (r *reader) gitFiles(c *call, i, j int) {
 func (r *reader) gitOption(c *call, k, j int) (last int, ok bool) {
 	w := c.words[k]
 	name, value, attached := strings.Cut(strings.TrimLeft(w, "-"), "=")
+
 	full, a, found := programs["git"].lookup(name, strings.HasPrefix(w, "--"))
 	if !found || !strings.HasPrefix(w, "--") && len(w) > 2 {
 		return k, false
 	}
+
 	switch {
 	case attached:
 		if full == "work-tree" {
@@ -344,6 +383,7 @@ func (r *reader) gitOption(c *call, k, j int) (last int, ok bool) {
 			r.file(r.named(c.args[k]))
 		}
 	}
+
 	return k, true
 }
 

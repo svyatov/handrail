@@ -24,23 +24,30 @@ Reads the harness's payload on stdin. Sync installs this; humans want test.
 func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("hook", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
+
 	if fs.NArg() != 2 {
 		fmt.Fprint(stderr, hookUsage)
+
 		return 1
 	}
+
 	name, event := fs.Arg(0), fs.Arg(1)
 	// The hook entry is handrail's own writing, so a wrong harness or event is a
 	// bug in the installed config rather than something to soldier through.
 	a, ok := harness.Lookup(name)
 	if !ok {
 		fmt.Fprintf(stderr, "handrail hook: unknown harness %q\n", name)
+
 		return 1
 	}
+
 	if !rule.IsEvent(event) {
 		fmt.Fprintf(stderr, "handrail hook: unknown event %q\n", event)
+
 		return 1
 	}
 
@@ -53,15 +60,18 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		failures = append(failures, fmt.Sprintf("handrail: no working directory, so no project rule was evaluated: %v", err))
 	}
+
 	if failures != nil {
 		for i := range payloads {
 			payloads[i].SetField("unreadable", "payload")
 		}
 	}
+
 	rs := rule.Load(cwd)
 	matched, outcome := rs.Evaluate(payloads)
 	failures = append(failures, loadNotices(rs)...)
 	agent, human := messages(a, rs, event, matched, failures)
+
 	return a.Deliver(event, agent, human, outcome, stdout, stderr)
 }
 
@@ -73,13 +83,16 @@ func eventDir(cwd string) (string, error) {
 	if !filepath.IsAbs(cwd) {
 		cwd, _ = os.Getwd()
 	}
+
 	fi, err := os.Stat(cwd)
 	if err == nil && !fi.IsDir() {
 		err = fmt.Errorf("%s is not a directory", cwd)
 	}
+
 	if err != nil {
 		return "", err
 	}
+
 	return cwd, nil
 }
 
@@ -97,12 +110,14 @@ func readCall(a harness.Adapter, event string, stdin io.Reader) (payloads []rule
 	} else if payloads, cwd, err = a.Normalize(event, data); err != nil {
 		failures = append(failures, fmt.Sprintf("handrail: could not parse the %s payload: %v", event, err))
 	}
+
 	if failures != nil {
 		// A stop it could not read may already be a continuation, so it is
 		// read as one: no block rule may continue the agent on it.
 		payloads = []rule.Payload{{Event: event, StopHookActive: rule.StopEvent(event)}}
 		payloads[0].SetField("unreadable", "payload")
 	}
+
 	return payloads, cwd, failures
 }
 
@@ -112,16 +127,19 @@ func readCall(a harness.Adapter, event string, stdin io.Reader) (payloads []rule
 // tier trust skipped loses nothing, so its broken files stay quiet.
 func loadNotices(rs *rule.Ruleset) []string {
 	var notices []string
+
 	for _, t := range rs.Tiers {
 		if t.Name == rule.TierGlobal && t.Dir == "" {
 			notices = append(notices, "handrail: no Global tier to read: set HOME or XDG_CONFIG_HOME")
 		}
 	}
+
 	for _, p := range rs.Problems {
 		if !p.Untrusted {
 			notices = append(notices, fmt.Sprintf("handrail: skipped the broken rule %s: %s", p.Path, p.Message))
 		}
 	}
+
 	return notices
 }
 
@@ -132,12 +150,15 @@ func standingNotices(rs *rule.Ruleset, event string) []string {
 	if event != "SessionStart" {
 		return nil
 	}
+
 	var notices []string
+
 	for _, notice := range []string{droppedNotice(rs.Rules), rs.TrustNotice(), agentOnlyNotice(rs.Rules), examplesNotice(rs.Rules)} {
 		if notice != "" {
 			notices = append(notices, notice)
 		}
 	}
+
 	return notices
 }
 
@@ -146,18 +167,22 @@ func standingNotices(rs *rule.Ruleset, event string) []string {
 // what was dropped rather than who hears it.
 func agentOnlyNotice(rules []*rule.Rule) string {
 	var lost []string
+
 	for _, r := range rules {
 		if r.LostAgentOnly {
 			lost = append(lost, r.Name)
 		}
 	}
+
 	if len(lost) == 0 {
 		return ""
 	}
+
 	count := fmt.Sprintf("%d rules", len(lost))
 	if len(lost) == 1 {
 		count = "1 rule"
 	}
+
 	return fmt.Sprintf("handrail: %s, so it was dropped from %s: %s; run handrail check",
 		rule.RefusedAgentOnly, count, strings.Join(lost, ", "))
 }
@@ -166,18 +191,22 @@ func agentOnlyNotice(rules []*rule.Rule) string {
 // rule, and "" when there are none. check names them.
 func droppedNotice(rules []*rule.Rule) string {
 	dropped := 0
+
 	for _, r := range rules {
 		if r.DroppedBy != nil {
 			dropped++
 		}
 	}
+
 	if dropped == 0 {
 		return ""
 	}
+
 	count := fmt.Sprintf("%d Project-shared rules dropped for naming Global rules", dropped)
 	if dropped == 1 {
 		count = "1 Project-shared rule dropped for naming a Global rule"
 	}
+
 	return fmt.Sprintf("handrail: %s; run handrail check", count)
 }
 
@@ -185,18 +214,22 @@ func droppedNotice(rules []*rule.Rule) string {
 // carries no Example's text: the rule file is where that is read, by check.
 func examplesNotice(rules []*rule.Rule) string {
 	var failing []string
+
 	for _, r := range rules {
 		if harness.FailingExamples(r) != nil {
 			failing = append(failing, fmt.Sprintf("%s (%s)", r.Name, r.Tier))
 		}
 	}
+
 	if len(failing) == 0 {
 		return ""
 	}
+
 	count := fmt.Sprintf("%d rules fail their", len(failing))
 	if len(failing) == 1 {
 		count = "1 rule fails its"
 	}
+
 	return fmt.Sprintf("handrail: %s Examples: %s; run handrail check", count, strings.Join(failing, ", "))
 }
 
@@ -214,32 +247,41 @@ const listedFiles = 10
 func messages(a harness.Adapter, rs *rule.Ruleset, event string, matched []rule.Match, failures []string) (agent, human string) {
 	sections := standingNotices(rs, event)
 	heard := slices.Clone(sections)
+
 	for _, m := range matched {
 		label := fmt.Sprintf("handrail %s: %s (%s)", m.Action, m.Name, m.Tier)
+
 		s := label + "\n" + m.Message
 		if note := a.Note(m.Rule); note != "" {
 			s += "\n" + note
 		}
+
 		if len(m.Files) > 0 {
 			s += "\nMatched files:\n  " + strings.Join(m.Files[:min(len(m.Files), listedFiles)], "\n  ")
 			if len(m.Files) > listedFiles {
 				s += fmt.Sprintf("\n  and %d more", len(m.Files)-listedFiles)
 			}
 		}
+
 		if a.Injects(event) || a.Action(m.Rule) == rule.Block {
 			sections = append(sections, s)
 		}
+
 		switch {
 		case m.AgentOnly:
 			continue
 		case m.Action == rule.Warn:
 			s = label
 		}
+
 		heard = append(heard, s)
 	}
+
 	if a.Injects(event) {
 		sections = append(sections, failures...)
 	}
+
 	heard = append(heard, failures...)
+
 	return strings.Join(sections, "\n\n"), strings.Join(heard, "\n")
 }

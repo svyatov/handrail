@@ -36,6 +36,7 @@ func condition(cond string) (bool, error) {
 	if cond == "root" {
 		return os.Geteuid() == 0, nil
 	}
+
 	return false, fmt.Errorf("unknown condition %q", cond)
 }
 
@@ -50,9 +51,11 @@ func TestHookColdStart(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and execs the binary")
 	}
+
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "handrail")
 	build := exec.CommandContext(t.Context(), "go", "build", "-ldflags", "-s -w", "-o", bin, ".")
+
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("building handrail: %v\n%s", err, out)
@@ -80,9 +83,11 @@ func TestHookColdStart(t *testing.T) {
 		start := time.Now()
 		out, err := cmd.CombinedOutput()
 		elapsed := time.Since(start)
+
 		if err != nil {
 			t.Fatalf("handrail %s: %v\n%s", strings.Join(args, " "), err, out)
 		}
+
 		return elapsed, string(out)
 	}
 
@@ -90,17 +95,21 @@ func TestHookColdStart(t *testing.T) {
 	// the binary and the rules in the page cache, which is the state a session's
 	// second and every later tool call finds them in.
 	run("trust")
+
 	times := make([]time.Duration, 0, 21)
 	for range cap(times) {
 		elapsed, out := run("hook", "claude", "PreToolUse")
 		if out != "" {
 			t.Fatalf("no rule matches this payload, yet the hook said: %s", out)
 		}
+
 		times = append(times, elapsed)
 	}
+
 	slices.Sort(times)
 	t.Logf("no-match hook over %d runs: median %v, best %v, worst %v",
 		len(times), times[len(times)/2], times[0], times[len(times)-1])
+
 	if median := times[len(times)/2]; median > hookBudget {
 		t.Errorf("no-match hook took %v, over the %v budget (best %v, worst %v)",
 			median, hookBudget, times[0], times[len(times)-1])
@@ -113,6 +122,7 @@ func TestHookColdStart(t *testing.T) {
 func populateTiers(t *testing.T, home, repo string) {
 	t.Helper()
 	mkdirs(t, filepath.Join(repo, ".git"))
+
 	for _, tier := range []struct {
 		dir   string
 		name  string
@@ -123,6 +133,7 @@ func populateTiers(t *testing.T, home, repo string) {
 		{filepath.Join(repo, ".handrail", "local"), "personal", 5},
 	} {
 		mkdirs(t, tier.dir)
+
 		for i := range tier.rules {
 			writeFile(t, filepath.Join(tier.dir, fmt.Sprintf("%s-%d.md", tier.name, i)),
 				"---\nevent: PreToolUse\nkind: shell\nconditions:\n  - field: command\n"+
@@ -133,6 +144,7 @@ func populateTiers(t *testing.T, home, repo string) {
 
 func mkdirs(t *testing.T, dirs ...string) {
 	t.Helper()
+
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -142,6 +154,7 @@ func mkdirs(t *testing.T, dirs ...string) {
 
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
+
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -154,10 +167,12 @@ func sandbox(e *testscript.Env) error {
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		return err
 	}
+
 	e.Setenv("HOME", home)
 	e.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	e.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
 	e.Setenv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
 	e.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+
 	return nil
 }

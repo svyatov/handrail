@@ -25,6 +25,7 @@ func FuzzRead(f *testing.F) {
 	for _, line := range lines {
 		f.Add(line)
 	}
+
 	f.Fuzz(func(_ *testing.T, line string) {
 		shell.Read(line)
 	})
@@ -34,6 +35,7 @@ func FuzzPatch(f *testing.F) {
 	for _, line := range lines {
 		f.Add(line)
 	}
+
 	f.Fuzz(func(t *testing.T, line string) {
 		if _, body, ok := shell.Patch(line); !ok && body != "" {
 			t.Fatalf("Patch(%q) returned a body without ok", line)

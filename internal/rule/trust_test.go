@@ -24,12 +24,15 @@ func TestTrustRefusesAPathThatWouldWriteTwoLines(t *testing.T) {
 	if err == nil {
 		t.Fatal("Trust() accepted a path containing a newline")
 	}
+
 	if added {
 		t.Error("added = true on a refusal")
 	}
+
 	if !strings.Contains(err.Error(), "newline") {
 		t.Errorf("error = %v, want it to name the newline", err)
 	}
+
 	if isTrusted("/tmp/evil") {
 		t.Error("the second line was granted")
 	}

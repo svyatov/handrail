@@ -24,6 +24,7 @@ func Read(line string) (cands [][]string, files []File, ok bool) {
 	if !r.read(line) {
 		return nil, nil, false
 	}
+
 	return r.cands, r.files, !r.gaveUp
 }
 
@@ -36,19 +37,24 @@ func Patch(line string) (dir, body string, ok bool) {
 	if !strings.Contains(line, "apply_patch") && !strings.Contains(line, "applypatch") {
 		return "", "", false
 	}
+
 	f, err := syntax.NewParser().Parse(strings.NewReader(line), "")
 	if err != nil || len(f.Stmts) != 1 {
 		return "", "", false
 	}
+
 	r := reader{text: line}
+
 	dir, st, ok := r.patchDir(f.Stmts[0])
 	if !ok {
 		return "", "", false
 	}
+
 	body, ok = r.patchBody(st)
 	if !ok {
 		return "", "", false
 	}
+
 	return dir, body, true
 }
 
@@ -84,10 +90,12 @@ func (r *reader) patchDir(st *syntax.Stmt) (string, *syntax.Stmt, bool) {
 	if !isList {
 		return "", st, true
 	}
+
 	cd, isCall := and.X.Cmd.(*syntax.CallExpr)
 	if and.Op != syntax.AndStmt || !isCall || len(cd.Args) != 2 || cd.Args[0].Lit() != "cd" || !literal(cd.Args[1]) {
 		return "", nil, false
 	}
+
 	return r.word(cd.Args[1]), and.Y, true
 }
 
@@ -97,10 +105,12 @@ func (r *reader) patchBody(st *syntax.Stmt) (string, bool) {
 	if !isCall || len(call.Args) != 1 || len(st.Redirs) != 1 {
 		return "", false
 	}
+
 	rd := st.Redirs[0]
 	if name := call.Args[0].Lit(); name != "apply_patch" && name != "applypatch" || rd.Op != syntax.Hdoc || rd.Hdoc == nil {
 		return "", false
 	}
+
 	return r.src(rd.Hdoc, rd.Hdoc), true
 }
 
@@ -114,7 +124,9 @@ func (r *reader) read(code string) bool {
 	if err != nil {
 		return false
 	}
+
 	r.text, r.fed = code, map[*syntax.Stmt]bool{}
+
 	syntax.Walk(f, func(n syntax.Node) bool {
 		switch n := n.(type) {
 		case *syntax.BinaryCmd:
@@ -129,8 +141,10 @@ func (r *reader) read(code string) bool {
 		case *syntax.Redirect:
 			r.redirect(n)
 		}
+
 		return true
 	})
+
 	return true
 }
 
@@ -142,10 +156,12 @@ func (r *reader) feed(st *syntax.Stmt) {
 	if _, call := st.Cmd.(*syntax.CallExpr); call || st.Cmd == nil || !r.fed[st] && !input(st) {
 		return
 	}
+
 	syntax.Walk(st.Cmd, func(m syntax.Node) bool {
 		if st, ok := m.(*syntax.Stmt); ok {
 			r.fed[st] = true
 		}
+
 		return true
 	})
 }
@@ -168,14 +184,18 @@ func input(st *syntax.Stmt) bool {
 func (r *reader) code(text string, literal bool) {
 	if r.depth == 4 {
 		r.gaveUp = true
+
 		return
 	}
+
 	inner := reader{depth: r.depth + 1}
 	parsed := inner.read(text)
+
 	r.cands = append(r.cands, inner.cands...)
 	for _, f := range inner.files {
 		r.file(f)
 	}
+
 	r.gaveUp = r.gaveUp || !literal || !parsed || inner.gaveUp
 }
 
@@ -183,8 +203,10 @@ func (r *reader) code(text string, literal bool) {
 func (r *reader) add(source, unquoted string) {
 	if unquoted == source {
 		r.cands = append(r.cands, []string{source})
+
 		return
 	}
+
 	r.cands = append(r.cands, []string{source, unquoted})
 }
 
@@ -204,6 +226,7 @@ func (r *reader) stmt(st *syntax.Stmt) {
 	if len(st.Redirs) > 0 {
 		from, to = earlier(st.Cmd, st.Redirs[0]), later(st.Cmd, st.Redirs[len(st.Redirs)-1])
 	}
+
 	switch cmd := st.Cmd.(type) {
 	case nil, *syntax.BinaryCmd, *syntax.Block, *syntax.Subshell, *syntax.IfClause,
 		*syntax.WhileClause, *syntax.ForClause, *syntax.CaseClause, *syntax.FuncDecl:
@@ -214,6 +237,7 @@ func (r *reader) stmt(st *syntax.Stmt) {
 		for _, a := range cmd.Args {
 			words = append(words, r.assign(a))
 		}
+
 		r.add(r.src(from, to), strings.Join(words, " "))
 	default:
 		source := r.src(from, to)
@@ -228,10 +252,13 @@ func (r *reader) command(st *syntax.Stmt, cmd *syntax.CallExpr, from, to syntax.
 	for _, a := range cmd.Assigns {
 		words = append(words, r.assign(a))
 	}
+
 	for _, w := range cmd.Args {
 		words = append(words, r.word(w))
 	}
+
 	r.add(r.src(from, to), strings.Join(words, " "))
+
 	if len(cmd.Args) == 0 {
 		return
 	}
@@ -240,6 +267,7 @@ func (r *reader) command(st *syntax.Stmt, cmd *syntax.CallExpr, from, to syntax.
 	if len(cmd.Assigns) > 0 {
 		r.add(r.src(cmd.Args[0], to), strings.Join(words[len(cmd.Assigns):], " "))
 	}
+
 	c := &call{st: st, args: cmd.Args, words: words[len(cmd.Assigns):], to: to, seen: map[int]bool{0: true}}
 	r.follow(c, 0, len(c.args))
 }
@@ -251,15 +279,19 @@ func (r *reader) redirect(rd *syntax.Redirect) {
 	if rd.Word == nil || rd.Word.Pos().IsRecovered() || namesNoFile(rd) {
 		return
 	}
+
 	target := r.word(rd.Word)
 	if slices.Contains(devices, target) || strings.HasPrefix(target, "/dev/fd/") {
 		return
 	}
+
 	n := ""
 	if rd.N != nil {
 		n = rd.N.Value
 	}
+
 	r.add(r.src(rd, rd), n+rd.Op.String()+target)
+
 	f := r.named(rd.Word)
 	switch rd.Op {
 	case syntax.RdrIn, syntax.DplIn:
@@ -287,6 +319,7 @@ func namesNoFile(rd *syntax.Redirect) bool {
 		// Only a bare descriptor duplicates one: Lit is empty for a quoted or
 		// expanded target, which bash may open as a file.
 		lit := rd.Word.Lit()
+
 		return lit != "" && strings.Trim(lit, "0123456789") == "" || lit == "-"
 	default:
 		// Every other operator names a file.
@@ -300,6 +333,7 @@ func (r *reader) named(w *syntax.Word) File {
 	if !literal(w) || tilde(w) || slices.ContainsFunc(w.Parts, pattern) {
 		return File{Path: r.src(w, w), Unreadable: true}
 	}
+
 	return File{Path: r.word(w)}
 }
 
@@ -307,6 +341,7 @@ func (r *reader) named(w *syntax.Word) File {
 // home directory. A bare ~ is the home directory, kept as written.
 func tilde(w *syntax.Word) bool {
 	lit, ok := w.Parts[0].(*syntax.Lit)
+
 	return ok && len(lit.Value) > 1 && lit.Value[0] == '~' && lit.Value[1] != '/'
 }
 
@@ -317,6 +352,7 @@ func pattern(part syntax.WordPart) bool {
 	if !ok {
 		return false
 	}
+
 	for i := 0; i < len(lit.Value); i++ {
 		switch lit.Value[i] {
 		case '\\':
@@ -325,6 +361,7 @@ func pattern(part syntax.WordPart) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -336,6 +373,7 @@ func (r *reader) src(from, to syntax.Node) string {
 	if end.IsRecovered() || !end.IsValid() {
 		return r.text[from.Pos().Offset():]
 	}
+
 	return r.text[from.Pos().Offset():end.Offset()]
 }
 
@@ -346,13 +384,16 @@ func (r *reader) assign(a *syntax.Assign) string {
 	if a.Naked && a.Name == nil && a.Value != nil {
 		return r.word(a.Value)
 	}
+
 	if a.Name == nil || a.Index != nil || a.Array != nil || a.Value == nil {
 		return r.src(a, a)
 	}
+
 	op := "="
 	if a.Append {
 		op = "+="
 	}
+
 	return a.Name.Value + op + r.word(a.Value)
 }
 
@@ -360,6 +401,7 @@ func (r *reader) assign(a *syntax.Assign) string {
 // expansion left as its source text, since handrail never expands.
 func (r *reader) word(w *syntax.Word) string {
 	var b strings.Builder
+
 	for _, part := range w.Parts {
 		switch p := part.(type) {
 		case *syntax.Lit:
@@ -377,6 +419,7 @@ func (r *reader) word(w *syntax.Word) string {
 			b.WriteString(r.src(p, p))
 		}
 	}
+
 	return b.String()
 }
 
@@ -385,15 +428,19 @@ func (r *reader) word(w *syntax.Word) string {
 // reports whether it holds no expansion.
 func (r *reader) dquoted(parts []syntax.WordPart, special string) (string, bool) {
 	var b strings.Builder
+
 	literal := true
+
 	for _, part := range parts {
 		if lit, ok := part.(*syntax.Lit); ok {
 			b.WriteString(unescape(lit.Value, special))
 		} else {
 			b.WriteString(r.src(part, part))
+
 			literal = false
 		}
 	}
+
 	return b.String(), literal
 }
 
@@ -404,23 +451,29 @@ func unescape(s, special string) string {
 	if !strings.Contains(s, `\`) {
 		return s
 	}
+
 	var b strings.Builder
+
 	for i := 0; i < len(s); i++ {
 		if s[i] != '\\' || i == len(s)-1 {
 			b.WriteByte(s[i])
+
 			continue
 		}
+
 		next := s[i+1]
 		switch {
 		case next == '\n':
 			i++
 		case special == "" || strings.IndexByte(special, next) >= 0:
 			i++
+
 			b.WriteByte(next)
 		default:
 			b.WriteByte('\\')
 		}
 	}
+
 	return b.String()
 }
 
@@ -431,14 +484,19 @@ func ansiC(s string) string {
 	if !strings.Contains(s, `\`) {
 		return s
 	}
+
 	var b strings.Builder
+
 	for i := 0; i < len(s); i++ {
 		if s[i] != '\\' || i == len(s)-1 {
 			b.WriteByte(s[i])
+
 			continue
 		}
+
 		i = ansiEscape(&b, s, i+1)
 	}
+
 	return b.String()
 }
 
@@ -447,17 +505,21 @@ func ansiC(s string) string {
 func ansiEscape(b *strings.Builder, s string, i int) int {
 	if c := strings.IndexByte(`abeEfnrtv\'"?`, s[i]); c >= 0 {
 		b.WriteByte("\a\b\x1b\x1b\f\n\r\t\v\\'\"?"[c])
+
 		return i
 	}
+
 	switch s[i] {
 	case 'c':
 		if i+1 < len(s) {
 			b.WriteByte(s[i+1] & 0x1f)
+
 			return i + 1
 		}
 	case '0', '1', '2', '3', '4', '5', '6', '7':
 		n, end := digits(s, i, 3, 8)
 		b.WriteByte(byte(n & 0xff)) // bash keeps the low eight bits of \777
+
 		return end - 1
 	case 'x', 'u', 'U':
 		width := [...]int{2, 4, 8}[strings.IndexByte("xuU", s[i])]
@@ -467,11 +529,14 @@ func ansiEscape(b *strings.Builder, s string, i int) int {
 			} else {
 				b.WriteRune(n)
 			}
+
 			return end - 1
 		}
 	}
+
 	b.WriteByte('\\')
 	b.WriteByte(s[i])
+
 	return i
 }
 
@@ -480,17 +545,21 @@ func ansiEscape(b *strings.Builder, s string, i int) int {
 func digits(s string, start, maximum int, base rune) (n rune, end int) {
 	for end = start; end < len(s) && end-start < maximum; end++ {
 		d := base // not a digit
+
 		switch c := s[end]; {
 		case '0' <= c && c <= '9':
 			d = rune(c - '0')
 		case 'a' <= c|0x20 && c|0x20 <= 'f':
 			d = rune(c|0x20-'a') + 10
 		}
+
 		if d >= base {
 			break
 		}
+
 		n = n*base + d
 	}
+
 	return n, end
 }
 
@@ -501,6 +570,7 @@ func earlier(a, b syntax.Node) syntax.Node {
 	if a == nil || b.Pos().Offset() < a.Pos().Offset() {
 		return b
 	}
+
 	return a
 }
 
@@ -515,5 +585,6 @@ func later(a, b syntax.Node) syntax.Node {
 	case b.End().Offset() > a.End().Offset():
 		return b
 	}
+
 	return a
 }

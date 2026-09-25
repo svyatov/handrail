@@ -33,6 +33,7 @@ func FailingExamples(r *rule.Rule) []Failure {
 		})
 		failed = append(failed, failing(r, r.Replaces, match)...)
 	}
+
 	return failed
 }
 
@@ -40,12 +41,14 @@ func FailingExamples(r *rule.Rule) []Failure {
 // each call made on the event of from, the rule the examples belong to.
 func failing(r, from *rule.Rule, examples []rule.Example) []Failure {
 	var failed []Failure
+
 	for _, e := range examples {
 		call := withFields(rule.Payload{Event: from.Event, Kind: e.Kind}, e.Fields, adapters)
 		if r.Selects(call) != (e.Expect == "match") {
 			failed = append(failed, Failure{Example: e, From: from})
 		}
 	}
+
 	return failed
 }
 
@@ -67,9 +70,11 @@ func withFields(p rule.Payload, fields []rule.ExampleField, from []Adapter) []ru
 			for _, c := range p.Fields()["tool"] {
 				tools = append(tools, c.Spellings...)
 			}
+
 			return append([]rule.Payload{p}, patchPayloads(p.Event, tools, dir, patch)...)
 		}
 	}
+
 	return []rule.Payload{p}
 }
 
@@ -81,12 +86,15 @@ func setFields(p *rule.Payload, fields []rule.ExampleField, from []Adapter) (com
 	for _, f := range fields {
 		p.Unset(f.Name)
 	}
+
 	for _, f := range fields {
 		setField(p, f, from)
+
 		if f.Name == "command" {
 			command = f.Values[0]
 		}
 	}
+
 	return command
 }
 

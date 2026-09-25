@@ -23,7 +23,9 @@ import (
 // it.
 func TestEveryOperatorTheParserAcceptsAlsoMatches(t *testing.T) {
 	t.Parallel()
+
 	const command = "deploy prod now"
+
 	matching := map[string]string{
 		"matches":     `^deploy\s`,
 		"contains":    "prod",
@@ -38,6 +40,7 @@ func TestEveryOperatorTheParserAcceptsAlsoMatches(t *testing.T) {
 	for _, op := range operators {
 		t.Run(op, func(t *testing.T) {
 			t.Parallel()
+
 			value, ok := matching[op]
 			if !ok {
 				t.Fatalf("no value that matches %q, so this operator is untested", op)
@@ -61,6 +64,7 @@ func TestEveryOperatorTheParserAcceptsAlsoMatches(t *testing.T) {
 // panics in matches rather than quietly missing.
 func parseOne(t *testing.T, op, value string) *Rule {
 	t.Helper()
+
 	doc := strings.Join([]string{
 		"---",
 		"event: PreToolUse",
@@ -71,12 +75,15 @@ func parseOne(t *testing.T, op, value string) *Rule {
 		"---",
 		"Say something.",
 	}, "\n")
+
 	r, err := Parse("op-under-test", []byte(doc))
 	if err != nil {
 		t.Fatalf("Parse(%s: %s) = %v", op, value, err)
 	}
+
 	if len(r.Conditions) != 1 || len(r.Conditions[0].Terms) != 1 {
 		t.Fatalf("Parse(%s) produced %d conditions, want one term", op, len(r.Conditions))
 	}
+
 	return r
 }

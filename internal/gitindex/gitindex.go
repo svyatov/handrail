@@ -25,10 +25,12 @@ import (
 // shares everything but its index and HEAD with the main checkout.
 func Dirs(root string) (own, common string, err error) {
 	git := filepath.Join(root, ".git")
+
 	fi, err := os.Stat(git)
 	if err != nil {
 		return "", "", nil //nolint:nilerr // no .git is not a failure, it is "not a working tree"
 	}
+
 	if fi.IsDir() {
 		return git, git, nil
 	}
@@ -37,10 +39,12 @@ func Dirs(root string) (own, common string, err error) {
 	if err != nil {
 		return "", "", err
 	}
+
 	own = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(data)), "gitdir:"))
 	if own == "" {
 		return "", "", fmt.Errorf("%s names no git directory", git)
 	}
+
 	if !filepath.IsAbs(own) {
 		own = filepath.Join(root, own)
 	}
@@ -49,13 +53,16 @@ func Dirs(root string) (own, common string, err error) {
 	if errors.Is(err, fs.ErrNotExist) {
 		return own, own, nil // a submodule: its own git dir is the whole story
 	}
+
 	if err != nil {
 		return "", "", err
 	}
+
 	common = strings.TrimSpace(string(shared))
 	if !filepath.IsAbs(common) {
 		common = filepath.Join(own, common)
 	}
+
 	return own, filepath.Clean(common), nil
 }
 
@@ -73,14 +80,17 @@ func Under(root, dir string) (bool, error) {
 	if err != nil || own == "" {
 		return false, err
 	}
+
 	index := filepath.Join(own, "index")
 	if _, err := os.Stat(index); errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}
+
 	hashLen, err := hashLen(common)
 	if err != nil {
 		return false, err
 	}
+
 	s := scan{hashLen: hashLen, below: dir + "/"}
 
 	// ponytail: a shared index left behind by --no-split-index makes this read
@@ -90,6 +100,7 @@ func Under(root, dir string) (bool, error) {
 	if err != nil || len(shared) == 0 {
 		return s.file(index, nil)
 	}
+
 	return s.split(own, index)
 }
 
@@ -110,6 +121,7 @@ func (s scan) under(name string) bool {
 	hasPrefix := func(str, prefix string) bool {
 		return len(str) >= len(prefix) && strings.EqualFold(str[:len(prefix)], prefix)
 	}
+
 	return hasPrefix(name, s.below) || hasPrefix(s.below, strings.TrimSuffix(name, "/")+"/")
 }
 
@@ -121,22 +133,27 @@ func (s scan) file(path string, deleted bitmap) (bool, error) {
 		return false, err
 	}
 	defer f.Close()
+
 	d, err := newDecoder(f, s.hashLen)
 	if err != nil {
 		return false, err
 	}
+
 	for i := range uint64(d.count) {
 		name, err := d.next()
 		if err != nil {
 			return false, err
 		}
+
 		if !deleted.has(i) && s.under(name) {
 			return true, nil
 		}
+
 		if name > s.below {
 			return false, nil
 		}
 	}
+
 	return false, nil
 }
 
@@ -147,26 +164,32 @@ func (s scan) split(own, index string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+
 	d, err := newDecoder(bytes.NewReader(data), s.hashLen)
 	if err != nil {
 		return false, err
 	}
+
 	for range d.count {
 		name, err := d.next()
 		if err != nil {
 			return false, err
 		}
+
 		if s.under(name) {
 			return true, nil
 		}
 	}
+
 	if len(data)-s.hashLen < d.off {
 		return false, errors.New("truncated git index")
 	}
+
 	base, deleted, err := link(data[d.off:len(data)-s.hashLen], s.hashLen)
 	if err != nil || base == "" {
 		return false, err
 	}
+
 	return s.file(filepath.Join(own, "sharedindex."+base), deleted)
 }
 
@@ -181,17 +204,23 @@ func link(ext []byte, hashLen int) (string, bitmap, error) {
 		if size > uint64(len(ext[8:])) {
 			return "", nil, errors.New("truncated git index extension")
 		}
+
 		sig, body := string(ext[:4]), ext[8:8+size]
 		ext = ext[8+size:]
+
 		if sig != "link" {
 			continue
 		}
+
 		if len(body) < hashLen {
 			return "", nil, errors.New("truncated git index link extension")
 		}
+
 		deleted, err := ewah(body[hashLen:])
+
 		return hex.EncodeToString(body[:hashLen]), deleted, err
 	}
+
 	return "", nil, nil
 }
 
@@ -203,8 +232,10 @@ type bitmap [][2]uint64
 func (m *bitmap) add(start, end uint64) {
 	if n := len(*m); n > 0 && (*m)[n-1][1] == start {
 		(*m)[n-1][1] = end
+
 		return
 	}
+
 	*m = append(*m, [2]uint64{start, end})
 }
 
@@ -220,6 +251,7 @@ func (m *bitmap) has(pos uint64) bool {
 			return 0
 		}
 	})
+
 	return found
 }
 
@@ -231,37 +263,49 @@ func ewah(b []byte) (bitmap, error) {
 	if len(b) < 8 {
 		return nil, errors.New("truncated git index bitmap")
 	}
+
 	bits := uint64(binary.BigEndian.Uint32(b))
+
 	words := uint64(binary.BigEndian.Uint32(b[4:]))
 	if words > uint64(len(b[8:]))/8 {
 		return nil, errors.New("truncated git index bitmap")
 	}
+
 	word := func(i uint64) uint64 { return binary.BigEndian.Uint64(b[8+8*i:]) }
 
-	var set bitmap
-	var pos uint64
+	var (
+		set bitmap
+		pos uint64
+	)
+
 	for i := uint64(0); i < words; {
 		marker := word(i)
 		i++
+
 		end := pos + (marker>>1&0xffffffff)*64
 		if marker&1 != 0 && pos < min(end, bits) {
 			set.add(pos, min(end, bits))
 		}
+
 		pos = end
+
 		literals := marker >> 33
 		if literals > words-i {
 			return nil, errors.New("truncated git index bitmap")
 		}
+
 		for range literals {
 			for bit := range uint64(64) {
 				if word(i)>>bit&1 != 0 {
 					set.add(pos+bit, pos+bit+1)
 				}
 			}
+
 			pos += 64
 			i++
 		}
 	}
+
 	return set, nil
 }
 
@@ -283,34 +327,43 @@ func hashLen(common string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	var section string
+
 	for line := range strings.Lines(string(data)) {
 		line = strings.TrimSpace(line)
 		if rest, ok := strings.CutPrefix(line, "["); ok {
 			section, _, _ = strings.Cut(rest, "]")
 			section = strings.ToLower(strings.TrimSpace(section))
+
 			continue
 		}
+
 		key, value, _ := strings.Cut(line, "=")
 		if section == "extensions" && strings.EqualFold(strings.TrimSpace(key), "objectformat") &&
 			strings.EqualFold(strings.TrimSpace(value), "sha256") {
 			return 32, nil
 		}
 	}
+
 	return 20, nil
 }
 
 func newDecoder(r io.Reader, hashLen int) (*decoder, error) {
 	d := &decoder{r: bufio.NewReader(r), hashLen: hashLen}
+
 	header, err := d.read(12)
 	if err != nil {
 		return nil, err
 	}
+
 	if string(header[:4]) != "DIRC" {
 		return nil, errors.New("not a git index")
 	}
+
 	d.version = binary.BigEndian.Uint32(header[4:])
 	d.count = binary.BigEndian.Uint32(header[8:])
+
 	return d, nil
 }
 
@@ -320,7 +373,9 @@ func (d *decoder) read(n int) ([]byte, error) {
 	if _, err := io.ReadFull(d.r, b); err != nil {
 		return nil, fmt.Errorf("truncated git index: %w", err)
 	}
+
 	d.off += n
+
 	return b, nil
 }
 
@@ -330,7 +385,9 @@ func (d *decoder) path() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("truncated git index: %w", err)
 	}
+
 	d.off += len(b)
+
 	return string(b[:len(b)-1]), nil
 }
 
@@ -339,27 +396,34 @@ func (d *decoder) path() (string, error) {
 // the NUL-terminated path, padded with NULs to a multiple of 8 bytes.
 func (d *decoder) next() (string, error) {
 	fixed := 40 + d.hashLen + 2
+
 	b, err := d.read(fixed)
 	if err != nil {
 		return "", err
 	}
+
 	if d.version >= 3 && binary.BigEndian.Uint16(b[fixed-2:])&0x4000 != 0 {
 		if _, err := d.read(2); err != nil {
 			return "", err
 		}
+
 		fixed += 2
 	}
+
 	if d.version == 4 {
 		return d.nextV4()
 	}
+
 	name, err := d.path()
 	if err != nil {
 		return "", err
 	}
+
 	size := fixed + len(name) + 1
 	if _, err := d.read((size+7)&^7 - size); err != nil {
 		return "", err
 	}
+
 	return name, nil
 }
 
@@ -370,14 +434,18 @@ func (d *decoder) nextV4() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	if cut > uint64(len(d.prev)) {
 		return "", errors.New("corrupt git index: a path cuts more than the previous one holds")
 	}
+
 	rest, err := d.path()
 	if err != nil {
 		return "", err
 	}
+
 	d.prev = d.prev[:uint64(len(d.prev))-cut] + rest
+
 	return d.prev, nil
 }
 
@@ -385,16 +453,20 @@ func (d *decoder) nextV4() (string, error) {
 // each continuation adding one so no value has two spellings.
 func (d *decoder) varint() (uint64, error) {
 	var v uint64
+
 	for {
 		b, err := d.read(1)
 		if err != nil {
 			return 0, err
 		}
+
 		c := b[0]
+
 		v = v<<7 | uint64(c&0x7f)
 		if c&0x80 == 0 {
 			return v, nil
 		}
+
 		v++
 	}
 }

@@ -26,8 +26,10 @@ func cmdSync(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	rs, err := loadRules(stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
+
 		return 1
 	}
+
 	problems := rs.Invalid()
 	reportProblems(problems, stderr)
 
@@ -42,25 +44,32 @@ func cmdSync(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	bin, err := os.Executable()
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
+
 		return 1
 	}
+
 	failed := installHooks(targets, bin, rs.Effective(), stdout, stderr)
 
 	if err := excludeLocal(rs.Root, stdout); err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
+
 		return 1
 	}
 
 	fmt.Fprintln(stdout)
+
 	if err := printRuleset(stdout, rs.Rules); err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
+
 		return 1
 	}
+
 	reportTierMoves(rs, stderr)
 	// A failing Example changes nothing sync writes, so it is reported after.
 	if reportExamples(slices.Concat(rs.Rules, rs.Untrusted), stderr) || failed || len(problems) > 0 {
 		return 1
 	}
+
 	return 0
 }
 
@@ -70,16 +79,20 @@ func parseSyncFlags(args []string, stderr io.Writer) (only string, ok bool) {
 	fs := flag.NewFlagSet("sync", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&only, "harness", "", "sync only this harness")
+
 	if !parseFlags(fs, args, stderr) {
 		return "", false
 	}
+
 	if only != "" {
 		if _, ok := harness.Lookup(only); !ok {
 			fmt.Fprintf(stderr, "handrail sync: unknown harness %q; known: %s\n",
 				only, strings.Join(harness.Names(), ", "))
+
 			return "", false
 		}
 	}
+
 	return only, true
 }
 
@@ -87,18 +100,22 @@ func parseSyncFlags(args []string, stderr io.Writer) (only string, ok bool) {
 // named. It names the missing harness and returns nil when there is none.
 func syncTargets(only string, stderr io.Writer) []harness.Adapter {
 	var targets []harness.Adapter
+
 	for _, a := range harness.Adapters() {
 		if (only == "" || a.Name == only) && a.Installed() {
 			targets = append(targets, a)
 		}
 	}
+
 	if len(targets) == 0 {
 		found := "no harness found; install Claude Code or Codex CLI and run it once"
 		if only != "" {
 			found = only + " not found; install it and run it once"
 		}
+
 		fmt.Fprintf(stderr, "handrail sync: %s\n", found)
 	}
+
 	return targets
 }
 
@@ -109,22 +126,28 @@ func installHooks(targets []harness.Adapter, bin string, effective []*rule.Rule,
 	// One harness's broken config must not leave the others unsynced, so the
 	// loop reports the failure, names the harness, and carries on.
 	failed := false
+
 	for _, a := range targets {
 		entries, changed, err := a.Install(bin)
 		if err != nil {
 			fmt.Fprintf(stderr, "handrail: %s: %v\n", a.Name, err)
+
 			failed = true
+
 			continue
 		}
+
 		if changed {
 			fmt.Fprintf(stdout, "%s: wrote %d hook entries to %s\n", a.Name, entries, a.ConfigPath())
 		} else {
 			fmt.Fprintf(stdout, "%s: %d hook entries already current in %s\n", a.Name, entries, a.ConfigPath())
 		}
+
 		for _, line := range a.Report(effective) {
 			fmt.Fprintf(stdout, "%s: %s\n", a.Name, line)
 		}
 	}
+
 	return failed
 }
 
@@ -135,8 +158,10 @@ func excludeLocal(root string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+
 	if added {
 		fmt.Fprintln(stdout, "handrail: added .handrail/local/ to .git/info/exclude")
 	}
+
 	return nil
 }

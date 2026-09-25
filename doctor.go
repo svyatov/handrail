@@ -18,6 +18,7 @@ import (
 func cmdDoctor(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+
 	if !parseFlags(fs, args, stderr) {
 		return 1
 	}
@@ -34,16 +35,21 @@ func cmdDoctor(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
+
 		return 1
 	}
+
 	rs := rule.Load(cwd)
 
 	for _, a := range harness.Adapters() {
 		fmt.Fprintln(stdout)
+
 		if !a.Installed() {
 			r.notef("%s: not installed", a.Name)
+
 			continue
 		}
+
 		r.okf("%s: config at %s", a.Name, a.ConfigPath())
 		r.checkEntries(a, bin)
 		// Degradation is reported at sync time and reprintable here: a rule
@@ -61,11 +67,13 @@ func cmdDoctor(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	for _, p := range rs.Invalid() {
 		r.badf("%s: %s", p.Path, p.Message)
 	}
+
 	r.okf("%s valid", countRules(len(rs.Rules)))
 
 	if r.problems > 0 {
 		return 1
 	}
+
 	return 0
 }
 
@@ -97,9 +105,12 @@ func (r *report) checkEntries(a harness.Adapter, bin string) {
 	entries, err := a.Entries()
 	if err != nil {
 		r.badf("%s: %v", a.Name, err)
+
 		return
 	}
+
 	current := 0
+
 	for _, e := range entries {
 		switch {
 		case e.Binary == "":
@@ -116,6 +127,7 @@ func (r *report) checkEntries(a harness.Adapter, bin string) {
 			current++
 		}
 	}
+
 	if current == len(entries) {
 		r.okf("%s: %d hook entries current", a.Name, current)
 	}
@@ -127,16 +139,20 @@ func (r *report) checkEntries(a harness.Adapter, bin string) {
 func (r *report) checkTiers(rs *rule.Ruleset) {
 	for _, t := range rs.Tiers {
 		trusted := ""
+
 		switch {
 		case t.Dir == "":
 			r.badf("%s: no config directory: set HOME or XDG_CONFIG_HOME", t.Name)
+
 			continue
 		case t.Skipped:
 			r.badf("%s: %s holds rules this machine has not trusted; run handrail trust", t.Name, t.Dir)
+
 			continue
 		case t.Name == rule.TierProjectShared && t.Trusted:
 			trusted = ", trusted"
 		}
+
 		r.okf("%s: %s in %s%s", t.Name, countRules(t.Count), t.Dir, trusted)
 	}
 }
@@ -161,6 +177,7 @@ func (r *report) checkExclusion(rs *rule.Ruleset) {
 // execute. A directory or a lost exec bit is a hook entry that fires nothing.
 func runnable(path string) bool {
 	fi, err := os.Stat(path)
+
 	return err == nil && fi.Mode().IsRegular() && fi.Mode().Perm()&0o111 != 0
 }
 
@@ -168,5 +185,6 @@ func countRules(n int) string {
 	if n == 1 {
 		return "1 rule"
 	}
+
 	return fmt.Sprintf("%d rules", n)
 }

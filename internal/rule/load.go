@@ -64,11 +64,13 @@ type Ruleset struct {
 // full set, shadowed and disabled included, for reporting on the load itself.
 func (rs *Ruleset) Effective() []*Rule {
 	var out []*Rule
+
 	for _, r := range rs.Rules {
 		if r.Live() {
 			out = append(out, r)
 		}
 	}
+
 	return out
 }
 
@@ -85,6 +87,7 @@ func (rs *Ruleset) Invalid() []Problem {
 			out = append(out, Problem{Path: r.Path, Message: RefusedAgentOnly})
 		}
 	}
+
 	return out
 }
 
@@ -106,11 +109,13 @@ func Load(cwd string) *Ruleset {
 	if cwd != "" {
 		root = RepoRoot(cwd)
 	}
+
 	rs := &Ruleset{Root: root}
 	inRoot := func(dir func(string) string) string {
 		if root == "" {
 			return ""
 		}
+
 		return dir(root)
 	}
 
@@ -120,6 +125,7 @@ func Load(cwd string) *Ruleset {
 	// a shared namesake out just as the parsed rule would. Every problem so far
 	// is the Global tier's.
 	byName := make(map[string]*Rule)
+
 	for _, p := range rs.Problems {
 		if name, ok := strings.CutSuffix(filepath.Base(p.Path), ".md"); ok {
 			byName[name] = &Rule{Name: name, Path: p.Path, Tier: TierGlobal}
@@ -131,21 +137,26 @@ func Load(cwd string) *Ruleset {
 	// A tier's identity is its supply: a .handrail/local/ the repository
 	// supplies is read as part of the shared tier, gated and add-only with it.
 	shared, local := inRoot(sharedDir), inRoot(LocalDir)
+
 	if root != "" {
 		rs.Demoted = demotion(root)
 	}
+
 	if rs.Demoted == "" {
 		rs.gather(local, Tier{Name: TierProjectShared, Dir: shared, Trusted: isTrusted(root)}, shared)
 		rs.gather(local, Tier{Name: TierProjectPersonal, Dir: local, Trusted: true}, local)
 	} else {
 		rs.gather(local, Tier{Name: TierProjectShared, Dir: shared, Trusted: isTrusted(root)}, shared, local)
+
 		for _, r := range slices.Concat(rs.Rules, rs.Untrusted) {
 			if strings.HasPrefix(r.Path, local+string(filepath.Separator)) {
 				r.DemotedFrom = TierProjectPersonal
 			}
 		}
 	}
+
 	rs.shadow(byName)
+
 	return rs
 }
 
@@ -160,11 +171,14 @@ func (rs *Ruleset) gather(skip string, t Tier, dirs ...string) {
 		for i := range problems {
 			problems[i].Untrusted = !t.Trusted
 		}
+
 		rs.Problems = append(rs.Problems, problems...)
+
 		if t.Trusted {
 			for _, r := range rules {
 				r.Tier = t.Name
 			}
+
 			t.Count = len(rules)
 			rs.Rules = append(rs.Rules, rules...)
 		} else {
@@ -172,6 +186,7 @@ func (rs *Ruleset) gather(skip string, t Tier, dirs ...string) {
 			rs.Untrusted = append(rs.Untrusted, rules...)
 		}
 	}
+
 	rs.Tiers = append(rs.Tiers, t)
 }
 
@@ -186,10 +201,13 @@ func (rs *Ruleset) shadow(byName map[string]*Rule) {
 	for _, r := range rs.Rules {
 		if global := byName[r.Name]; global != nil && global.Tier == TierGlobal && r.Tier == TierProjectShared {
 			r.DroppedBy = global
+
 			continue
 		}
+
 		byName[r.Name] = r
 	}
+
 	for _, r := range rs.Rules {
 		if effective := byName[r.Name]; effective != r && r.DroppedBy == nil {
 			r.ShadowedBy = effective
@@ -232,8 +250,10 @@ func xdgSubdir(env, fallback string) string {
 		if err != nil {
 			return ""
 		}
+
 		base = filepath.Join(home, fallback)
 	}
+
 	return filepath.Join(base, "handrail")
 }
 
@@ -244,11 +264,13 @@ func demotion(root string) string {
 	if _, err := os.Lstat(LocalDir(root)); err != nil {
 		return ""
 	}
+
 	for _, dir := range []string{sharedDir(root), LocalDir(root)} {
 		if fi, err := os.Lstat(dir); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
 			return dir + " is a symlink"
 		}
 	}
+
 	tracked, err := gitindex.Under(root, sharedName+"/"+localName)
 	switch {
 	case err != nil:
@@ -256,6 +278,7 @@ func demotion(root string) string {
 	case tracked:
 		return excludeLine + " is in the git index"
 	}
+
 	return ""
 }
 
@@ -268,8 +291,11 @@ func demotion(root string) string {
 // gives it more than one. A dir that is a symlink is followed, one inside a
 // dir is not. shared marks the Project-shared tier, which refuses agent_only.
 func load(skip string, shared bool, dirs ...string) ([]*Rule, []Problem) {
-	var rules []*Rule
-	var problems []Problem
+	var (
+		rules    []*Rule
+		problems []Problem
+	)
+
 	skipped, _ := os.Stat(skip) // nil where there is nothing to skip
 
 	for _, dir := range dirs {
@@ -279,24 +305,33 @@ func load(skip string, shared bool, dirs ...string) ([]*Rule, []Problem) {
 				if rel == "." && errors.Is(err, fs.ErrNotExist) {
 					return nil
 				}
+
 				problems = append(problems, Problem{Path: p, Message: err.Error()})
+
 				return nil
 			}
+
 			if d.IsDir() {
 				if skips(d, rel, skipped) {
 					return fs.SkipDir
 				}
+
 				return nil
 			}
+
 			if !strings.HasSuffix(d.Name(), ".md") {
 				return nil
 			}
+
 			r, err := readRule(p, strings.TrimSuffix(d.Name(), ".md"), shared)
 			if err != nil {
 				problems = append(problems, Problem{Path: p, Message: err.Error()})
+
 				return nil //nolint:nilerr // the walk reports bad rules, it does not abort on them
 			}
+
 			rules = append(rules, r)
+
 			return nil
 		})
 		if err != nil {
@@ -308,6 +343,7 @@ func load(skip string, shared bool, dirs ...string) ([]*Rule, []Problem) {
 		return cmp.Or(strings.Compare(a.Name, b.Name), strings.Compare(a.Path, b.Path))
 	})
 	kept, duplicates := unique(rules)
+
 	return kept, append(problems, duplicates...)
 }
 
@@ -315,6 +351,7 @@ func load(skip string, shared bool, dirs ...string) ([]*Rule, []Problem) {
 // started from.
 func skips(d fs.DirEntry, rel string, skipped fs.FileInfo) bool {
 	info, err := d.Info()
+
 	return err == nil && rel != "." && os.SameFile(info, skipped)
 }
 
@@ -325,6 +362,7 @@ func readRule(p, name string, shared bool) (*Rule, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	r, err := Parse(name, data)
 	if err != nil {
 		return nil, err
@@ -335,10 +373,13 @@ func readRule(p, name string, shared bool) (*Rule, error) {
 	if shared && r.AgentOnly {
 		r.AgentOnly, r.LostAgentOnly = false, true
 	}
+
 	if err := r.checkAgentOnly(); err != nil {
 		return nil, err
 	}
+
 	r.Path = p
+
 	return r, nil
 }
 
@@ -354,10 +395,13 @@ func unique(rules []*Rule) ([]*Rule, []Problem) {
 				Path:    r.Path,
 				Message: fmt.Sprintf("duplicate rule name %q (also at %s)", r.Name, rules[i-1].Path),
 			})
+
 			continue
 		}
+
 		kept = append(kept, r)
 	}
+
 	return kept, problems
 }
 
@@ -378,14 +422,17 @@ func RepoRoot(dir string) string {
 	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = resolved
 	}
+
 	for d := dir; ; {
 		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil {
 			return d
 		}
+
 		parent := filepath.Dir(d)
 		if parent == d {
 			return dir
 		}
+
 		d = parent
 	}
 }

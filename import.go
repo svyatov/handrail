@@ -26,26 +26,36 @@ func cmdImport(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	// than the name of something to convert.
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		fmt.Fprint(stderr, importUsage)
+
 		return 1
 	}
+
 	if args[0] != "hookify" {
 		fmt.Fprintf(stderr, "handrail import: unknown format %q; known: hookify\n", args[0])
+
 		return 1
 	}
+
 	fs := flag.NewFlagSet("import", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+
 	if err := fs.Parse(args[1:]); err != nil {
 		return 1
 	}
+
 	if fs.NArg() > 1 {
 		fmt.Fprintf(stderr, "handrail import: unexpected argument %q\n", fs.Arg(1))
+
 		return 1
 	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
+
 		return 1
 	}
+
 	root := rule.RepoRoot(cwd)
 
 	// Upstream reads .claude/ from the repo root, so that is where the import
@@ -56,12 +66,16 @@ func cmdImport(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 			src = filepath.Join(cwd, src)
 		}
 	}
+
 	results, err := rule.ImportHookify(src, rule.LocalDir(root))
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail import: %v\n", err)
+
 		return 1
 	}
+
 	reportImport(stdout, root, results)
+
 	return 0
 }
 
@@ -69,15 +83,21 @@ func cmdImport(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 // one's reason, then counts both.
 func reportImport(w io.Writer, root string, results []rule.Imported) {
 	imported, skipped := 0, 0
+
 	for _, r := range results {
 		if r.Reason != "" {
 			skipped++
+
 			fmt.Fprintf(w, "skipped  %s: %s\n", relTo(root, r.Source), r.Reason)
+
 			continue
 		}
+
 		imported++
+
 		fmt.Fprintf(w, "imported %s -> %s\n", relTo(root, r.Source), relTo(root, r.Target))
 	}
+
 	fmt.Fprintf(w, "%d imported, %d skipped\n", imported, skipped)
 }
 
@@ -88,5 +108,6 @@ func relTo(root, path string) string {
 	if err != nil || strings.HasPrefix(rel, "..") {
 		return path
 	}
+
 	return rel
 }

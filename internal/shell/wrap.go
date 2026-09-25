@@ -27,11 +27,14 @@ func (r *reader) level(c *call, i, j int) {
 	if i >= j || c.seen[i] {
 		return
 	}
+
 	c.seen[i] = true
+
 	to := c.to
 	if j < len(c.args) {
 		to = c.args[j-1]
 	}
+
 	r.add(r.src(c.args[i], to), strings.Join(c.words[i:j], " "))
 	r.follow(c, i, j)
 }
@@ -43,25 +46,33 @@ func (r *reader) follow(c *call, i, j int) {
 	// An expansion in command position runs code the call does not hold.
 	if !literal(c.args[i]) {
 		r.gaveUp = true
+
 		return
 	}
+
 	name := path.Base(c.words[i])
 	r.listed(c, name, i+1, j)
+
 	switch name {
 	case "sh", "bash", "zsh", "dash", "ksh", "mksh":
 		r.shell(c, i+1, j)
+
 		return
 	case "eval":
 		r.eval(c, i+1, j)
+
 		return
 	case "find":
 		r.find(c, i+1, j)
+
 		return
 	}
+
 	g, k := wrappers[name], i+1
 	if g == nil && k < j {
 		g, k = wrappers[name+" "+c.words[k]], k+1
 	}
+
 	if g != nil {
 		c.detached = c.detached || g.detaches
 		s := scan{r: r, c: c, g: g, j: j, done: map[int]bool{}}
@@ -74,6 +85,7 @@ func (r *reader) eval(c *call, i, j int) {
 	if i < j && c.words[i] == "--" {
 		i++
 	}
+
 	r.code(c.text(i, j))
 }
 
@@ -87,6 +99,7 @@ func (r *reader) find(c *call, i, j int) {
 			for end < j && c.words[end] != ";" && (c.words[end] != "+" || c.words[end-1] != "{}") {
 				end++
 			}
+
 			r.level(c, k+1, end)
 			k = end
 		}
@@ -99,6 +112,7 @@ func (r *reader) find(c *call, i, j int) {
 // whatever the operands.
 func (r *reader) shell(c *call, i, j int) {
 	var o shellOptions
+
 	k := o.read(c, i, j)
 	switch {
 	case o.command:
@@ -125,11 +139,14 @@ func (o *shellOptions) read(c *call, i, j int) int {
 		if w == "-" || w == "--" {
 			return k + 1
 		}
+
 		if len(w) < 2 || w[0] != '-' && w[0] != '+' {
 			break
 		}
+
 		k += o.option(w)
 	}
+
 	return k
 }
 
@@ -140,9 +157,12 @@ func (o *shellOptions) option(w string) int {
 		if w == "--rcfile" || w == "--init-file" {
 			return 1
 		}
+
 		return 0
 	}
+
 	n := 0
+
 	for _, f := range w[1:] {
 		switch f {
 		case 'c':
@@ -153,6 +173,7 @@ func (o *shellOptions) option(w string) int {
 			n++
 		}
 	}
+
 	return n
 }
 
@@ -163,13 +184,16 @@ func (r *reader) stdin(c *call) {
 	if c.detached {
 		return
 	}
+
 	if r.fed[c.st] {
 		r.gaveUp = true
 	}
+
 	for _, rd := range c.st.Redirs {
 		if rd.N != nil && rd.N.Value != "0" {
 			continue
 		}
+
 		switch rd.Op {
 		case syntax.Hdoc, syntax.DashHdoc:
 			r.heredoc(rd)
@@ -217,6 +241,7 @@ func literal(w *syntax.Word) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -393,22 +418,28 @@ func (g *grammar) lookup(name string, long bool) (full string, a arity, found bo
 		if name == ":" || name == "?" || i < 0 {
 			return "", either, false
 		}
+
 		return name, marked(g.short[i+1:]), true
 	}
+
 	matches := 0
+
 	for f := range strings.FieldsSeq(g.long) {
 		bare := strings.TrimRight(f, "=?")
 		if bare == name {
 			return bare, marked(f[len(bare):]), true
 		}
+
 		if strings.HasPrefix(bare, name) {
 			full, a = bare, marked(f[len(bare):])
 			matches++
 		}
 	}
+
 	if matches != 1 {
 		return "", either, false
 	}
+
 	return full, a, true
 }
 
@@ -428,6 +459,7 @@ func marked(rest string) arity {
 	case rest[0] == '?':
 		return either
 	}
+
 	return none
 }
 
@@ -451,11 +483,14 @@ func (s *scan) from(k int) {
 	if s.done[k] {
 		return
 	}
+
 	s.done[k] = true
 	if k >= s.j {
 		s.operands(k)
+
 		return
 	}
+
 	w := s.c.words[k]
 	switch {
 	case w == "--":
@@ -475,16 +510,20 @@ func (s *scan) from(k int) {
 // or else in the next word.
 func (s *scan) long(k int, w string) {
 	name, value, attached := strings.Cut(w[2:], "=")
+
 	a, full := s.flag(name, true)
 	if slices.Contains(s.g.stop, full) {
 		return
 	}
+
 	if slices.Contains(s.g.script, full) {
 		s.script(k, value, attached)
 	}
+
 	if a != none && !attached {
 		s.from(k + 2)
 	}
+
 	if a != one || attached {
 		s.from(k + 1)
 	}
@@ -498,24 +537,30 @@ func (s *scan) cluster(k int, w string) {
 		if slices.Contains(s.g.stop, full) {
 			return
 		}
+
 		if slices.Contains(s.g.script, full) {
 			s.script(k, w[i+1:], i < len(w)-1)
 		}
+
 		if a == none {
 			continue
 		}
+
 		if a == attached {
 			break
 		}
+
 		if i == len(w)-1 {
 			s.from(k + 2)
 		} else {
 			s.from(k + 1)
 		}
+
 		if a == one {
 			return
 		}
 	}
+
 	s.from(k + 1)
 }
 
@@ -526,6 +571,7 @@ func (s *scan) flag(name string, long bool) (arity, string) {
 	if !found {
 		s.r.gaveUp = true
 	}
+
 	return a, full
 }
 
@@ -533,8 +579,11 @@ func (s *scan) flag(name string, long bool) (arity, string) {
 // else the next word. A program that splits it into the first words of its
 // command, as env -S does, keeps it for the operands that follow.
 func (s *scan) script(k int, rest string, attached bool) {
-	var text string
-	var lit bool
+	var (
+		text string
+		lit  bool
+	)
+
 	switch {
 	case attached:
 		text, lit = rest, literal(s.c.args[k])
@@ -543,10 +592,13 @@ func (s *scan) script(k int, rest string, attached bool) {
 	default:
 		return
 	}
+
 	if s.g.splits {
 		s.split, s.splitLiteral = text, lit
+
 		return
 	}
+
 	s.r.code(text, lit)
 }
 
@@ -556,6 +608,7 @@ func (s *scan) operands(k int) {
 	if s.split != "" {
 		s.splitCode(k)
 	}
+
 	switch {
 	case k >= s.j:
 	case s.g.dashC && (s.c.words[k] == "-c" || s.c.words[k] == "--command"):
@@ -576,8 +629,10 @@ func (s *scan) assigns(k int) int {
 		if s.c.words[k] != "-" && (!ok || !syntax.ValidName(name)) {
 			break
 		}
+
 		k++
 	}
+
 	return k
 }
 
@@ -590,5 +645,6 @@ func (s *scan) splitCode(k int) {
 		words = append(words, quoted)
 		lit = lit && literal(s.c.args[i])
 	}
+
 	s.r.code(strings.Join(words, " "), lit)
 }

@@ -110,6 +110,7 @@ func IsKind(name string) bool {
 	case "shell", "file_edit", "file_read", "mcp", "agent", "network", "other":
 		return true
 	}
+
 	return false
 }
 
@@ -121,6 +122,7 @@ func IsField(name string) bool {
 		"server", "tool", "prompt", "response", "agent_type", "agent_prompt", "model", "url", "domain", "network_grant", "unsandboxed", "unreadable":
 		return true
 	}
+
 	return false
 }
 
@@ -147,11 +149,14 @@ func Parse(name string, data []byte) (*Rule, error) {
 
 	r := &Rule{Name: name, Action: Warn, Enabled: true, Message: strings.TrimSpace(body)}
 	seen := make(map[string]bool, len(doc.mapping))
+
 	var kindLine, actionLine int
+
 	for _, kv := range doc.mapping {
 		if seen[kv.key] {
 			return nil, fmt.Errorf("line %d: duplicate field %q", kv.line, kv.key)
 		}
+
 		seen[kv.key] = true
 		switch kv.key {
 		case "kind":
@@ -159,6 +164,7 @@ func Parse(name string, data []byte) (*Rule, error) {
 		case "action":
 			actionLine = kv.line
 		}
+
 		if err := r.setField(kv); err != nil {
 			return nil, err
 		}
@@ -167,9 +173,11 @@ func Parse(name string, data []byte) (*Rule, error) {
 	if err := r.checkEvent(kindLine, actionLine); err != nil {
 		return nil, err
 	}
+
 	if err := r.checkRequired(); err != nil {
 		return nil, err
 	}
+
 	return r, nil
 }
 
@@ -186,13 +194,16 @@ func (r *Rule) setField(kv pair) (err error) {
 		return boolInto(kv, &r.Enabled)
 	case "agent_only":
 		r.agentOnlyLine = kv.line
+
 		return boolInto(kv, &r.AgentOnly)
 	case "conditions":
 		return r.setConditions(kv)
 	case "examples":
 		r.Examples, err = parseExamples(kv)
+
 		return err
 	}
+
 	return fmt.Errorf("line %d: unknown frontmatter field %q", kv.line, kv.key)
 }
 
@@ -201,9 +212,11 @@ func oneOf(kv pair, dst *string, valid func(string) bool) error {
 	if err := scalarInto(kv, dst); err != nil {
 		return err
 	}
+
 	if !valid(*dst) {
 		return fmt.Errorf("line %d: unknown %s %q", kv.line, kv.key, *dst)
 	}
+
 	return nil
 }
 
@@ -214,11 +227,14 @@ func (r *Rule) setAction(kv pair) error {
 	if err := scalarInto(kv, &v); err != nil {
 		return err
 	}
+
 	i := slices.Index(outcomes[:], v)
 	if i <= int(Allow) {
 		return fmt.Errorf("line %d: unknown action %q", kv.line, v)
 	}
+
 	r.Action = Outcome(i)
+
 	return nil
 }
 
@@ -228,12 +244,15 @@ func (r *Rule) setConditions(kv pair) (err error) {
 	if kv.val.seq == nil {
 		return fmt.Errorf("line %d: conditions must be a list", kv.line)
 	}
+
 	if r.Conditions, err = parseConditions(kv.val); err != nil {
 		return err
 	}
+
 	for _, c := range r.Conditions {
 		for i := range c.Terms {
 			t := &c.Terms[i]
+
 			t.slot = slices.Index(r.fields, t.Field)
 			if t.slot < 0 {
 				t.slot = len(r.fields)
@@ -241,6 +260,7 @@ func (r *Rule) setConditions(kv pair) (err error) {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -251,6 +271,7 @@ func (r *Rule) checkRequired() error {
 	if !r.Enabled {
 		return nil
 	}
+
 	if r.Event == "" {
 		return errors.New(`line 1: missing required field "event"`)
 	}
@@ -259,6 +280,7 @@ func (r *Rule) checkRequired() error {
 	if r.Message == "" {
 		return errors.New("line 1: rule has no message")
 	}
+
 	return nil
 }
 
@@ -273,6 +295,7 @@ func (r *Rule) checkAgentOnly() error {
 	case r.AgentOnly && (StopEvent(r.Event) || r.Event == "SessionEnd"):
 		return fmt.Errorf("line %d: agent_only is refused on %s, where a warn tells only the human", r.agentOnlyLine, r.Event)
 	}
+
 	return nil
 }
 
@@ -289,6 +312,7 @@ func (r *Rule) checkEvent(kindLine, actionLine int) error {
 	if r.Event == "" {
 		return nil
 	}
+
 	tool := ToolEvent(r.Event)
 	if r.Kind != "" && !tool {
 		return fmt.Errorf("line %d: kind applies only to PreToolUse and PostToolUse", kindLine)
@@ -305,9 +329,11 @@ func (r *Rule) checkEvent(kindLine, actionLine int) error {
 			return fmt.Errorf("line %d: block is refused on %s, where no harness can deny", actionLine, r.Event)
 		}
 	}
+
 	if err := r.checkConditions(); err != nil {
 		return err
 	}
+
 	return r.checkExamples()
 }
 
@@ -320,6 +346,7 @@ func (r *Rule) checkConditions() error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -331,10 +358,12 @@ func (r *Rule) checkExamples() error {
 		if err := CheckCall(r.Event, e.Fields); err != nil {
 			return fmt.Errorf("line %d: %w", e.Line, err)
 		}
+
 		if e.Kind == "" {
 			e.Kind = r.Kind
 		}
 	}
+
 	return nil
 }
 
@@ -358,6 +387,7 @@ func carries(event, field string) bool {
 	case event == "SubagentStop":
 		return field == "agent_type" || field == "response"
 	}
+
 	return ToolEvent(event) && field != "prompt"
 }
 
@@ -369,13 +399,16 @@ func parseFrontmatter(data []byte) (doc *node, body string, err error) {
 	if err != nil {
 		return nil, "", err
 	}
+
 	doc, err = parseYAML(strings.Split(fm, "\n"))
 	if err != nil {
 		return nil, "", err
 	}
+
 	if !doc.isMapping() {
 		return nil, "", errors.New("line 2: frontmatter must be a mapping")
 	}
+
 	return doc, body, nil
 }
 
@@ -384,11 +417,13 @@ func splitFrontmatter(s string) (frontmatter, body string, err error) {
 	if strings.TrimRight(lines[0], " ") != "---" {
 		return "", "", errors.New("line 1: missing YAML frontmatter")
 	}
+
 	for i := 1; i < len(lines); i++ {
 		if strings.TrimRight(lines[i], " ") == "---" {
 			return strings.Join(lines[1:i], "\n"), strings.Join(lines[i+1:], "\n"), nil
 		}
 	}
+
 	return "", "", errors.New("line 1: unterminated YAML frontmatter")
 }
 
@@ -396,7 +431,9 @@ func scalarInto(kv pair, dst *string) error {
 	if !kv.val.isScalar {
 		return fmt.Errorf("line %d: %s must be a single value", kv.line, kv.key)
 	}
+
 	*dst = kv.val.scalar
+
 	return nil
 }
 
@@ -405,10 +442,13 @@ func boolInto(kv pair, dst *bool) error {
 	if err := scalarInto(kv, &v); err != nil {
 		return err
 	}
+
 	if v != "true" && v != "false" {
 		return fmt.Errorf("line %d: %s must be true or false", kv.line, kv.key)
 	}
+
 	*dst = v == "true"
+
 	return nil
 }
 
@@ -418,20 +458,26 @@ func parseConditions(list *node) ([]Condition, error) {
 		if !item.isMapping() {
 			return nil, fmt.Errorf("line %d: condition must be a mapping", item.line)
 		}
+
 		if !item.has("any") {
 			t, err := parseTerm(item)
 			if err != nil {
 				return nil, err
 			}
+
 			out = append(out, Condition{Terms: []Term{*t}})
+
 			continue
 		}
+
 		c, err := parseAny(item)
 		if err != nil {
 			return nil, err
 		}
+
 		out = append(out, c)
 	}
+
 	return out, nil
 }
 
@@ -440,44 +486,55 @@ func parseAny(item *node) (Condition, error) {
 	if len(item.mapping) != 1 {
 		return Condition{}, fmt.Errorf("line %d: any must be a condition's only key", item.line)
 	}
+
 	group := item.mapping[0]
 	if group.val.seq == nil {
 		return Condition{}, fmt.Errorf("line %d: any must be a list", group.line)
 	}
+
 	terms := make([]Term, 0, len(group.val.seq))
 	for _, sub := range group.val.seq {
 		if !sub.isMapping() {
 			return Condition{}, fmt.Errorf("line %d: condition must be a mapping", sub.line)
 		}
+
 		if sub.has("any") {
 			return Condition{}, fmt.Errorf("line %d: any groups cannot nest", sub.line)
 		}
+
 		t, err := parseTerm(sub)
 		if err != nil {
 			return Condition{}, err
 		}
+
 		terms = append(terms, *t)
 	}
+
 	return Condition{Terms: terms}, nil
 }
 
 func parseTerm(n *node) (*Term, error) {
 	t := &Term{}
+
 	var ops []string
+
 	seen := make(map[string]bool, len(n.mapping))
 	for _, kv := range n.mapping {
 		if seen[kv.key] {
 			return nil, fmt.Errorf("line %d: duplicate field %q", kv.line, kv.key)
 		}
+
 		seen[kv.key] = true
 		if !kv.val.isScalar {
 			return nil, fmt.Errorf("line %d: %s must be a single value", kv.line, kv.key)
 		}
+
 		switch {
 		case kv.key == "field":
 			if !IsField(kv.val.scalar) {
 				return nil, fmt.Errorf("line %d: unknown condition field %q", kv.line, kv.val.scalar)
 			}
+
 			t.Field = kv.val.scalar
 		case isOperator(kv.key):
 			ops = append(ops, kv.key)
@@ -486,12 +543,15 @@ func parseTerm(n *node) (*Term, error) {
 			return nil, fmt.Errorf("line %d: unknown condition key %q", kv.line, kv.key)
 		}
 	}
+
 	if err := t.complete(n.line, ops); err != nil {
 		return nil, err
 	}
+
 	if err := t.compile(); err != nil {
 		return nil, err
 	}
+
 	return t, nil
 }
 
@@ -506,6 +566,7 @@ func (t *Term) complete(line int, ops []string) error {
 	case len(ops) > 1:
 		return fmt.Errorf("line %d: condition has %d operators: %s", line, len(ops), strings.Join(ops, ", "))
 	}
+
 	return nil
 }
 
@@ -519,20 +580,24 @@ func (t *Term) compile() error {
 	if clean := path.Clean(t.Value); t.Field == "path" && (op == "glob" || op == "equals") && clean != t.Value {
 		return fmt.Errorf("line %d: path value %q is not clean, write %q", t.line, t.Value, clean)
 	}
+
 	switch op {
 	case "matches":
 		re, err := regexp.Compile(t.Value)
 		if err != nil {
 			return fmt.Errorf("line %d: invalid regexp: %w", t.line, err)
 		}
+
 		t.re = re
 	case "glob":
 		re, err := globToRegexp(t.Value)
 		if err != nil {
 			return fmt.Errorf("line %d: invalid glob: %w", t.line, err)
 		}
+
 		t.re = re
 	}
+
 	return nil
 }
 
@@ -542,16 +607,19 @@ func (t *Term) compile() error {
 func globToRegexp(pattern string) (*regexp.Regexp, error) {
 	var b strings.Builder
 	b.WriteByte('^')
+
 	for i := 0; i < len(pattern); i++ {
 		switch pattern[i] {
 		case '\\':
 			if i == len(pattern)-1 {
 				return nil, errors.New("trailing backslash")
 			}
+
 			i++
 			b.WriteString(regexp.QuoteMeta(pattern[i : i+1]))
 		case '*':
 			var star string
+
 			star, i = globStar(pattern, i)
 			b.WriteString(star)
 		case '?':
@@ -561,13 +629,17 @@ func globToRegexp(pattern string) (*regexp.Regexp, error) {
 			if err != nil {
 				return nil, err
 			}
+
 			b.WriteString(class)
+
 			i = end
 		default:
 			b.WriteString(regexp.QuoteMeta(pattern[i : i+1]))
 		}
 	}
+
 	b.WriteByte('$')
+
 	return regexp.Compile(b.String())
 }
 
@@ -586,6 +658,7 @@ func globStar(pattern string, i int) (re string, end int) {
 	case atBoundary && i+2 == len(pattern) && pattern[i+1] == '*':
 		return `.*`, i + 1
 	}
+
 	return `[^/]*`, i
 }
 
@@ -595,29 +668,39 @@ func globStar(pattern string, i int) (re string, end int) {
 func globClass(pattern string, start int) (class string, end int, err error) {
 	var b strings.Builder
 	b.WriteByte('[')
+
 	i := start + 1
 	if i < len(pattern) && pattern[i] == '^' {
 		b.WriteByte('^')
+
 		i++
 	}
+
 	if i >= len(pattern) || pattern[i] == ']' {
 		return "", 0, errors.New("empty character class")
 	}
+
 	for ; i < len(pattern) && pattern[i] != ']'; i++ {
 		if pattern[i] != '\\' {
 			b.WriteByte(pattern[i])
+
 			continue
 		}
+
 		if i == len(pattern)-1 {
 			return "", 0, errors.New("trailing backslash")
 		}
+
 		i++
 		writeClassEscape(&b, pattern[i])
 	}
+
 	if i >= len(pattern) {
 		return "", 0, errors.New("unterminated character class")
 	}
+
 	b.WriteByte(']')
+
 	return b.String(), i, nil
 }
 
@@ -628,6 +711,7 @@ func writeClassEscape(b *strings.Builder, c byte) {
 	if !isAlphanumeric(c) {
 		b.WriteByte('\\')
 	}
+
 	b.WriteByte(c)
 }
 

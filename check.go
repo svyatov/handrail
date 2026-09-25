@@ -54,6 +54,7 @@ type checkOutput struct {
 func cmdCheck(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+
 	asJSON := fs.Bool("json", false, "print the effective ruleset as JSON")
 	if !parseFlags(fs, args, stderr) {
 		return 1
@@ -62,13 +63,17 @@ func cmdCheck(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	rs, err := loadRules(stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
+
 		return 1
 	}
 
 	problems := rs.Invalid()
+
 	var examplesFailed bool
+
 	if *asJSON {
 		var out checkOutput
+
 		out, examplesFailed = checkReport(rs, problems)
 		if code := writeJSON(stdout, stderr, out); code != 0 {
 			return code
@@ -76,8 +81,10 @@ func cmdCheck(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	} else {
 		if err := printRuleset(stdout, rs.Rules); err != nil {
 			fmt.Fprintf(stderr, "handrail: %v\n", err)
+
 			return 1
 		}
+
 		reportProblems(problems, stderr)
 		reportTierMoves(rs, stderr)
 		examplesFailed = reportExamples(slices.Concat(rs.Rules, rs.Untrusted), stderr)
@@ -86,6 +93,7 @@ func cmdCheck(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	if examplesFailed || len(problems) > 0 {
 		return 1
 	}
+
 	return 0
 }
 
@@ -93,6 +101,7 @@ func cmdCheck(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 // whether any Example failed.
 func checkReport(rs *rule.Ruleset, problems []rule.Problem) (checkOutput, bool) {
 	var examplesFailed bool
+
 	out := checkOutput{
 		Rules:  make([]checkRule, 0, len(rs.Rules)),
 		Errors: make([]checkError, 0, len(problems)),
@@ -102,6 +111,7 @@ func checkReport(rs *rule.Ruleset, problems []rule.Problem) (checkOutput, bool) 
 		examplesFailed = examplesFailed || len(cr.Examples.Failed) > 0
 		out.Rules = append(out.Rules, cr)
 	}
+
 	for _, p := range problems {
 		out.Errors = append(out.Errors, checkError{Path: p.Path, Message: p.Message})
 	}
@@ -110,9 +120,11 @@ func checkReport(rs *rule.Ruleset, problems []rule.Problem) (checkOutput, bool) 
 	for _, r := range rs.Untrusted {
 		for _, e := range harness.FailingExamples(r) {
 			examplesFailed = true
+
 			out.Errors = append(out.Errors, checkError{Path: r.Path, Message: exampleFailure(r, e)})
 		}
 	}
+
 	return out, examplesFailed
 }
 
@@ -124,21 +136,26 @@ func checkRuleOf(r *rule.Rule) checkRule {
 		// A drifted Example belongs to the rule this one replaces, so
 		// it fails here and counts nothing toward this rule's passes.
 		var from *string
+
 		if e.From == r {
 			examples.Passed--
 		} else {
 			from = &e.From.Path
 		}
+
 		fields := make(map[string]any, len(e.Fields))
 		for _, f := range e.Fields {
 			fields[f.Name] = f.Value()
 		}
+
 		examples.Failed = append(examples.Failed, checkExample{Expect: e.Expect, Fields: fields, Line: e.Line, From: from})
 	}
+
 	var demoted *string
 	if r.DemotedFrom != "" {
 		demoted = &r.DemotedFrom
 	}
+
 	return checkRule{
 		Rule:        r.Name,
 		Tier:        r.Tier,
@@ -159,6 +176,7 @@ func pathOf(r *rule.Rule) *string {
 	if r == nil {
 		return nil
 	}
+
 	return &r.Path
 }
 
@@ -166,12 +184,15 @@ func pathOf(r *rule.Rule) *string {
 // and reports whether any failed.
 func reportExamples(rules []*rule.Rule, stderr io.Writer) bool {
 	failed := false
+
 	for _, r := range rules {
 		for _, e := range harness.FailingExamples(r) {
 			fmt.Fprintf(stderr, "handrail: %s: %s\n", r.Path, exampleFailure(r, e))
+
 			failed = true
 		}
 	}
+
 	return failed
 }
 
@@ -185,6 +206,7 @@ func reportTierMoves(rs *rule.Ruleset, stderr io.Writer) {
 		if r.DemotedFrom != "" {
 			fmt.Fprintf(stderr, "handrail: %s: read as Project-shared: %s\n", r.Path, rs.Demoted)
 		}
+
 		if r.DroppedBy != nil {
 			fmt.Fprintf(stderr, "handrail: %s: dropped: a Project-shared rule may not replace the Global rule %s\n",
 				r.Path, r.DroppedBy.Path)
@@ -199,6 +221,7 @@ func exampleFailure(r *rule.Rule, e harness.Failure) string {
 	if e.From != r {
 		line += " of " + e.From.Path
 	}
+
 	return fmt.Sprintf("%s: %s example fails: %s", line, e.Expect, e.Example)
 }
 
@@ -208,10 +231,13 @@ func printRuleset(w io.Writer, rules []*rule.Rule) error {
 	if len(rules) == 0 {
 		return nil
 	}
+
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "TIER\tRULE\tEVENT\tKIND\tACTION\tSTATUS")
+
 	for _, r := range rules {
 		status := "enabled"
+
 		switch {
 		case r.ShadowedBy != nil:
 			status = "shadowed by " + r.ShadowedBy.Tier
@@ -220,8 +246,10 @@ func printRuleset(w io.Writer, rules []*rule.Rule) error {
 		case !r.Enabled:
 			status = "disabled"
 		}
+
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			r.Tier, r.Name, cmp.Or(r.Event, "-"), cmp.Or(r.Kind, "*"), r.Action, status)
 	}
+
 	return tw.Flush()
 }

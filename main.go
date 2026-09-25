@@ -53,14 +53,18 @@ var commands = map[string]func(args []string, stdin io.Reader, stdout, stderr io
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprint(stderr, usage)
+
 		return 1
 	}
+
 	cmd, ok := commands[args[0]]
 	if !ok {
 		fmt.Fprintf(stderr, "handrail: unknown command %q\n\n", args[0])
 		fmt.Fprint(stderr, usage)
+
 		return 1
 	}
+
 	return cmd(args[1:], stdin, stdout, stderr)
 }
 
@@ -70,10 +74,13 @@ func parseFlags(fs *flag.FlagSet, args []string, stderr io.Writer) bool {
 	if err := fs.Parse(args); err != nil {
 		return false
 	}
+
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "handrail %s: unexpected argument %q\n", fs.Name(), fs.Arg(0))
+
 		return false
 	}
+
 	return true
 }
 
@@ -91,10 +98,12 @@ func loadRules(stderr io.Writer) (*rule.Ruleset, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	rs := rule.Load(cwd)
 	if notice := rs.TrustNotice(); notice != "" {
 		fmt.Fprintln(stderr, notice)
 	}
+
 	return rs, nil
 }
 
@@ -106,21 +115,28 @@ func loadValidRules(stderr io.Writer) (*rule.Ruleset, int) {
 	rs, err := loadRules(stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
+
 		return nil, 1
 	}
+
 	if problems := rs.Invalid(); len(problems) > 0 {
 		reportProblems(problems, stderr)
+
 		return nil, 1
 	}
+
 	return rs, 0
 }
 
 func writeJSON(stdout, stderr io.Writer, v any) int {
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
+
 	if err := enc.Encode(v); err != nil {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
+
 		return 1
 	}
+
 	return 0
 }

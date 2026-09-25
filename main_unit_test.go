@@ -34,10 +34,12 @@ func TestCommandsReportAnUnwritableStdout(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			sandboxHome(t)
+
 			var stderr writerSpy
 			if code := c.run(failWriter{}, &stderr); code != 1 {
 				t.Errorf("exit code = %d, want 1", code)
 			}
+
 			if stderr.n == 0 {
 				t.Error("the failure was not reported on stderr")
 			}
@@ -51,6 +53,7 @@ type writerSpy struct{ n int }
 
 func (w *writerSpy) Write(p []byte) (int, error) {
 	w.n += len(p)
+
 	return len(p), nil
 }
 
@@ -76,5 +79,6 @@ func sandboxHome(t *testing.T) string {
 	t.Setenv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
 	t.Chdir(repo)
+
 	return repo
 }

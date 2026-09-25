@@ -17,15 +17,13 @@ linters:
     - ireturn # syntax.Node is the shell library's own interface
     - lll # gofumpt owns layout
     - mnd # the numbers are exit codes and byte offsets the code names in place
-    - nlreturn # blank-line style
     - noinlineerr # `if err := f(); err != nil` is the Go idiom
     - nonamedreturns # named results document two-value returns, see gocritic
     - tagliatelle # JSON tag case is set by each harness's hook protocol, not by us
     - testpackage # the unit tests are white-box on purpose (ADR 0009)
     - varnamelen # short names in short scopes are the Go idiom
     - wrapcheck # an os error already names its path
-    - wsl # blank-line style
-    - wsl_v5 # blank-line style
+    - wsl # deprecated; wsl_v5 replaces it
 
   settings:
     depguard:

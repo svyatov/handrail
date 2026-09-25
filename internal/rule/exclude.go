@@ -25,11 +25,14 @@ func readExclude(root string) (path string, data []byte, err error) {
 	if err != nil || git == "" {
 		return "", nil, err
 	}
+
 	path = filepath.Join(git, "info", "exclude")
+
 	data, err = os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return "", nil, err
 	}
+
 	return path, data, nil
 }
 
@@ -40,6 +43,7 @@ func hasExcludeLine(data []byte) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -51,6 +55,7 @@ func LocalExcluded(root string) (excluded bool, path string, err error) {
 	if err != nil || path == "" {
 		return false, "", err
 	}
+
 	return hasExcludeLine(data), path, nil
 }
 
@@ -66,6 +71,7 @@ func ExcludeLocal(root string) (added bool, err error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return false, err
 	}
+
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return false, err
@@ -76,9 +82,12 @@ func ExcludeLocal(root string) (added bool, err error) {
 	if len(data) > 0 && !strings.HasSuffix(string(data), "\n") {
 		prefix = "\n"
 	}
+
 	if _, err := fmt.Fprint(f, prefix+excludeLine+"\n"); err != nil {
 		_ = f.Close()
+
 		return false, err
 	}
+
 	return true, f.Close()
 }
