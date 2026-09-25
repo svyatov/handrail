@@ -69,7 +69,7 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	problems := slices.Concat(rs.Problems, rs.Refused())
+	problems := rs.Invalid()
 	var examplesFailed bool
 	if *asJSON {
 		out := checkOutput{

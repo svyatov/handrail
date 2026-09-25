@@ -71,13 +71,17 @@ func (rs *Ruleset) Effective() []*Rule {
 	return out
 }
 
-// Refused names every Project-shared rule that set agent_only, trusted or not:
-// an error to the authoring commands, which the hook path does not skip.
-func (rs *Ruleset) Refused() []Problem {
-	var out []Problem
+// RefusedAgentOnly is why a Project-shared rule that set agent_only lost it.
+const RefusedAgentOnly = "agent_only is refused in the Project-shared tier"
+
+// Invalid is every problem the authoring commands refuse: the files the load
+// skipped, then each Project-shared rule that set agent_only, trusted or not,
+// which the hook path keeps rather than skips.
+func (rs *Ruleset) Invalid() []Problem {
+	out := slices.Clone(rs.Problems)
 	for _, r := range slices.Concat(rs.Rules, rs.Untrusted) {
 		if r.LostAgentOnly {
-			out = append(out, Problem{Path: r.Path, Message: "agent_only is refused in the Project-shared tier"})
+			out = append(out, Problem{Path: r.Path, Message: RefusedAgentOnly})
 		}
 	}
 	return out

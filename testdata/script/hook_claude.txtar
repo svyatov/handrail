@@ -68,6 +68,13 @@ stdout '"hookEventName": "PostToolUse"'
 stdout 'handrail block: after-the-fact \(project-shared\)'
 ! stderr .
 
+# Stop still denies through exit 2, with the reason on stderr.
+stdin stop.json
+exec sh -c 'handrail hook claude Stop; echo code=$?'
+stdout '^code=2$'
+stderr '^handrail block: not-done \(project-shared\)$'
+stderr '^Run the tests before you stop\.$'
+
 # Every matching message is delivered, labeled, in tier order.
 stdin bash-curl.json
 exec handrail hook claude PreToolUse
@@ -184,6 +191,14 @@ conditions:
     matches: rm\s+-rf
 ---
 Never delete recursively from the filesystem root.
+-- stop.json --
+{"hook_event_name": "Stop"}
+-- .handrail/not-done.md --
+---
+event: Stop
+action: block
+---
+Run the tests before you stop.
 -- .handrail/after-the-fact.md --
 ---
 event: PostToolUse

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
 
 	"github.com/svyatov/handrail/internal/rule"
 )
@@ -89,7 +88,7 @@ func loadValidRules(stderr io.Writer) (*rule.Ruleset, int) {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return nil, 1
 	}
-	if problems := slices.Concat(rs.Problems, rs.Refused()); len(problems) > 0 {
+	if problems := rs.Invalid(); len(problems) > 0 {
 		for _, p := range problems {
 			fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
 		}

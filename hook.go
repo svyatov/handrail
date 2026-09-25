@@ -147,8 +147,8 @@ func agentOnlyNotice(rules []*rule.Rule) string {
 	if len(lost) == 1 {
 		count = "1 rule"
 	}
-	return fmt.Sprintf("handrail: agent_only is refused in the Project-shared tier, so it was dropped from %s: %s; run handrail check",
-		count, strings.Join(lost, ", "))
+	return fmt.Sprintf("handrail: %s, so it was dropped from %s: %s; run handrail check",
+		rule.RefusedAgentOnly, count, strings.Join(lost, ", "))
 }
 
 // droppedNotice counts the Project-shared files dropped for naming a Global

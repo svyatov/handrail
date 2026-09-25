@@ -31,8 +31,8 @@ stdout 'handrail warn: gap-rules \(project-shared\)'
 stdout '^code=0$'
 
 # A clone's committed rules count for nothing until trusted, so a broken one
-# there loses nothing: the hook path says only what it says of any untrusted
-# tier, and the user's own rule sees no loss.
+# there loses nothing: a tool call names neither the file nor the tier, whose
+# notice waits for SessionStart, and the user's own rule sees no loss.
 env HOME=$WORK/home
 env XDG_CONFIG_HOME=$WORK/home/.config
 cd clone

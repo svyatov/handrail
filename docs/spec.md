@@ -179,9 +179,9 @@ Hardcoded in Go per Adapter, next to its translation knowledge. Per-event: exist
 | Capability | Claude Code (`claude`) | Codex CLI (`codex`) |
 |---|---|---|
 | Model events | All eight | All eight |
-| Block on PreToolUse | Yes: exit 0 with `permissionDecision: "deny"`, the reason in `permissionDecisionReason`, the human text in `systemMessage` | Yes: the same JSON deny |
+| Block on PreToolUse | Yes: exit 0 with `permissionDecision: "deny"`, the reason in `permissionDecisionReason`, the human text in `systemMessage`; where that JSON cannot be written, exit 2 with the reason on stderr | Yes: the same JSON deny |
 | Ask on PreToolUse | Yes (`permissionDecision: "ask"`). Prompts in every permission mode, `bypassPermissions` and `dontAsk` included; a settings `deny` rule still wins. Headless `-p` with no prompt tool resolves it as a deny, with the reason to the model; the SDK and `--permission-prompt-tool` hand it to the host. Another PermissionRequest hook may answer it | No. Codex rejects `ask` as unsupported and fails open, running the call and dropping `additionalContext`, so the Adapter never emits it and an `ask` rule blocks (section 4, Degradation). No hook can reach Codex's approval flow |
-| Block on UserPromptSubmit | Yes: exit 0 with `decision: "block"`, `reason` and `systemMessage` | No: it cannot fail closed before the model request (upstream #33630), so a `block` rule degrades to `warn`, reported at sync |
+| Block on UserPromptSubmit | Yes: exit 0 with `decision: "block"`, `reason` and `systemMessage`; where that JSON cannot be written, exit 2 with the reason on stderr | No: it cannot fail closed before the model request (upstream #33630), so a `block` rule degrades to `warn`, reported at sync |
 | Block on PostToolUse, SessionStart, SessionEnd | No: the tool has already run, or the event has no decision control | No |
 | Continue on Stop and SubagentStop | Yes, exit 0 with `decision: "block"` and the reason. Caps at 8 consecutive blocks (`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`) | Yes, `block` with the reason as a new user prompt. No cap |
 | Context injection | Yes | Yes (`additionalContext`), except on `Stop`, whose output schema rejects it |

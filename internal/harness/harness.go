@@ -565,7 +565,12 @@ func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, std
 	// Rule messages are prose, so HTML escaping would only mangle them.
 	enc.SetEscapeHTML(false)
 	// A write that fails has nobody left to tell, and failing open is the
-	// promise: never turn handrail's own trouble into the harness's.
-	_ = enc.Encode(out)
+	// promise: never turn handrail's own trouble into the harness's. A block
+	// is the exception, since it is the rule's outcome rather than handrail's
+	// trouble: exit 2 still denies on both harnesses.
+	if err := enc.Encode(out); err != nil && a.degrade(event, outcome) == rule.Block {
+		_, _ = io.WriteString(stderr, message+"\n")
+		return 2
+	}
 	return 0
 }

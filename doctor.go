@@ -65,7 +65,7 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 	r.checkTiers(rs)
 	r.checkExclusion(rs)
 
-	for _, p := range rs.Problems {
+	for _, p := range rs.Invalid() {
 		r.bad("%s: %s", p.Path, p.Message)
 	}
 	r.ok("%s valid", countRules(len(rs.Rules)))

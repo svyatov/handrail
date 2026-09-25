@@ -11,6 +11,13 @@ stdout '"permissionDecision": "deny"'
 stdout '"permissionDecisionReason": "handrail block: no-rm \(global\)\\nNot from the filesystem root\."'
 stdout '"systemMessage": "handrail block: no-rm \(global\)\\nNot from the filesystem root\."'
 
+# A deny that cannot be written falls back to exit 2, which both harnesses
+# still read as a block: a failed write must never turn a block into an allow.
+stdin rm.json
+exec sh -c 'handrail hook claude PreToolUse 1</dev/null; echo code=$?'
+stdout '^code=2$'
+stderr '^handrail block: no-rm \(global\)$'
+
 # Every rule that fires is one entry of one message, in the agent's order, tier
 # then alphabetical: a warn is a label line, and its body goes to the agent alone.
 stdin rm-tmp.json

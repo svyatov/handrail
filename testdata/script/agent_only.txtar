@@ -23,6 +23,8 @@ stdout '^project-shared +coach +PreToolUse'
 stderr 'coach\.md: agent_only is refused in the Project-shared tier'
 ! exec handrail sync
 stderr 'coach\.md: agent_only is refused in the Project-shared tier'
+! exec handrail doctor
+stdout 'coach\.md: agent_only is refused in the Project-shared tier'
 
 # The hook path keeps the rule and drops the field, so the human hears it...
 stdin ls.json
@@ -30,8 +32,6 @@ exec handrail hook claude PreToolUse
 stdout '"systemMessage": "handrail warn: coach \(project-shared\)"'
 
 # ...and SessionStart names it on both channels, ahead of any rule's message.
-# Shadowed or not, it is named, so the notice says what was dropped and makes
-# no claim about who hears a rule that may never fire.
 cp hello.md home/.config/handrail/hello.md
 stdin start.json
 exec handrail hook claude SessionStart
@@ -53,16 +53,23 @@ stdout '"permissionDecision": "deny"'
 stdout '"systemMessage": ".*handrail block: block-ls \(project-shared\)'
 rm .handrail/block-ls.md
 
-# The user's own tiers keep it: a Project-personal agent_only is quiet.
-rm .handrail/coach.md
+# The user's own tiers keep it: a Project-personal agent_only is quiet, also
+# where it shadows the shared rule that lost it.
 rm .handrail/coach-too.md
 mkdir .handrail/local
 cp warn.md .handrail/local/coach.md
-exec handrail check
 stdin ls.json
 exec handrail hook claude PreToolUse
 stdout '"additionalContext": "handrail warn: coach \(project-personal\)'
 ! stdout systemMessage
+
+# The shadowed shared rule is still named, since the notice says what was
+# dropped and makes no claim about who hears a rule that may never fire.
+stdin start.json
+exec handrail hook claude SessionStart
+stdout '"systemMessage": "handrail: agent_only is refused in the Project-shared tier, so it was dropped from 1 rule: coach; run handrail check'
+rm .handrail/coach.md
+exec handrail check
 
 -- ls.json --
 {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
