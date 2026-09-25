@@ -39,13 +39,16 @@ type Rule struct {
 	ShadowedBy *Rule // the higher-tier rule replacing this one, if any
 	Replaces   *Rule // the lower-tier rule this one shadows, if any
 	DroppedBy  *Rule // the Global rule this Project-shared one may not replace
-	Event      string
-	Kind       string
-	Action     Outcome
-	Enabled    bool
-	Conditions []Condition
-	Examples   []Example
-	Message    string
+	// DemotedFrom is the tier this rule's path names when its supply put it in
+	// another: Project-personal for a .handrail/local/ the repository supplies.
+	DemotedFrom string
+	Event       string
+	Kind        string
+	Action      Outcome
+	Enabled     bool
+	Conditions  []Condition
+	Examples    []Example
+	Message     string
 	// fields names each field the conditions test once, in the order evaluation
 	// chooses a Candidate for them. A Term's slot is its field's index here.
 	fields []string

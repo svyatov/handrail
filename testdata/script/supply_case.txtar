@@ -1,0 +1,22 @@
+[!exec:git] skip
+
+# On a case-insensitive filesystem a committed .handrail/LOCAL/ is the same
+# directory as .handrail/local/: it is demoted, and read once, not twice.
+# Elsewhere it is an ordinary shared directory. Either way the rule loads once.
+env GIT_CONFIG_GLOBAL=$WORK/gitconfig
+exec git init -q
+exec git add -f .handrail/LOCAL/mine.md
+exec handrail trust
+exec handrail check
+stdout '^project-shared +mine +Stop'
+! stderr 'duplicate'
+
+-- gitconfig --
+[user]
+	email = t@example.com
+	name = T
+-- .handrail/LOCAL/mine.md --
+---
+event: Stop
+---
+A rule the repository commits in another spelling.

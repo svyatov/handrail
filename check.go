@@ -12,9 +12,8 @@ import (
 	"github.com/svyatov/handrail/internal/rule"
 )
 
-// checkRule is one rule in docs/spec.md section 6's check shape. Trial and
-// DemotedFrom hold their zero values until trial rules and the supply check
-// land.
+// checkRule is one rule in docs/spec.md section 6's check shape. Trial holds
+// its zero value until trial rules land.
 type checkRule struct {
 	Rule        string        `json:"rule"`
 	Tier        string        `json:"tier"`
@@ -95,17 +94,22 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 				}
 				examples.Failed = append(examples.Failed, checkExample{Expect: e.Expect, Fields: fields, Line: e.Line, From: from})
 			}
+			var demoted *string
+			if r.DemotedFrom != "" {
+				demoted = &r.DemotedFrom
+			}
 			out.Rules = append(out.Rules, checkRule{
-				Rule:       r.Name,
-				Tier:       r.Tier,
-				Event:      r.Event,
-				Kind:       r.Kind,
-				Action:     r.Action.String(),
-				Enabled:    r.Enabled,
-				ShadowedBy: pathOf(r.ShadowedBy),
-				DroppedBy:  pathOf(r.DroppedBy),
-				Path:       r.Path,
-				Examples:   examples,
+				Rule:        r.Name,
+				Tier:        r.Tier,
+				Event:       r.Event,
+				Kind:        r.Kind,
+				Action:      r.Action.String(),
+				Enabled:     r.Enabled,
+				ShadowedBy:  pathOf(r.ShadowedBy),
+				DroppedBy:   pathOf(r.DroppedBy),
+				DemotedFrom: demoted,
+				Path:        r.Path,
+				Examples:    examples,
 			})
 		}
 		for _, p := range rs.Problems {
@@ -130,7 +134,7 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 		for _, p := range rs.Problems {
 			fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
 		}
-		reportDropped(rs.Rules, stderr)
+		reportTierMoves(rs, stderr)
 		examplesFailed = reportExamples(slices.Concat(rs.Rules, rs.Untrusted), stderr)
 	}
 
@@ -161,11 +165,16 @@ func reportExamples(rules []*rule.Rule, stderr io.Writer) bool {
 	return failed
 }
 
-// reportDropped names each Project-shared file dropped for naming a Global
-// rule, with both paths. It is no error: the repository's author cannot see
-// the Global file, so the user could not fix it either.
-func reportDropped(rules []*rule.Rule, stderr io.Writer) {
-	for _, r := range rules {
+// reportTierMoves names each Project-shared file dropped for naming a Global
+// rule, with both paths, and each Project-personal file read as Project-shared,
+// with the reason. Neither is an error: the repository's author cannot see the
+// Global file, so the user could not fix it either, and a demoted file is still
+// read.
+func reportTierMoves(rs *rule.Ruleset, stderr io.Writer) {
+	for _, r := range slices.Concat(rs.Rules, rs.Untrusted) {
+		if r.DemotedFrom != "" {
+			fmt.Fprintf(stderr, "handrail: %s: read as Project-shared: %s\n", r.Path, rs.Demoted)
+		}
 		if r.DroppedBy != nil {
 			fmt.Fprintf(stderr, "handrail: %s: dropped: a Project-shared rule may not replace the Global rule %s\n",
 				r.Path, r.DroppedBy.Path)
