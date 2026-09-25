@@ -42,7 +42,8 @@ into a `go.sum` whose first promise is one third-party runtime dependency.
 ```bash
 task test    # go test -race -shuffle=on ./...
 task cover   # the same run with coverage, fails under 95%
-task lint    # golangci-lint run, then the formatter, doc-path, flag-source and dash checks
+task lint    # go.mod tidy and verified, golangci-lint run, then the formatter, doc-path, flag-source and dash checks
+task vuln    # govulncheck, fetched by go run at a pinned version
 ```
 
 CI runs these same tasks, so a local pass means what a green check means.
