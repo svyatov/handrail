@@ -39,6 +39,10 @@ func (n *node) has(key string) bool {
 	return false
 }
 
+// isMapping reports whether n is neither a scalar nor a sequence. An empty
+// document is a mapping with no keys.
+func (n *node) isMapping() bool { return !n.isScalar && n.seq == nil }
+
 type parser struct {
 	// lines is owned by the parser, which rewrites sequence item lines in
 	// place as it reads them. Callers pass a slice nobody else holds.
@@ -118,22 +122,35 @@ func (p *parser) block(minInd int) (*node, error) {
 	return p.mapping(ind)
 }
 
+// next advances to the next line of a block indented at ind, and reports false
+// where the block has ended: at the end of the input or at a shallower line.
+func (p *parser) next(ind int) (bool, error) {
+	p.skip()
+	if p.i >= len(p.lines) {
+		return false, nil
+	}
+	cur, err := p.indentOf(p.i)
+	if err != nil {
+		return false, err
+	}
+	if cur < ind {
+		return false, nil
+	}
+	if cur > ind {
+		return false, p.errf(p.i, "unexpected indentation")
+	}
+	return true, nil
+}
+
 func (p *parser) mapping(ind int) (*node, error) {
 	n := &node{line: p.i + 1 + frontmatterOffset}
 	for {
-		p.skip()
-		if p.i >= len(p.lines) {
-			break
-		}
-		cur, err := p.indentOf(p.i)
+		more, err := p.next(ind)
 		if err != nil {
 			return nil, err
 		}
-		if cur < ind {
+		if !more {
 			break
-		}
-		if cur > ind {
-			return nil, p.errf(p.i, "unexpected indentation")
 		}
 		t := strings.TrimSpace(p.lines[p.i])
 		if isItem(t) {
@@ -151,92 +168,89 @@ func (p *parser) mapping(ind int) (*node, error) {
 		line := idx + 1 + frontmatterOffset
 		p.i++
 
-		s, present, err := parseScalar(strings.TrimSpace(rest))
+		val, err := p.value(strings.TrimSpace(rest), ind, idx)
 		if err != nil {
-			return nil, p.errf(idx, "%v", err)
-		}
-		var val *node
-		if !present {
-			// Either an indented block, or a sequence at the key's own
-			// indentation, or nothing at all.
-			p.skip()
-			if p.i < len(p.lines) {
-				nx, err := p.indentOf(p.i)
-				if err != nil {
-					return nil, err
-				}
-				if nx > ind || (nx == ind && isItem(strings.TrimSpace(p.lines[p.i]))) {
-					if val, err = p.block(nx); err != nil {
-						return nil, err
-					}
-				}
-			}
-			if val == nil {
-				val = &node{isScalar: true, line: line}
-			}
-		} else {
-			val = &node{isScalar: true, scalar: s, line: line}
+			return nil, err
 		}
 		n.mapping = append(n.mapping, pair{key: key, val: val, line: line})
 	}
 	return n, nil
 }
 
-func (p *parser) seq(ind int) (*node, error) {
-	n := &node{line: p.i + 1 + frontmatterOffset}
-	for {
-		p.skip()
-		if p.i >= len(p.lines) {
-			break
-		}
-		cur, err := p.indentOf(p.i)
+// value parses what a key at indentation ind holds, rest being the text after
+// its colon on line idx.
+func (p *parser) value(rest string, ind, idx int) (*node, error) {
+	line := idx + 1 + frontmatterOffset
+	s, present, err := parseScalar(rest)
+	if err != nil {
+		return nil, p.errf(idx, "%v", err)
+	}
+	if present {
+		return &node{isScalar: true, scalar: s, line: line}, nil
+	}
+	// Either an indented block, or a sequence at the key's own
+	// indentation, or nothing at all.
+	p.skip()
+	if p.i < len(p.lines) {
+		nx, err := p.indentOf(p.i)
 		if err != nil {
 			return nil, err
 		}
-		if cur < ind {
-			break
+		if nx > ind || (nx == ind && isItem(strings.TrimSpace(p.lines[p.i]))) {
+			return p.block(nx)
 		}
-		if cur > ind {
-			return nil, p.errf(p.i, "unexpected indentation")
+	}
+	return &node{isScalar: true, line: line}, nil
+}
+
+func (p *parser) seq(ind int) (*node, error) {
+	n := &node{line: p.i + 1 + frontmatterOffset}
+	for {
+		more, err := p.next(ind)
+		if err != nil {
+			return nil, err
+		}
+		if !more {
+			break
 		}
 		t := strings.TrimSpace(p.lines[p.i])
 		if !isItem(t) {
 			break
 		}
-		body := strings.TrimLeft(t[1:], " ")
-		if body == "" {
-			p.i++
-			child, err := p.block(ind + 1)
-			if err != nil {
-				return nil, err
-			}
-			n.seq = append(n.seq, child)
-			continue
-		}
-		// An item that opens with no key is a scalar: a url's first colon has
-		// no space after it, and a quoted value is one value, colons and all.
-		_, rest, keyed := strings.Cut(body, ":")
-		keyed = keyed && (rest == "" || rest[0] == ' ' || rest[0] == '\t')
-		if body[0] == '\'' || body[0] == '"' || !keyed {
-			s, _, err := parseScalar(body)
-			if err != nil {
-				return nil, p.errf(p.i, "%v", err)
-			}
-			n.seq = append(n.seq, &node{isScalar: true, scalar: s, line: p.i + 1 + frontmatterOffset})
-			p.i++
-			continue
-		}
-		// Rewrite "- key: value" as a plain mapping line at the column where
-		// the item's own keys align, then parse the item as that mapping.
-		col := cur + 1 + (len(t) - 1 - len(body))
-		p.lines[p.i] = strings.Repeat(" ", col) + body
-		child, err := p.mapping(col)
+		child, err := p.item(ind, t)
 		if err != nil {
 			return nil, err
 		}
 		n.seq = append(n.seq, child)
 	}
 	return n, nil
+}
+
+// item parses one sequence item at indentation ind, t being its line trimmed.
+func (p *parser) item(ind int, t string) (*node, error) {
+	body := strings.TrimLeft(t[1:], " ")
+	if body == "" {
+		p.i++
+		return p.block(ind + 1)
+	}
+	// An item that opens with no key is a scalar: a url's first colon has
+	// no space after it, and a quoted value is one value, colons and all.
+	_, rest, keyed := strings.Cut(body, ":")
+	keyed = keyed && (rest == "" || rest[0] == ' ' || rest[0] == '\t')
+	if body[0] == '\'' || body[0] == '"' || !keyed {
+		s, _, err := parseScalar(body)
+		if err != nil {
+			return nil, p.errf(p.i, "%v", err)
+		}
+		n := &node{isScalar: true, scalar: s, line: p.i + 1 + frontmatterOffset}
+		p.i++
+		return n, nil
+	}
+	// Rewrite "- key: value" as a plain mapping line at the column where
+	// the item's own keys align, then parse the item as that mapping.
+	col := ind + 1 + (len(t) - 1 - len(body))
+	p.lines[p.i] = strings.Repeat(" ", col) + body
+	return p.mapping(col)
 }
 
 // parseScalar reads the value half of a "key: value" line, dropping a trailing
@@ -250,12 +264,7 @@ func parseScalar(s string) (value string, present bool, err error) {
 		return "", false, errors.New("flow style is not supported, use an indented block")
 	}
 	if s[0] != '\'' && s[0] != '"' {
-		// YAML ends a plain scalar at " #", so a value needing those two
-		// characters has to be quoted anyway.
-		if before, _, ok := strings.Cut(s, " #"); ok {
-			return strings.TrimRight(before, " "), true, nil
-		}
-		return s, true, nil
+		return plainScalar(s), true, nil
 	}
 	end := closingQuote(s)
 	if end < 0 {
@@ -266,6 +275,16 @@ func parseScalar(s string) (value string, present bool, err error) {
 	}
 	value, err = unquote(s[:end+1])
 	return value, true, err
+}
+
+// plainScalar reads an unquoted value, dropping a trailing comment.
+func plainScalar(s string) string {
+	// YAML ends a plain scalar at " #", so a value needing those two
+	// characters has to be quoted anyway.
+	if before, _, ok := strings.Cut(s, " #"); ok {
+		return strings.TrimRight(before, " ")
+	}
+	return s
 }
 
 // closingQuote returns the index of the quote that closes the one s starts

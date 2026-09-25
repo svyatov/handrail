@@ -34,7 +34,7 @@ func (r *Rule) Selects(payloads []Payload) bool {
 // calls. An Example no live call could be is an error, because it would prove
 // the rule against a call that never arrives.
 func parseExamples(kv pair) ([]Example, error) {
-	if kv.val.isScalar || kv.val.seq != nil {
+	if !kv.val.isMapping() {
 		return nil, fmt.Errorf("line %d: examples must be a mapping", kv.line)
 	}
 	var out []Example
@@ -46,7 +46,7 @@ func parseExamples(kv pair) ([]Example, error) {
 			return nil, fmt.Errorf("line %d: %s must be a list", list.line, list.key)
 		}
 		for _, item := range list.val.seq {
-			if item.isScalar || item.seq != nil {
+			if !item.isMapping() {
 				return nil, fmt.Errorf("line %d: example must be a mapping", item.line)
 			}
 			e, err := parseExample(list.key, item)
@@ -135,25 +135,62 @@ func checkField(name string, values []string, list bool) error {
 	case !IsField(name):
 		return fmt.Errorf("unknown field %q", name)
 	}
-	switch {
-	case list && !slices.Contains([]string{"url", "network_grant", "unreadable", "path"}, name):
-		return fmt.Errorf("%s must be a single value", name)
-	case list && name == "path" && len(values) != 2:
-		return errors.New("a path list is a rename: its source and its destination")
+	if list {
+		if err := checkList(name, values); err != nil {
+			return err
+		}
 	}
 	for _, v := range values {
-		switch {
-		case v == "" || name == "network_grant" && grant(v) == "" || name == "response" && strings.TrimSpace(v) == "":
-			return fmt.Errorf("%s needs a value", name)
-		case name == "kind" && !IsKind(v):
+		if err := checkValue(name, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkList reports why a field cannot be written as a list.
+func checkList(name string, values []string) error {
+	switch {
+	case !slices.Contains([]string{"url", "network_grant", "unreadable", "path"}, name):
+		return fmt.Errorf("%s must be a single value", name)
+	case name == "path" && len(values) != 2:
+		return errors.New("a path list is a rename: its source and its destination")
+	}
+	return nil
+}
+
+// checkValue reports why a field could not carry one value.
+func checkValue(name, v string) error {
+	if blank(name, v) {
+		return fmt.Errorf("%s needs a value", name)
+	}
+	switch name {
+	case "kind":
+		if !IsKind(v) {
 			return fmt.Errorf("unknown kind %q", v)
-		case (name == "writes_empty" || name == "deletes" || name == "unsandboxed") && v != "true":
+		}
+	case "writes_empty", "deletes", "unsandboxed":
+		if v != "true" {
 			return fmt.Errorf("%s can only be true", name)
-		case name == "unreadable" && !IsField(v) && v != "payload" && v != "rules":
+		}
+	case "unreadable":
+		if !IsField(v) && v != "payload" && v != "rules" {
 			return fmt.Errorf("unknown unreadable value %q", v)
 		}
 	}
 	return nil
+}
+
+// blank reports whether v is no value for the field, as written or once the
+// Adapter has normalized it.
+func blank(name, v string) bool {
+	switch name {
+	case "network_grant":
+		return grant(v) == ""
+	case "response":
+		return strings.TrimSpace(v) == ""
+	}
+	return v == ""
 }
 
 // String is the Example's fields as a report names them, each quoted, a list

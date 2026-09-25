@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -113,32 +114,8 @@ func Load(cwd string) *Ruleset {
 		return dir(root)
 	}
 
-	// An untrusted tier is read and then dropped, not left unread: strict
-	// validation is what check promises for every tier, and .handrail/ existing
-	// says nothing on its own, since the Project-personal tier lives inside it.
-	gather := func(t Tier, dirs ...string) {
-		if t.Dir != "" {
-			rules, problems := load(inRoot(LocalDir), t.Name == TierProjectShared, dirs...)
-			for i := range problems {
-				problems[i].Untrusted = !t.Trusted
-			}
-			rs.Problems = append(rs.Problems, problems...)
-			if t.Trusted {
-				for _, r := range rules {
-					r.Tier = t.Name
-				}
-				t.Count = len(rules)
-				rs.Rules = append(rs.Rules, rules...)
-			} else {
-				t.Skipped = len(rules)+len(problems) > 0
-				rs.Untrusted = append(rs.Untrusted, rules...)
-			}
-		}
-		rs.Tiers = append(rs.Tiers, t)
-	}
-
 	global := configDir()
-	gather(Tier{Name: TierGlobal, Dir: global, Trusted: true}, global)
+	rs.gather(inRoot(LocalDir), Tier{Name: TierGlobal, Dir: global, Trusted: true}, global)
 	// A Global file that does not parse still names a Global rule, so it keeps
 	// a shared namesake out just as the parsed rule would. Every problem so far
 	// is the Global tier's.
@@ -158,17 +135,49 @@ func Load(cwd string) *Ruleset {
 		rs.Demoted = demotion(root)
 	}
 	if rs.Demoted == "" {
-		gather(Tier{Name: TierProjectShared, Dir: shared, Trusted: isTrusted(root)}, shared)
-		gather(Tier{Name: TierProjectPersonal, Dir: local, Trusted: true}, local)
+		rs.gather(local, Tier{Name: TierProjectShared, Dir: shared, Trusted: isTrusted(root)}, shared)
+		rs.gather(local, Tier{Name: TierProjectPersonal, Dir: local, Trusted: true}, local)
 	} else {
-		gather(Tier{Name: TierProjectShared, Dir: shared, Trusted: isTrusted(root)}, shared, local)
+		rs.gather(local, Tier{Name: TierProjectShared, Dir: shared, Trusted: isTrusted(root)}, shared, local)
 		for _, r := range slices.Concat(rs.Rules, rs.Untrusted) {
 			if strings.HasPrefix(r.Path, local+string(filepath.Separator)) {
 				r.DemotedFrom = TierProjectPersonal
 			}
 		}
 	}
+	rs.shadow(byName)
+	return rs
+}
 
+// gather loads one tier into the ruleset, skip being the directory its walk
+// does not enter. An untrusted tier is read and then dropped, not left unread:
+// strict validation is what check promises for every tier, and .handrail/
+// existing says nothing on its own, since the Project-personal tier lives
+// inside it.
+func (rs *Ruleset) gather(skip string, t Tier, dirs ...string) {
+	if t.Dir != "" {
+		rules, problems := load(skip, t.Name == TierProjectShared, dirs...)
+		for i := range problems {
+			problems[i].Untrusted = !t.Trusted
+		}
+		rs.Problems = append(rs.Problems, problems...)
+		if t.Trusted {
+			for _, r := range rules {
+				r.Tier = t.Name
+			}
+			t.Count = len(rules)
+			rs.Rules = append(rs.Rules, rules...)
+		} else {
+			t.Skipped = len(rules)+len(problems) > 0
+			rs.Untrusted = append(rs.Untrusted, rules...)
+		}
+	}
+	rs.Tiers = append(rs.Tiers, t)
+}
+
+// shadow resolves Shadowing across the loaded tiers. byName starts out
+// holding the Global files that did not parse.
+func (rs *Ruleset) shadow(byName map[string]*Rule) {
 	// Identity is the basename, so the highest tier holding a name carries the
 	// effective rule and every lower one is shadowed by it, wholesale. The one
 	// exception: the shared tier is add-only against Global, so a shared file
@@ -187,7 +196,6 @@ func Load(cwd string) *Ruleset {
 			effective.Replaces = r
 		}
 	}
-	return rs
 }
 
 // The two directory names every path in this package is built from: excludeLine
@@ -275,7 +283,7 @@ func load(skip string, shared bool, dirs ...string) ([]*Rule, []Problem) {
 				return nil
 			}
 			if d.IsDir() {
-				if info, err := d.Info(); err == nil && rel != "." && os.SameFile(info, skipped) {
+				if skips(d, rel, skipped) {
 					return fs.SkipDir
 				}
 				return nil
@@ -283,26 +291,11 @@ func load(skip string, shared bool, dirs ...string) ([]*Rule, []Problem) {
 			if !strings.HasSuffix(d.Name(), ".md") {
 				return nil
 			}
-			data, err := os.ReadFile(p)
+			r, err := readRule(p, strings.TrimSuffix(d.Name(), ".md"), shared)
 			if err != nil {
 				problems = append(problems, Problem{Path: p, Message: err.Error()})
 				return nil //nolint:nilerr // the walk reports bad rules, it does not abort on them
 			}
-			r, err := Parse(strings.TrimSuffix(d.Name(), ".md"), data)
-			// A repository rule that speaks to the agent behind the human's
-			// back is refused, and the hook path keeps the rule, louder: a
-			// block that set it still blocks.
-			if err == nil && shared && r.AgentOnly {
-				r.AgentOnly, r.LostAgentOnly = false, true
-			}
-			if err == nil {
-				err = r.checkAgentOnly()
-			}
-			if err != nil {
-				problems = append(problems, Problem{Path: p, Message: err.Error()})
-				return nil //nolint:nilerr // the walk reports bad rules, it does not abort on them
-			}
-			r.Path = p
 			rules = append(rules, r)
 			return nil
 		})
@@ -312,12 +305,47 @@ func load(skip string, shared bool, dirs ...string) ([]*Rule, []Problem) {
 	}
 
 	slices.SortFunc(rules, func(a, b *Rule) int {
-		if a.Name != b.Name {
-			return strings.Compare(a.Name, b.Name)
-		}
-		return strings.Compare(a.Path, b.Path)
+		return cmp.Or(strings.Compare(a.Name, b.Name), strings.Compare(a.Path, b.Path))
 	})
+	kept, duplicates := unique(rules)
+	return kept, append(problems, duplicates...)
+}
 
+// skips reports whether the walk is at skip's directory, other than the one it
+// started from.
+func skips(d fs.DirEntry, rel string, skipped fs.FileInfo) bool {
+	info, err := d.Info()
+	return err == nil && rel != "." && os.SameFile(info, skipped)
+}
+
+// readRule reads and parses the rule file at p, holding a Project-shared rule
+// to what that tier allows.
+func readRule(p, name string, shared bool) (*Rule, error) {
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return nil, err
+	}
+	r, err := Parse(name, data)
+	if err != nil {
+		return nil, err
+	}
+	// A repository rule that speaks to the agent behind the human's
+	// back is refused, and the hook path keeps the rule, louder: a
+	// block that set it still blocks.
+	if shared && r.AgentOnly {
+		r.AgentOnly, r.LostAgentOnly = false, true
+	}
+	if err := r.checkAgentOnly(); err != nil {
+		return nil, err
+	}
+	r.Path = p
+	return r, nil
+}
+
+// unique keeps the first of each name among rules sorted by name, and reports
+// every repeat as a Problem.
+func unique(rules []*Rule) ([]*Rule, []Problem) {
+	var problems []Problem
 	// Identity is the basename, so a repeat inside one tier is ambiguous.
 	kept := make([]*Rule, 0, len(rules))
 	for i, r := range rules {
