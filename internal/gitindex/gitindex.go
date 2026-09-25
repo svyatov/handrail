@@ -89,31 +89,7 @@ func Under(root, dir string) (bool, error) {
 	if err != nil || len(shared) == 0 {
 		return s.file(index, nil)
 	}
-	data, err := os.ReadFile(index)
-	if err != nil {
-		return false, err
-	}
-	d, err := newDecoder(bytes.NewReader(data), hashLen)
-	if err != nil {
-		return false, err
-	}
-	for range d.count {
-		name, err := d.next()
-		if err != nil {
-			return false, err
-		}
-		if s.under(name) {
-			return true, nil
-		}
-	}
-	if len(data)-hashLen < d.off {
-		return false, errors.New("truncated git index")
-	}
-	base, deleted, err := link(data[d.off:len(data)-hashLen], hashLen)
-	if err != nil || base == "" {
-		return false, err
-	}
-	return s.file(filepath.Join(own, "sharedindex."+base), deleted)
+	return s.split(own, index)
 }
 
 // scan is one Under question, asked of one index file at a time.
@@ -161,6 +137,36 @@ func (s scan) file(path string, deleted map[uint64]bool) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// split reads the split index at index whole, then the shared index it links
+// to, which sits beside it in own, with the early stop.
+func (s scan) split(own, index string) (bool, error) {
+	data, err := os.ReadFile(index)
+	if err != nil {
+		return false, err
+	}
+	d, err := newDecoder(bytes.NewReader(data), s.hashLen)
+	if err != nil {
+		return false, err
+	}
+	for range d.count {
+		name, err := d.next()
+		if err != nil {
+			return false, err
+		}
+		if s.under(name) {
+			return true, nil
+		}
+	}
+	if len(data)-s.hashLen < d.off {
+		return false, errors.New("truncated git index")
+	}
+	base, deleted, err := link(data[d.off:len(data)-s.hashLen], s.hashLen)
+	if err != nil || base == "" {
+		return false, err
+	}
+	return s.file(filepath.Join(own, "sharedindex."+base), deleted)
 }
 
 // link reads a split index's link extension out of the extensions that follow
