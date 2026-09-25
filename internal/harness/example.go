@@ -7,15 +7,42 @@ import (
 	"github.com/svyatov/handrail/internal/shell"
 )
 
+// Failure is one Example a rule's matcher does not meet. From is the rule
+// whose file holds the Example: the rule itself, or the rule it replaces.
+type Failure struct {
+	rule.Example
+	From *rule.Rule
+}
+
 // FailingExamples evaluates each of the rule's Examples against the rule alone
 // and returns the ones whose expectation the matcher does not meet. An Example
 // has no harness, so it reads with every Adapter's knowledge.
-func FailingExamples(r *rule.Rule) []rule.Example {
-	var failed []rule.Example
-	for _, e := range r.Examples {
-		call := withFields(rule.Payload{Event: r.Event, Kind: e.Kind}, e.Fields, adapters)
+//
+// An enabled shadow is also tested against the match Examples of the rule it
+// replaces, so a narrowed copy that has drifted from a changed original fails
+// too. A disabled stub is exempt, since switching the rule off is its purpose,
+// and so is a call the shadow names in an Example of its own: a no_match one
+// declares the exception the copy was made for, and a match one is tested as
+// the shadow's own.
+func FailingExamples(r *rule.Rule) []Failure {
+	failed := failing(r, r, r.Examples)
+	if r.Enabled && r.Replaces != nil {
+		match := slices.DeleteFunc(slices.Clone(r.Replaces.Examples), func(e rule.Example) bool {
+			return e.Expect != "match" || slices.ContainsFunc(r.Examples, e.SameCall)
+		})
+		failed = append(failed, failing(r, r.Replaces, match)...)
+	}
+	return failed
+}
+
+// failing returns the examples whose expectation r's matcher does not meet,
+// each call made on the event of from, the rule the examples belong to.
+func failing(r, from *rule.Rule, examples []rule.Example) []Failure {
+	var failed []Failure
+	for _, e := range examples {
+		call := withFields(rule.Payload{Event: from.Event, Kind: e.Kind}, e.Fields, adapters)
 		if r.Selects(call) != (e.Expect == "match") {
-			failed = append(failed, e)
+			failed = append(failed, Failure{Example: e, From: from})
 		}
 	}
 	return failed

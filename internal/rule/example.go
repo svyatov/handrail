@@ -166,6 +166,12 @@ func (e Example) String() string {
 	return strings.Join(parts, ", ")
 }
 
+// SameCall reports whether two Examples write the same call: the same kind and
+// the same fields, written in the same order.
+func (e Example) SameCall(o Example) bool {
+	return e.Kind == o.Kind && e.String() == o.String()
+}
+
 // Value is the field as written: one string, or the list it wrote.
 func (f ExampleField) Value() any {
 	if len(f.Values) == 1 {

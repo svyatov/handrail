@@ -111,11 +111,33 @@ func loadNotices(rs *rule.Ruleset, event string) []string {
 		}
 	}
 	if event == "SessionStart" {
+		if notice := droppedNotice(rs.Rules); notice != "" {
+			notices = append(notices, notice)
+		}
 		if notice := examplesNotice(rs.Rules); notice != "" {
 			notices = append(notices, notice)
 		}
 	}
 	return notices
+}
+
+// droppedNotice counts the Project-shared files dropped for naming a Global
+// rule, and "" when there are none. check names them.
+func droppedNotice(rules []*rule.Rule) string {
+	dropped := 0
+	for _, r := range rules {
+		if r.DroppedBy != nil {
+			dropped++
+		}
+	}
+	if dropped == 0 {
+		return ""
+	}
+	count := fmt.Sprintf("%d Project-shared rules dropped for naming Global rules", dropped)
+	if dropped == 1 {
+		count = "1 Project-shared rule dropped for naming a Global rule"
+	}
+	return fmt.Sprintf("handrail: %s; run handrail check", count)
 }
 
 // examplesNotice names the rules whose Examples fail, and "" when none do. It

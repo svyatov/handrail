@@ -103,6 +103,8 @@ Rules live in three places, and the most specific one wins.
 
 A rule in a higher tier replaces a lower one of the same filename outright; there is no field-by-field merge. To switch an inherited rule off, shadow it with a stub carrying only `enabled: false`, which is the `disabled` row in the `check` output above. To switch it back on, delete the stub.
 
+One pair is excluded: a Project-shared rule never replaces a Global one. A repo can add rules but not relax yours, so a shared file named like a Global rule is dropped, and `check` names both files. To relax a Global rule in one repo, copy it into `.handrail/local/` and add the exception there. `check` tests that copy against the original's `match:` Examples, so a copy that has drifted from a changed original is reported. If your exception covers one of those calls, add the call to the copy as a `no_match:` Example, which declares the exception.
+
 ## Codex CLI
 
 The same plugin, from the same marketplace:

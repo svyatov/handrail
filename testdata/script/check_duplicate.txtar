@@ -8,6 +8,19 @@ stderr 'nested/duplicate\.md: duplicate rule name "duplicate" \(also at .*/\.han
 # lexicographically, so .handrail/duplicate.md beats .handrail/nested/.
 stdout '^project-shared +duplicate +PreToolUse'
 
+# At event time the same copy is kept, and the skipped one is named.
+stdin pre.json
+exec handrail hook claude PreToolUse
+stdout 'The lexicographically first path wins the tie\.'
+stdout 'skipped the broken rule .*/\.handrail/nested/duplicate\.md'
+stdin stop.json
+exec handrail hook claude Stop
+! stdout 'Same basename'
+
+-- pre.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- stop.json --
+{"hook_event_name": "Stop"}
 -- .git/HEAD --
 ref: refs/heads/main
 -- .handrail/duplicate.md --

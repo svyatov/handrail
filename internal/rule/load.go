@@ -117,6 +117,15 @@ func Load(cwd string) *Ruleset {
 	}
 
 	gather(Tier{Name: TierGlobal, Dir: configDir(), Trusted: true}, false)
+	// A Global file that does not parse still names a Global rule, so it keeps
+	// a shared namesake out just as the parsed rule would. Every problem so far
+	// is the Global tier's.
+	byName := make(map[string]*Rule)
+	for _, p := range rs.Problems {
+		if name, ok := strings.CutSuffix(filepath.Base(p.Path), ".md"); ok {
+			byName[name] = &Rule{Name: name, Path: p.Path, Tier: TierGlobal}
+		}
+	}
 	// A user-level hook entry means any repo on the machine is enforced, so a
 	// clone's committed rules wait for an explicit grant. The user's own two
 	// tiers are never gated.
@@ -124,14 +133,21 @@ func Load(cwd string) *Ruleset {
 	gather(Tier{Name: TierProjectPersonal, Dir: inRoot(LocalDir), Trusted: true}, false)
 
 	// Identity is the basename, so the highest tier holding a name carries the
-	// effective rule and every lower one is shadowed by it, wholesale.
-	byName := make(map[string]*Rule, len(rs.Rules))
+	// effective rule and every lower one is shadowed by it, wholesale. The one
+	// exception: the shared tier is add-only against Global, so a shared file
+	// naming a Global rule is dropped and takes no part in shadowing. That
+	// leaves at most one rule for any shadow to replace.
 	for _, r := range rs.Rules {
+		if global := byName[r.Name]; global != nil && global.Tier == TierGlobal && r.Tier == TierProjectShared {
+			r.DroppedBy = global
+			continue
+		}
 		byName[r.Name] = r
 	}
 	for _, r := range rs.Rules {
-		if effective := byName[r.Name]; effective != r {
+		if effective := byName[r.Name]; effective != r && r.DroppedBy == nil {
 			r.ShadowedBy = effective
+			effective.Replaces = r
 		}
 	}
 	return rs

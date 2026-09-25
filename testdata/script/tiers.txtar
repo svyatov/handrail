@@ -1,14 +1,16 @@
 # All three tiers merge, most specific wins, and shadowing is whole-file.
 exec handrail trust
 exec handrail check
-! stderr .
+stderr '^handrail: .*/\.handrail/everywhere\.md: dropped: '
+! stderr 'noisy|only'
 
 # Tier order first, then alphabetical within a tier.
 stdout '(?s)global +everywhere.*global +noisy.*global +only-global.*project-shared +everywhere.*project-shared +only-shared.*project-personal +everywhere.*project-personal +noisy.*project-personal +only-personal'
 
-# A shadowed rule stays visible, annotated with the tier that replaced it.
+# A shadowed rule stays visible, annotated with the tier that replaced it. The
+# shared namesake of a Global rule is dropped rather than shadowed.
 stdout '^global +everywhere +PreToolUse +shell +block +shadowed by project-personal$'
-stdout '^project-shared +everywhere +PreToolUse +\* +warn +shadowed by project-personal$'
+stdout '^project-shared +everywhere +PreToolUse +\* +warn +dropped by global$'
 stdout '^project-personal +everywhere +PreToolUse +\* +warn +enabled$'
 stdout '^project-personal +noisy +- +\* +warn +disabled$'
 
@@ -36,8 +38,7 @@ stdout '"tier": "project-personal"'
 stdout '"shadowed_by": ".*/\.handrail/local/everywhere\.md"'
 stdout '"shadowed_by": null'
 
-# Down a three-tier chain every shadowed rule names the effective file, not the
-# middle one, which is shadowed itself.
+# The dropped shared file takes no part in shadowing: nothing names it.
 ! stdout '"shadowed_by": ".*/\.handrail/everywhere\.md"'
 stdout '"path": ".*/\.config/handrail/only-global\.md"'
 stdout '"errors": \[\]'
