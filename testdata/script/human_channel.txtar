@@ -33,8 +33,9 @@ exec handrail hook claude PreToolUse
 stdout '"additionalContext": "handrail warn: coach \(global\)\\nPrefer the Glob tool for listing\."'
 ! stdout systemMessage
 
-# A UserPromptSubmit block is a decision on exit 0, with the reason and the
-# human's text beside it.
+# A UserPromptSubmit block is a decision on exit 0. The harness shows its
+# reason to the human and erases the prompt, so the agent hears nothing and the
+# reason is the human's text: no warn body, and nothing agent_only.
 stdin prompt.json
 exec sh -c 'handrail hook claude UserPromptSubmit; echo code=$?'
 stdout '^code=0$'
@@ -43,6 +44,7 @@ stdout '"decision": "block"'
 stdout '"reason": "handrail block: no-yolo \(global\)\\nSay what you want done\."'
 stdout '"systemMessage": "handrail block: no-yolo \(global\)\\nSay what you want done\."'
 ! stdout 'hookSpecificOutput'
+! stdout 'prompt-coach'
 
 -- .git/HEAD --
 ref: refs/heads/main
@@ -98,6 +100,12 @@ conditions:
 Prefer the Glob tool for listing.
 -- prompt.json --
 {"hook_event_name": "UserPromptSubmit", "prompt": "just yolo it"}
+-- home/.config/handrail/prompt-coach.md --
+---
+event: UserPromptSubmit
+agent_only: true
+---
+Coaching meant for the agent alone.
 -- home/.config/handrail/no-yolo.md --
 ---
 event: UserPromptSubmit

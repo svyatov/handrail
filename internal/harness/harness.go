@@ -554,7 +554,9 @@ func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, std
 		out.HookSpecificOutput.PermissionDecision = "ask"
 		out.HookSpecificOutput.PermissionDecisionReason = human
 	case o == rule.Block && a.caps(event).deny == decisionBlock:
-		out.Decision, out.Reason, out.HookSpecificOutput = "block", message, nil
+		// The harness shows the reason to the human and erases the prompt, so
+		// no agent is left to hear the rest.
+		out.Decision, out.Reason, out.HookSpecificOutput = "block", human, nil
 	case o == rule.Block:
 		out.HookSpecificOutput = &hookSpecific{HookEventName: event, PermissionDecision: "deny", PermissionDecisionReason: message}
 	}
