@@ -1,0 +1,19 @@
+# What CI runs, before it leaves the machine. Install once with
+# `lefthook install`; CONTRIBUTING.md says where lefthook comes from.
+
+pre-commit:
+  # In order, so lint sees the files fmt just fixed.
+  piped: true
+  jobs:
+    - name: fmt
+      glob: "*.go"
+      run: golangci-lint fmt {staged_files}
+      stage_fixed: true
+    - name: lint
+      run: task lint
+
+# The suite takes minutes, too long to wait on at every commit.
+pre-push:
+  jobs:
+    - name: test
+      run: task test
