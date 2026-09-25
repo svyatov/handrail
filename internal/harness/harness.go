@@ -471,15 +471,19 @@ func (a Adapter) degrade(event string, o rule.Outcome) rule.Outcome {
 // event time; the others are reported at sync alone.
 func (a Adapter) Note(r *rule.Rule) string {
 	if r.Action == rule.Ask && a.Action(r) == rule.Block {
-		return "This rule asks for approval, and " + a.title + " cannot ask for it, so the call is denied."
+		return "handrail: " + a.reason(r.Event, rule.Block) + "."
 	}
 	return ""
 }
 
-// blockReason says why a denial cannot be honoured, for the degradation report.
-// Only sync and doctor ask; the hot path takes the predicate and no string.
-func (a Adapter) blockReason(event string) string {
-	if event == "UserPromptSubmit" {
+// reason says why the harness delivers to on event in place of the rule's own
+// action, for the degradation report. Only a block is ever reached by rising,
+// from an ask; every other substitution is a denial the harness cannot honour.
+func (a Adapter) reason(event string, to rule.Outcome) string {
+	switch {
+	case to == rule.Block:
+		return "the rule asks for approval, and " + a.title + " cannot ask for it, so the call is denied"
+	case event == "UserPromptSubmit":
 		return a.title + " cannot fail closed on UserPromptSubmit before the model request (upstream #33630)"
 	}
 	return a.title + " has no denial to give on " + event

@@ -295,11 +295,9 @@ func (a Adapter) Degradations(rules []*rule.Rule) []Degradation {
 	for _, r := range rules {
 		c := a.caps(r.Event)
 		if to := a.Action(r); to != r.Action {
-			reason := a.blockReason(r.Event)
-			if r.Action == rule.Ask {
-				reason = a.title + " cannot ask for approval, so the call is denied"
-			}
-			out = append(out, Degradation{Rule: r.Name, From: r.Action.String(), To: to.String(), Reason: reason})
+			out = append(out, Degradation{
+				Rule: r.Name, From: r.Action.String(), To: to.String(), Reason: a.reason(r.Event, to),
+			})
 		}
 		// The message still reaches the user, on stderr, but the agent is gone by
 		// then: an injected warning it can act on is what was lost.
