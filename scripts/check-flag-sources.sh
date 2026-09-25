@@ -4,7 +4,7 @@
 # so review can check each flag against its source. An entry that aliases a
 # shared table, as "mise x": mise does, is exempt; the shared table is not.
 #
-# Run from the repo root, by `task lint`.
+# Run from the repo root, by `mise run lint`.
 
 set -eu
 

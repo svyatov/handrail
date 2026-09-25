@@ -1,0 +1,78 @@
+# https://mise.jdx.dev
+#
+# The same commands CI runs, so a local pass means what a green check means.
+# No Go tool goes in go.mod: a tool directive would put ~200 modules in a go.sum
+# whose first promise is zero third-party dependencies, and upstream recommends
+# against it for golangci-lint. A Go-team tool runs as `go run pkg@version`
+# instead, which checks the download against the checksum database.
+#
+# Go itself is not listed: go.mod names the version, and Dependabot bumps it
+# there. It cannot bump a pin in this file.
+
+[tools]
+golangci-lint = "2.13.2"
+goreleaser = "2.18.2"
+lefthook = "2.1.14"
+# GoReleaser shells out to syft for the SBOM beside each archive.
+syft = "1.52.0"
+
+[tasks.build]
+description = "The release build, so a broken one fails here rather than on a tag"
+env = { CGO_ENABLED = "0" }
+run = 'go build -ldflags "-s -w" -o handrail .'
+
+# CI sets SHORT=-short on the macOS runner, where the cold-start test's 50ms
+# median cannot hold on a shared machine. The test honours the flag, and it
+# execs a separate binary, so skipping it costs no coverage.
+[tasks.test]
+description = "Race and shuffle, without the coverage instrumentation"
+run = "go test -race -shuffle=on ${SHORT:-} ./..."
+
+# The gate is below the measured number on purpose: what is left uncovered is
+# OS failure paths whose reachability differs by platform (ADR 0009).
+[tasks.cover]
+description = "The full test run, failing under the coverage gate"
+run = [
+  "go test -race -shuffle=on ${SHORT:-} -coverpkg=./... -coverprofile=cover.out ./...",
+  "go tool cover -func=cover.out | tail -1",
+  """go tool cover -func=cover.out | awk -v gate=95 '/^total:/ { gsub(/%/, "", $3); if ($3 + 0 < gate) { print "coverage " $3 "% is under the " gate "% gate"; exit 1 } }'""",
+]
+
+[tasks.lint]
+description = "A tidy and verified go.mod, golangci-lint, the formatter check, the paths the skills quote from the code, the flag tables' source comments, and no em or en dash"
+run = [
+  "go mod tidy -diff",
+  "go mod verify",
+  "golangci-lint run",
+  "golangci-lint fmt --diff",
+  "scripts/check-doc-paths.sh",
+  "scripts/check-flag-sources.sh",
+  "scripts/check-dashes.sh",
+]
+
+# go test fuzzes one target per run. A crashing input lands in the package's
+# testdata/fuzz/, where every later `mise run test` replays it.
+[tasks.fuzz]
+description = "Fuzz each parser that reads input handrail did not write, for FUZZTIME each"
+run = [
+  "go test -run='^$' -fuzz='^FuzzParse$' -fuzztime=${FUZZTIME:-30s} ./internal/rule",
+  "go test -run='^$' -fuzz='^FuzzNormalize$' -fuzztime=${FUZZTIME:-30s} ./internal/harness",
+  "go test -run='^$' -fuzz='^FuzzRead$' -fuzztime=${FUZZTIME:-30s} ./internal/shell",
+  "go test -run='^$' -fuzz='^FuzzPatch$' -fuzztime=${FUZZTIME:-30s} ./internal/shell",
+  "go test -run='^$' -fuzz='^FuzzDecoder$' -fuzztime=${FUZZTIME:-30s} ./internal/gitindex",
+  "go test -run='^$' -fuzz='^FuzzLink$' -fuzztime=${FUZZTIME:-30s} ./internal/gitindex",
+]
+
+[tasks.vuln]
+description = "Known vulnerabilities in the code paths handrail actually calls, in its modules and the standard library"
+run = "go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./..."
+
+# The release body comes from the changelog section, so a missing one is a
+# release with nothing to say. Discard the output: only the exit code matters.
+[tasks.release-check]
+description = "Validate .goreleaser.yml, the pinned version, and the changelog section the release body is cut from, so a bad release fails here rather than on a tag"
+run = [
+  "goreleaser check",
+  "scripts/check-version-pin.sh",
+  "scripts/release-notes.sh >/dev/null",
+]

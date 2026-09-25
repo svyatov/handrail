@@ -8,12 +8,12 @@ alone. `GLOSSARY.md` defines the vocabulary.
 ## Commands
 
 ```bash
-task test    # go test -race -shuffle=on ./...
-task cover   # the same run with coverage, fails under 95%
-task lint    # go mod tidy -diff and verify, golangci-lint run, then fmt --diff; with task test, past 2 minutes: raise the Bash timeout
-task vuln    # govulncheck through go run, so it stays out of go.mod
-task fuzz    # 30s per parser fuzz target; a crash input lands in testdata/fuzz/, commit it
-task build   # the release build
+mise run test    # go test -race -shuffle=on ./...
+mise run cover   # the same run with coverage, fails under 95%
+mise run lint    # go mod tidy -diff and verify, golangci-lint run, then fmt --diff; with mise run test, past 2 minutes: raise the Bash timeout
+mise run vuln    # govulncheck through go run, so it stays out of go.mod
+mise run fuzz    # 30s per parser fuzz target; a crash input lands in testdata/fuzz/, commit it
+mise run build   # the release build
 ```
 
 CI calls these same tasks, so a local pass means what a green check means.

@@ -29,9 +29,13 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      # GoReleaser shells out to syft for the SBOM beside each archive, and the
-      # runner does not ship it.
-      - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+      # GoReleaser and syft at the versions mise.toml pins, the same GoReleaser
+      # `mise run release-check` validated the config with. No cache: a release
+      # takes its binaries from their publishers, not from what another run saved.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.9.11
+          cache: false
 
       # The tag is the version, and the changelog section under it is the body.
       # A tag whose section is missing fails here, before anything is published.
@@ -40,10 +44,8 @@ jobs:
       - name: Cut the release notes from the changelog
         run: scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/release-notes.md"
 
-      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
-        with:
-          version: "~> v2"
-          args: release --clean --release-notes=${{ runner.temp }}/release-notes.md
+      - name: Release
+        run: goreleaser release --clean --release-notes="$RUNNER_TEMP/release-notes.md"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # A repo-scoped PAT: GITHUB_TOKEN cannot write to the tap repo.

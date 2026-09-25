@@ -3,7 +3,7 @@
 # that version as its cache key: the manifest version is what ships a new
 # bootstrap. All three move together, or a plugin installs the wrong binary.
 #
-# Run from the repo root, by `task release-check`.
+# Run from the repo root, by `mise run release-check`.
 
 set -eu
 

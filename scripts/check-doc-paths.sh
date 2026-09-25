@@ -5,7 +5,7 @@
 # rename breaks skill invocation silently, at the one moment nobody is looking.
 # This is the grep that turns that into a failing lint.
 #
-# Run from the repo root, by `task lint`.
+# Run from the repo root, by `mise run lint`.
 
 set -eu
 

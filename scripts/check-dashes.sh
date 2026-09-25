@@ -4,7 +4,7 @@
 # review does not have to. The two characters are built from their UTF-8 bytes
 # so this file does not match itself.
 #
-# Run from the repo root, by `task lint`.
+# Run from the repo root, by `mise run lint`.
 
 set -eu
 

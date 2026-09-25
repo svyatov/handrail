@@ -1,5 +1,5 @@
 # What CI runs, before it leaves the machine. Install once with
-# `lefthook install`; CONTRIBUTING.md says where lefthook comes from.
+# `lefthook install`; `mise install` puts lefthook on the PATH.
 
 pre-commit:
   # In order, so lint sees the files fmt just fixed.
@@ -7,13 +7,15 @@ pre-commit:
   jobs:
     - name: fmt
       glob: "*.go"
-      run: golangci-lint fmt {staged_files}
+      # mise x, so the formatter is the version mise.toml pins even in a shell
+      # where mise is not activated.
+      run: mise x -- golangci-lint fmt {staged_files}
       stage_fixed: true
     - name: lint
-      run: task lint
+      run: mise run lint
 
 # The suite takes minutes, too long to wait on at every commit.
 pre-push:
   jobs:
     - name: test
-      run: task test
+      run: mise run test
