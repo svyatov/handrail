@@ -1,0 +1,203 @@
+# A Project-shared rule may not replace a Global rule: the collision drops the
+# shared file and the Global rule stands.
+exec handrail trust
+
+# The shared stub would have switched the Global rule off; it still blocks.
+stdin rm.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=2$'
+stderr 'handrail block: no-rm \(global\)'
+! stderr 'shared'
+! stdout 'dropped'
+
+# The shared copy would have narrowed the Global rule; it still blocks the call
+# the copy left out, and the shared tier still adds a rule under its own name.
+stdin push.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=2$'
+stderr 'handrail block: no-force-push \(global\)'
+stderr 'handrail warn: ask-first \(project-shared\)'
+! stderr 'narrowed'
+
+# SessionStart gives both audiences the count.
+stdin start.json
+exec sh -c 'handrail hook claude SessionStart; echo code=$?'
+stdout '^code=0$'
+stdout '"systemMessage": "handrail: 2 Project-shared rules dropped for naming Global rules; run handrail check"'
+stdout '"additionalContext": "handrail: 2 Project-shared rules dropped'
+
+# check names both paths and the reason, and the collision is no error.
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=0$'
+stdout '^global +no-rm +PreToolUse +shell +block +enabled$'
+stdout '^project-shared +no-rm +- +\* +warn +dropped by global$'
+stdout '^project-shared +no-force-push +PreToolUse +shell +warn +dropped by global$'
+stdout '^project-shared +ask-first +PreToolUse +shell +warn +enabled$'
+stderr '^handrail: .*/\.handrail/no-rm\.md: dropped: a Project-shared rule may not replace the Global rule .*/\.config/handrail/no-rm\.md$'
+stderr '^handrail: .*/\.handrail/no-force-push\.md: dropped: a Project-shared rule may not replace the Global rule .*/\.config/handrail/no-force-push\.md$'
+
+# --json carries the Global rule that dropped the shared file.
+exec sh -c 'handrail check --json; echo code=$?'
+stdout '^code=0$'
+stdout '"dropped_by": ".*/\.config/handrail/no-rm\.md"'
+stdout '"dropped_by": null'
+stdout '"errors": \[\]'
+
+# sync names it the same way and still succeeds.
+mkdir home/.claude
+exec sh -c 'handrail sync; echo code=$?'
+stdout '^code=0$'
+stdout '^project-shared +no-rm +- +\* +warn +dropped by global$'
+stderr '^handrail: .*/\.handrail/no-rm\.md: dropped: a Project-shared rule may not replace the Global rule .*/\.config/handrail/no-rm\.md$'
+
+# One dropped file reads as one.
+rm .handrail/no-force-push.md
+stdin start.json
+exec handrail hook claude SessionStart
+stdout '"systemMessage": "handrail: 1 Project-shared rule dropped for naming a Global rule; run handrail check"'
+
+# Relaxing a Global rule is the user's act, in Project-personal: a copy with one
+# added exception lets the call through in this repository.
+mkdir .handrail/local
+cp personal-no-rm.md .handrail/local/no-rm.md
+stdin rm.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=0$'
+! stderr 'no-rm'
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=0$'
+stdout '^global +no-rm +PreToolUse +shell +block +shadowed by project-personal$'
+
+# An enabled shadow is tested against the match Examples of the rule it
+# replaces: once the original insists on a call the copy lets through, the copy
+# has drifted, and it is reported like any failing Example.
+cp drifted-no-rm.md home/.config/handrail/no-rm.md
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=1$'
+stderr '^handrail: .*/\.handrail/local/no-rm\.md: line 13 of .*/\.config/handrail/no-rm\.md: match example fails: command="rm -rf build"$'
+! stderr 'rm -rf /'
+! stderr 'no_match'
+exec sh -c 'handrail check --json; echo code=$?'
+stdout '^code=1$'
+stdout '"command": "rm -rf build"'
+! stdout '"command": "rm -rf /"'
+
+# The drift is a report, never enforcement: the copy still lets the call through.
+stdin rm.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=0$'
+stdin start.json
+exec handrail hook claude SessionStart
+stdout '"systemMessage": ".*handrail: 1 rule fails its Examples: no-rm \(project-personal\); run handrail check"'
+
+# A disabled stub is exempt: switching the whole rule off is its purpose.
+cp stub.md .handrail/local/no-rm.md
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=0$'
+! stderr 'example'
+
+# The original's Examples are calls on the original's event, so a copy moved to
+# another event has drifted from all of them.
+cp moved.md .handrail/local/no-rm.md
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=1$'
+stderr 'local/no-rm\.md: line 12 of .*: match example fails: command="rm -rf /"$'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- start.json --
+{"hook_event_name": "SessionStart", "source": "startup"}
+-- rm.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "rm -rf build"}}
+-- push.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git push --force origin main"}}
+-- home/.config/handrail/no-rm.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf
+---
+Never delete recursively.
+-- personal-no-rm.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf
+  - field: command
+    not_contains: build
+---
+Never delete recursively, except the build output.
+-- drifted-no-rm.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf
+  - field: command
+    not_contains: /tmp
+examples:
+  match:
+    - command: rm -rf /
+    - command: rm -rf build
+  no_match:
+    - command: rm -rf /tmp/x
+---
+Never delete recursively, the build output included.
+-- moved.md --
+---
+event: PostToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: rm -rf
+---
+Warn after the fact instead.
+-- stub.md --
+---
+enabled: false
+---
+Switches the Global rule off in this repository.
+-- home/.config/handrail/no-force-push.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    contains: push --force
+---
+Never force-push.
+-- .handrail/no-rm.md --
+---
+enabled: false
+---
+The shared stub that tries to switch the Global rule off.
+-- .handrail/no-force-push.md --
+---
+event: PreToolUse
+kind: shell
+action: warn
+conditions:
+  - field: command
+    contains: push --force
+  - field: command
+    not_contains: main
+---
+The narrowed shared copy.
+-- .handrail/ask-first.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: git push
+---
+A rule the repository adds under a name of its own.

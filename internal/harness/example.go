@@ -11,9 +11,27 @@ import (
 // and returns the ones whose expectation the matcher does not meet. An Example
 // has no harness, so it reads with every Adapter's knowledge.
 func FailingExamples(r *rule.Rule) []rule.Example {
+	return failing(r, r.Event, r.Examples)
+}
+
+// DriftedExamples tests an enabled shadow against the match Examples of the
+// rule it replaces, and returns the ones it no longer selects: a narrowed copy
+// that has drifted from a changed original. A disabled stub is exempt, since
+// switching the rule off is its purpose.
+func DriftedExamples(r *rule.Rule) []rule.Example {
+	if !r.Enabled || r.Replaces == nil {
+		return nil
+	}
+	match := slices.DeleteFunc(slices.Clone(r.Replaces.Examples), func(e rule.Example) bool { return e.Expect != "match" })
+	return failing(r, r.Replaces.Event, match)
+}
+
+// failing returns the examples whose expectation r's matcher does not meet,
+// each call made on event, the event of the rule the examples belong to.
+func failing(r *rule.Rule, event string, examples []rule.Example) []rule.Example {
 	var failed []rule.Example
-	for _, e := range r.Examples {
-		call := withFields(rule.Payload{Event: r.Event, Kind: e.Kind}, e.Fields, adapters)
+	for _, e := range examples {
+		call := withFields(rule.Payload{Event: event, Kind: e.Kind}, e.Fields, adapters)
 		if r.Selects(call) != (e.Expect == "match") {
 			failed = append(failed, e)
 		}

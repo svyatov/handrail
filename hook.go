@@ -111,6 +111,9 @@ func loadNotices(rs *rule.Ruleset, event string) []string {
 		}
 	}
 	if event == "SessionStart" {
+		if notice := droppedNotice(rs.Rules); notice != "" {
+			notices = append(notices, notice)
+		}
 		if notice := examplesNotice(rs.Rules); notice != "" {
 			notices = append(notices, notice)
 		}
@@ -118,12 +121,30 @@ func loadNotices(rs *rule.Ruleset, event string) []string {
 	return notices
 }
 
+// droppedNotice counts the Project-shared files dropped for naming a Global
+// rule, and "" when there are none. check names them.
+func droppedNotice(rules []*rule.Rule) string {
+	dropped := 0
+	for _, r := range rules {
+		if r.DroppedBy != nil {
+			dropped++
+		}
+	}
+	switch dropped {
+	case 0:
+		return ""
+	case 1:
+		return "handrail: 1 Project-shared rule dropped for naming a Global rule; run handrail check"
+	}
+	return fmt.Sprintf("handrail: %d Project-shared rules dropped for naming Global rules; run handrail check", dropped)
+}
+
 // examplesNotice names the rules whose Examples fail, and "" when none do. It
 // carries no Example's text: the rule file is where that is read, by check.
 func examplesNotice(rules []*rule.Rule) string {
 	var failing []string
 	for _, r := range rules {
-		if harness.FailingExamples(r) != nil {
+		if harness.FailingExamples(r) != nil || harness.DriftedExamples(r) != nil {
 			failing = append(failing, fmt.Sprintf("%s (%s)", r.Name, r.Tier))
 		}
 	}

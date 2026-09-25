@@ -12,9 +12,9 @@ import (
 	"github.com/svyatov/handrail/internal/rule"
 )
 
-// checkRule is one rule in docs/spec.md section 6's check shape. Trial,
-// DroppedBy and DemotedFrom hold their zero values until trial rules, the
-// add-only shared tier and the supply check land.
+// checkRule is one rule in docs/spec.md section 6's check shape. Trial and
+// DemotedFrom hold their zero values until trial rules and the supply check
+// land.
 type checkRule struct {
 	Rule        string        `json:"rule"`
 	Tier        string        `json:"tier"`
@@ -75,14 +75,13 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 			Errors: make([]checkError, 0, len(rs.Problems)),
 		}
 		for _, r := range rs.Rules {
-			var shadowedBy *string
-			if r.ShadowedBy != nil {
-				shadowedBy = &r.ShadowedBy.Path
-			}
 			failing := harness.FailingExamples(r)
-			examplesFailed = examplesFailed || len(failing) > 0
+			// A drifted Example belongs to the rule this one replaces, so it
+			// fails here and counts nothing toward this rule's own passes.
+			drifted := harness.DriftedExamples(r)
+			examplesFailed = examplesFailed || len(failing)+len(drifted) > 0
 			examples := checkExamples{Passed: len(r.Examples) - len(failing), Failed: []checkExample{}}
-			for _, e := range failing {
+			for _, e := range slices.Concat(failing, drifted) {
 				fields := make(map[string]any, len(e.Fields))
 				for _, f := range e.Fields {
 					fields[f.Name] = f.Value()
@@ -96,7 +95,8 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 				Kind:       r.Kind,
 				Action:     r.Action.String(),
 				Enabled:    r.Enabled,
-				ShadowedBy: shadowedBy,
+				ShadowedBy: pathOf(r.ShadowedBy),
+				DroppedBy:  pathOf(r.DroppedBy),
 				Path:       r.Path,
 				Examples:   examples,
 			})
@@ -123,6 +123,7 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 		for _, p := range rs.Problems {
 			fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
 		}
+		reportDropped(rs.Rules, stderr)
 		examplesFailed = reportExamples(slices.Concat(rs.Rules, rs.Untrusted), stderr)
 	}
 
@@ -130,6 +131,14 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// pathOf is the file a rule reference names in check --json, null for none.
+func pathOf(r *rule.Rule) *string {
+	if r == nil {
+		return nil
+	}
+	return &r.Path
 }
 
 // reportExamples runs every rule's Examples, names each failing one on stderr,
@@ -141,8 +150,25 @@ func reportExamples(rules []*rule.Rule, stderr io.Writer) bool {
 			fmt.Fprintf(stderr, "handrail: %s: %s\n", r.Path, exampleFailure(e))
 			failed = true
 		}
+		for _, e := range harness.DriftedExamples(r) {
+			fmt.Fprintf(stderr, "handrail: %s: line %d of %s: %s example fails: %s\n",
+				r.Path, e.Line, r.Replaces.Path, e.Expect, e)
+			failed = true
+		}
 	}
 	return failed
+}
+
+// reportDropped names each Project-shared file dropped for naming a Global
+// rule, with both paths. It is no error: the repository's author cannot see
+// the Global file, so the user could not fix it either.
+func reportDropped(rules []*rule.Rule, stderr io.Writer) {
+	for _, r := range rules {
+		if r.DroppedBy != nil {
+			fmt.Fprintf(stderr, "handrail: %s: dropped: a Project-shared rule may not replace the Global rule %s\n",
+				r.Path, r.DroppedBy.Path)
+		}
+	}
 }
 
 // exampleFailure names a failing Example the way a rule file problem is named.
@@ -163,6 +189,8 @@ func printRuleset(w io.Writer, rules []*rule.Rule) error {
 		switch {
 		case r.ShadowedBy != nil:
 			status = "shadowed by " + r.ShadowedBy.Tier
+		case r.DroppedBy != nil:
+			status = "dropped by " + r.DroppedBy.Tier
 		case !r.Enabled:
 			status = "disabled"
 		}

@@ -124,14 +124,22 @@ func Load(cwd string) *Ruleset {
 	gather(Tier{Name: TierProjectPersonal, Dir: inRoot(LocalDir), Trusted: true}, false)
 
 	// Identity is the basename, so the highest tier holding a name carries the
-	// effective rule and every lower one is shadowed by it, wholesale.
+	// effective rule and every lower one is shadowed by it, wholesale. The one
+	// exception: the shared tier is add-only against Global, so a shared file
+	// naming a Global rule is dropped and takes no part in shadowing. That
+	// leaves at most one rule for any shadow to replace.
 	byName := make(map[string]*Rule, len(rs.Rules))
 	for _, r := range rs.Rules {
+		if global := byName[r.Name]; global != nil && global.Tier == TierGlobal && r.Tier == TierProjectShared {
+			r.DroppedBy = global
+			continue
+		}
 		byName[r.Name] = r
 	}
 	for _, r := range rs.Rules {
-		if effective := byName[r.Name]; effective != r {
+		if effective := byName[r.Name]; effective != r && r.DroppedBy == nil {
 			r.ShadowedBy = effective
+			effective.Replaces = r
 		}
 	}
 	return rs

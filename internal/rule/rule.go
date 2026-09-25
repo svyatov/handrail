@@ -37,6 +37,8 @@ type Rule struct {
 	Path       string
 	Tier       string
 	ShadowedBy *Rule // the higher-tier rule replacing this one, if any
+	Replaces   *Rule // the lower-tier rule this one shadows, if any
+	DroppedBy  *Rule // the Global rule this Project-shared one may not replace
 	Event      string
 	Kind       string
 	Action     Outcome
@@ -49,12 +51,12 @@ type Rule struct {
 	fields []string
 }
 
-// Live reports whether this rule can fire: enabled, and not shadowed by a
-// higher tier. A rule that is loaded is not thereby a rule that enforces
-// anything, and every caller asking which is which asks here. check reads the
-// two fields directly, because it reports the distinction rather than acts on
-// it.
-func (r *Rule) Live() bool { return r.Enabled && r.ShadowedBy == nil }
+// Live reports whether this rule can fire: enabled, not shadowed by a higher
+// tier, and not dropped. A rule that is loaded is not thereby a rule that
+// enforces anything, and every caller asking which is which asks here. check
+// reads the fields directly, because it reports the distinction rather than
+// acts on it.
+func (r *Rule) Live() bool { return r.Enabled && r.ShadowedBy == nil && r.DroppedBy == nil }
 
 // Condition is one entry of a rule's implicit-AND condition list: one or more
 // Terms, which OR together. A bare field test parses to a one-Term condition
