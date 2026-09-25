@@ -34,11 +34,16 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	// Validation first: a machine synced against half a ruleset is worse than an
-	// unsynced one, so nothing reaches disk until every tier parses.
-	rs, code := loadValidRules(stderr)
-	if code != 0 {
-		return code
+	// The hook entries depend on no rule, so an invalid one is reported and
+	// sync still writes: one bad file must not leave the machine with no hooks.
+	rs, err := loadRules(stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "handrail: %v\n", err)
+		return 1
+	}
+	problems := rs.Invalid()
+	for _, p := range problems {
+		fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
 	}
 
 	var targets []harness.Adapter
@@ -80,11 +85,8 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		} else {
 			fmt.Fprintf(stdout, "%s: %d hook entries already current in %s\n", a.Name, entries, a.ConfigPath())
 		}
-		for _, d := range a.Degradations(rs.Effective()) {
-			fmt.Fprintf(stdout, "%s: %s\n", a.Name, d)
-		}
-		for _, q := range a.Quirks {
-			fmt.Fprintf(stdout, "%s: %s\n", a.Name, q)
+		for _, line := range a.Report(rs.Effective()) {
+			fmt.Fprintf(stdout, "%s: %s\n", a.Name, line)
 		}
 	}
 
@@ -104,7 +106,7 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 	}
 	reportTierMoves(rs, stderr)
 	// A failing Example changes nothing sync writes, so it is reported after.
-	if reportExamples(slices.Concat(rs.Rules, rs.Untrusted), stderr) || failed {
+	if reportExamples(slices.Concat(rs.Rules, rs.Untrusted), stderr) || failed || len(problems) > 0 {
 		return 1
 	}
 	return 0

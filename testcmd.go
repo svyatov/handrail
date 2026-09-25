@@ -145,9 +145,9 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		payloads, _, failures = readCall(a, event, stdin)
 		switch {
 		case len(fields) == 0:
-		case len(payloads) > 1:
+		case len(payloads) != 1:
 			// Several payloads, such as a patch's, are no one call to vary:
-			// each is its own edit.
+			// each is its own edit. None, from an internal agent, is no call.
 			fmt.Fprintf(stderr, "handrail test: the capture yields %d payloads, and --field varies one call; write the call with --field alone\n", len(payloads))
 			return 1
 		default:
@@ -165,9 +165,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	// The same call the hook path makes, so what test reports is what hook does.
-	// evaluated is the Outcome as hook hands it to the harness, which then
-	// delivers what it can of it.
-	matched, evaluated := rs.Evaluate(payloads)
+	matched, _ := rs.Evaluate(payloads)
 	out := testOutput{Payloads: []testPayload{}, Matched: []testMatch{}}
 	for _, p := range rs.Yield(payloads) {
 		tp := testPayload{Kind: p.Kind, Fields: p.Fields(), Unreadable: []string{}}
@@ -190,8 +188,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	outcome := a.Delivered(matched)
 	out.Outcome = outcome.String()
 	failures = append(failures, loadNotices(rs)...)
-	agent, human := messages(a, rs, event, matched, failures)
-	out.Human = a.Human(event, agent, human, evaluated)
+	_, out.Human = messages(a, rs, event, matched, failures)
 
 	if *asJSON {
 		if code := writeJSON(stdout, stderr, out); code != 0 {

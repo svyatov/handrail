@@ -1,0 +1,50 @@
+# SubagentStart is where standing context reaches a subagent: a warn there
+# injects its message, and the human hears the label.
+stdin start.json
+exec sh -c 'handrail hook claude SubagentStart; echo code=$?'
+stdout '^code=0$'
+! stderr .
+stdout '"hookEventName": "SubagentStart"'
+stdout '"additionalContext": "handrail warn: reviewer-context \(global\)\\nReview against docs/spec\.md\.\\n'
+stdout '"systemMessage": "handrail warn: reviewer-context \(global\)\\nhandrail warn: zz-every-subagent \(global\)"'
+
+# agent_type on a subagent event names the subagent it is about, read from the
+# envelope.
+stdin start-explorer.json
+exec handrail hook claude SubagentStart
+! stdout reviewer-context
+stdout 'zz-every-subagent'
+
+# A subagent event with an empty agent_type is Claude Code's own internal
+# agent, and nothing is evaluated for it.
+stdin start-internal.json
+exec handrail hook claude SubagentStart
+! stdout .
+! stderr .
+
+# test reads that capture as hook does: it yields no call for --field to vary.
+stdin start-internal.json
+! exec handrail test SubagentStart --stdin --field agent_type=reviewer
+stderr 'the capture yields 0 payloads, and --field varies one call'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- start.json --
+{"hook_event_name": "SubagentStart", "agent_type": "reviewer"}
+-- start-explorer.json --
+{"hook_event_name": "SubagentStart", "agent_type": "explorer"}
+-- start-internal.json --
+{"hook_event_name": "SubagentStart", "agent_type": ""}
+-- home/.config/handrail/zz-every-subagent.md --
+---
+event: SubagentStart
+---
+Every subagent hears this.
+-- home/.config/handrail/reviewer-context.md --
+---
+event: SubagentStart
+conditions:
+  - field: agent_type
+    equals: reviewer
+---
+Review against docs/spec.md.

@@ -197,7 +197,9 @@ const listedFiles = 10
 // audience. The agent hears the standing notices, the matched messages, then
 // handrail's own failures. The human hears the same
 // order, but a rule's body only on a block or an ask, where the interruption is
-// theirs. It stays in the CLI because it is the hook command's own output format.
+// theirs. Where the agent hears only a block, as on Stop, every other message
+// and every notice goes to the human alone, since any text would continue it.
+// It stays in the CLI because it is the hook command's own output format.
 func messages(a harness.Adapter, rs *rule.Ruleset, event string, matched []rule.Match, failures []string) (agent, human string) {
 	sections := standingNotices(rs, event)
 	heard := slices.Clone(sections)
@@ -213,7 +215,9 @@ func messages(a harness.Adapter, rs *rule.Ruleset, event string, matched []rule.
 				s += fmt.Sprintf("\n  and %d more", len(m.Files)-listedFiles)
 			}
 		}
-		sections = append(sections, s)
+		if a.Injects(event) || a.Action(m.Rule) == rule.Block {
+			sections = append(sections, s)
+		}
 		switch {
 		case m.AgentOnly:
 			continue
@@ -222,7 +226,9 @@ func messages(a harness.Adapter, rs *rule.Ruleset, event string, matched []rule.
 		}
 		heard = append(heard, s)
 	}
-	sections = append(sections, failures...)
+	if a.Injects(event) {
+		sections = append(sections, failures...)
+	}
 	heard = append(heard, failures...)
 	return strings.Join(sections, "\n\n"), strings.Join(heard, "\n")
 }

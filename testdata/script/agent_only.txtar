@@ -9,6 +9,12 @@ cp ask.md home/.config/handrail/ask.md
 stderr 'ask\.md: line 5: agent_only applies only to warn'
 rm home/.config/handrail/ask.md
 
+# A warn on Stop tells only the human, so agent_only there would tell nobody.
+cp stop-warn.md home/.config/handrail/stop-warn.md
+! exec handrail check
+stderr 'stop-warn\.md: line 3: agent_only is refused on SubagentStop, where a warn tells only the human'
+rm home/.config/handrail/stop-warn.md
+
 # A repository may not whisper to the agent: in the Project-shared tier
 # agent_only is an error to check, before trust as after it.
 mkdir .handrail
@@ -84,6 +90,12 @@ Good morning.
 {}
 -- .git/HEAD --
 ref: refs/heads/main
+-- stop-warn.md --
+---
+event: SubagentStop
+agent_only: true
+---
+Coaching nobody would hear.
 -- block.md --
 ---
 event: PreToolUse

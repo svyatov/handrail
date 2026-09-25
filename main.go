@@ -79,9 +79,10 @@ func loadRules(stderr io.Writer) (*rule.Ruleset, error) {
 	return rs, nil
 }
 
-// loadValidRules is the authoring-time contract sync and test share: every tier
-// parses, or the command stops without acting. Only check reports problems and
-// keeps going, because reporting them is the whole of its job.
+// loadValidRules is test's authoring-time contract: every tier parses, or the
+// command stops without acting. check and sync report problems and keep going,
+// check because reporting them is its whole job, sync because its hooks
+// depend on no rule.
 func loadValidRules(stderr io.Writer) (*rule.Ruleset, int) {
 	rs, err := loadRules(stderr)
 	if err != nil {

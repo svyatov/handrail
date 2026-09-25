@@ -1,19 +1,19 @@
 # Everything sync can refuse, it refuses before touching a single config file.
 exec handrail trust
 
-# An invalid rule aborts, and nothing is written: a half-synced machine is worse
-# than an unsynced one.
+# An invalid rule is reported and the hooks are still written, since they
+# depend on no rule: one bad file must not leave the machine with no hooks.
 exec sh -c 'handrail sync; echo code=$?'
 stdout '^code=1$'
 stderr 'oops\.md: line 2: unknown event "Nope"'
-! exists home/.claude/settings.json
-! exists .git/info/exclude
+stdout 'claude: wrote 8 hook entries'
+grep 'hook claude PreToolUse' home/.claude/settings.json
+grep '^\.handrail/local/$' .git/info/exclude
 
-# With the rules fixed, sync lands.
+# With the rules fixed, sync succeeds.
 rm .handrail/oops.md
 exec handrail sync
-exists home/.claude/settings.json
-grep '^\.handrail/local/$' .git/info/exclude
+stdout 'claude: 8 hook entries already current'
 
 # A harness handrail cannot write for is named, not guessed at.
 exec sh -c 'handrail sync --harness gemini; echo code=$?'
@@ -34,7 +34,7 @@ rm home/.claude/settings.json
 exec sh -c 'handrail sync; echo code=$?'
 stdout '^code=1$'
 stderr 'handrail: codex: .*hooks.json'
-stdout 'claude: wrote 6 hook entries'
+stdout 'claude: wrote 8 hook entries'
 exists home/.claude/settings.json
 
 # A config file that is not a file is reported like any other unreadable one.

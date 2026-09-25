@@ -53,10 +53,40 @@ stdout '"systemMessage": "handrail block: no-yolo \(global\)\\nSay what you want
 ! stdout 'hookSpecificOutput'
 ! stdout 'prompt-coach'
 
+# SessionEnd discards the JSON and the agent is gone, so the human line goes
+# to stderr on exit 2, which Claude Code shows the user.
+stdin end.json
+exec sh -c 'handrail hook claude SessionEnd; echo code=$?'
+stdout '^code=2$'
+cmp stderr end-human.txt
+
+# With no human line there is nothing to send, and the session ends quietly.
+rm home/.config/handrail/farewell.md
+cp quiet-end.md home/.config/handrail/quiet-end.md
+stdin end.json
+exec sh -c 'handrail hook claude SessionEnd; echo code=$?'
+stdout '^code=0$'
+! stderr .
+
 -- .git/HEAD --
 ref: refs/heads/main
 -- rm.json --
 {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}
+-- end.json --
+{"hook_event_name": "SessionEnd"}
+-- end-human.txt --
+handrail warn: farewell (global)
+-- quiet-end.md --
+---
+event: SessionEnd
+agent_only: true
+---
+Nobody hears this.
+-- home/.config/handrail/farewell.md --
+---
+event: SessionEnd
+---
+Nobody is left to read this but the user.
 -- rm-tmp.json --
 {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "rm -rf /tmp/x"}}
 -- home/.config/handrail/a-tmp.md --

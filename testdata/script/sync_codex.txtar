@@ -2,8 +2,8 @@
 # rule declared once is meant to be enforced wherever the user works.
 exec handrail trust
 exec handrail sync
-stdout 'claude: wrote 6 hook entries'
-stdout 'codex: wrote 6 hook entries to .*/home/.codex/hooks.json'
+stdout 'claude: wrote 8 hook entries'
+stdout 'codex: wrote 8 hook entries to .*/home/.codex/hooks.json'
 
 # Codex reads a Claude-shaped hooks file, so the entry shape is the same one:
 # one per canonical event, naming the binary by absolute path.
@@ -13,6 +13,8 @@ grep '"command": "/[^"]* hook codex UserPromptSubmit"' home/.codex/hooks.json
 grep '"command": "/[^"]* hook codex SessionStart"' home/.codex/hooks.json
 grep '"command": "/[^"]* hook codex SessionEnd"' home/.codex/hooks.json
 grep '"command": "/[^"]* hook codex Stop"' home/.codex/hooks.json
+grep '"command": "/[^"]* hook codex SubagentStart"' home/.codex/hooks.json
+grep '"command": "/[^"]* hook codex SubagentStop"' home/.codex/hooks.json
 
 # The file's other keys and the user's own hooks survive.
 grep '"description": "my own hooks"' home/.codex/hooks.json
@@ -32,6 +34,16 @@ stdout 'codex: hook errors and timeouts fail open'
 # The same rule keeps its teeth on Claude Code, which can deny there.
 ! stdout 'claude: block degraded to warn for no-yolo'
 
+# A rule that enforces nothing is not reported: a disabled one degrades from
+# nothing to nothing.
+! stdout 'for switched-off'
+
+# An audience is not an action: an event whose output the user never sees is
+# reported per harness, whether or not a rule is on it. Claude Code shows
+# SessionEnd's stderr, so it has none.
+stdout 'codex: SessionEnd cannot tell the human: Codex CLI shows the user no hook output there'
+! stdout 'claude: .*cannot tell the human'
+
 # Each harness is reported under its own name, and only its own caveats.
 ! stdout 'claude: non-managed hooks'
 ! stdout 'codex: disableAllHooks'
@@ -41,7 +53,7 @@ stdout 'codex: hook errors and timeouts fail open'
 env CODEX_HOME=$WORK/elsewhere/codex
 mkdir $WORK/elsewhere/codex
 exec handrail sync --harness codex
-stdout 'codex: wrote 6 hook entries to .*/elsewhere/codex/hooks.json'
+stdout 'codex: wrote 8 hook entries to .*/elsewhere/codex/hooks.json'
 exists elsewhere/codex/hooks.json
 env CODEX_HOME=
 
@@ -49,16 +61,16 @@ env CODEX_HOME=
 # trust prompt fires once and never again.
 cp home/.codex/hooks.json first.json
 exec handrail sync
-stdout 'codex: 6 hook entries already current'
+stdout 'codex: 8 hook entries already current'
 cmp home/.codex/hooks.json first.json
 grep -count=1 'hook codex PreToolUse' home/.codex/hooks.json
 
 # --harness scopes to either one.
 exec handrail sync --harness codex
-stdout 'codex: 6 hook entries already current'
+stdout 'codex: 8 hook entries already current'
 ! stdout 'claude:'
 exec handrail sync --harness claude
-stdout 'claude: 6 hook entries already current'
+stdout 'claude: 8 hook entries already current'
 ! stdout 'codex:'
 
 # An unknown harness is a usage error, and names the ones that exist.
@@ -100,3 +112,10 @@ conditions:
     contains: yolo
 ---
 Say what you actually want done.
+-- .handrail/switched-off.md --
+---
+event: UserPromptSubmit
+action: block
+enabled: false
+---
+A rule that enforces nothing degrades to nothing.

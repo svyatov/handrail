@@ -143,7 +143,7 @@ func checkField(name string, values []string, list bool) error {
 	}
 	for _, v := range values {
 		switch {
-		case v == "" || name == "network_grant" && grant(v) == "":
+		case v == "" || name == "network_grant" && grant(v) == "" || name == "response" && strings.TrimSpace(v) == "":
 			return fmt.Errorf("%s needs a value", name)
 		case name == "kind" && !IsKind(v):
 			return fmt.Errorf("unknown kind %q", v)

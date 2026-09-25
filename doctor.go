@@ -52,11 +52,8 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 		r.checkEntries(a, bin)
 		// Degradation is reported at sync time and reprintable here: a rule
 		// weakened months ago is exactly the kind that reads as not firing.
-		for _, deg := range a.Degradations(rs.Effective()) {
-			r.note("%s: %s", a.Name, deg)
-		}
-		for _, q := range a.Quirks {
-			r.note("%s: %s", a.Name, q)
+		for _, line := range a.Report(rs.Effective()) {
+			r.note("%s: %s", a.Name, line)
 		}
 	}
 
