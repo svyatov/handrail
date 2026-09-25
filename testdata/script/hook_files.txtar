@@ -5,15 +5,14 @@ exec handrail trust
 # The shell payload matches a warn, a file payload a block: the call is blocked,
 # and each rule speaks once.
 stdin twelve.json
-exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
-stdout '^code=2$'
-cmp stderr expected-twelve
+exec handrail hook claude PreToolUse
+stdout '"permissionDecisionReason": "handrail warn: echo \(project-shared\)\\nAn echo\.\\n\\nhandrail block: env-writes \(project-shared\)\\nNever write \.env files\.\\nMatched files:\\n  a\.env\\n  b\.env\\n  c\.env\\n  d\.env\\n  e\.env\\n  f\.env\\n  g\.env\\n  h\.env\\n  i\.env\\n  j\.env\\n  and 2 more"$'
 
 # One matched file is named by the rule's message alone.
 stdin one.json
-exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
-stdout '^code=2$'
-! stderr 'Matched files'
+exec handrail hook claude PreToolUse
+stdout '"permissionDecision": "deny"'
+! stdout 'Matched files'
 
 # Two spellings of one file are one file, so there is nothing to list.
 stdin two-spellings.json
@@ -69,21 +68,3 @@ conditions:
     glob: '*.env'
 ---
 Never write .env files.
--- expected-twelve --
-handrail warn: echo (project-shared)
-An echo.
-
-handrail block: env-writes (project-shared)
-Never write .env files.
-Matched files:
-  a.env
-  b.env
-  c.env
-  d.env
-  e.env
-  f.env
-  g.env
-  h.env
-  i.env
-  j.env
-  and 2 more

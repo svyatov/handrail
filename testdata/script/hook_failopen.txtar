@@ -12,10 +12,10 @@ stdout 'handrail warn: works \(project-shared\)'
 
 # A broken rule alongside a blocking one still blocks, and still says so.
 stdin rm.json
-exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
-stdout '^code=2$'
-stderr 'handrail block: blocker \(project-shared\)'
-stderr 'skipped the broken rule'
+exec handrail hook claude PreToolUse
+stdout '"permissionDecision": "deny"'
+stdout '"permissionDecisionReason": "handrail block: blocker \(project-shared\)'
+stdout '"systemMessage": "handrail block: blocker \(project-shared\).*skipped the broken rule'
 
 # Malformed stdin never blocks the harness: fail open, loudly. The payload
 # arrived and was read; it is the JSON that is wrong, and the message has to say

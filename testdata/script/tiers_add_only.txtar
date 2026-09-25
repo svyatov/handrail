@@ -4,20 +4,19 @@ exec handrail trust
 
 # The shared stub would have switched the Global rule off; it still blocks.
 stdin rm.json
-exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
-stdout '^code=2$'
-stderr 'handrail block: no-rm \(global\)'
-! stderr 'shared'
+exec handrail hook claude PreToolUse
+stdout '"permissionDecisionReason": "handrail block: no-rm \(global\)'
+! stdout 'shared'
 ! stdout 'dropped'
 
 # The shared copy would have narrowed the Global rule; it still blocks the call
 # the copy left out, and the shared tier still adds a rule under its own name.
 stdin push.json
-exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
-stdout '^code=2$'
-stderr 'handrail block: no-force-push \(global\)'
-stderr 'handrail warn: ask-first \(project-shared\)'
-! stderr 'narrowed'
+exec handrail hook claude PreToolUse
+stdout '"permissionDecision": "deny"'
+stdout 'handrail block: no-force-push \(global\)'
+stdout 'handrail warn: ask-first \(project-shared\)'
+! stdout 'narrowed'
 
 # SessionStart gives both audiences the count.
 stdin start.json

@@ -56,7 +56,10 @@ warn  only-personal  project-personal
   the personal only-personal message
 
 outcome: warn
-human: none
+human:
+  handrail warn: only-global (global)
+  handrail warn: only-shared (project-shared)
+  handrail warn: only-personal (project-personal)
 -- .git/HEAD --
 ref: refs/heads/main
 -- home/.config/handrail/everywhere.md --

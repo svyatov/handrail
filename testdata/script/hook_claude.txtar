@@ -1,21 +1,20 @@
 # The Claude Code hook path end to end: block, warn, and allow across tool kinds.
 exec handrail trust
 
-# A blocking shell rule: exit 2, message as the reason on stderr, nothing on stdout.
+# A blocking shell rule: a JSON deny on exit 0, message as the reason.
 stdin bash-rm.json
 exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
-stdout '^code=2$'
-! stdout 'handrail block'
-stderr '^handrail block: dangerous-rm \(project-shared\)$'
-stderr 'Never delete recursively from the filesystem root'
+stdout '^code=0$'
+! stderr .
+stdout '"permissionDecision": "deny"'
+stdout '"permissionDecisionReason": "handrail block: dangerous-rm \(project-shared\)\\nNever delete recursively from the filesystem root\.'
 
 # PowerShell is the other shell Claude Code can route commands through, and it
 # carries its command in the same key, so the same shell rule reaches it. A rule
 # that stopped here would be a guardrail covering one of the two shells.
 stdin pwsh-rm.json
-exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
-stdout '^code=2$'
-stderr '^handrail block: dangerous-rm \(project-shared\)$'
+exec handrail hook claude PreToolUse
+stdout '"permissionDecisionReason": "handrail block: dangerous-rm \(project-shared\)'
 
 # A warning file_edit rule matching on content: the action proceeds, the message
 # is injected as context.
@@ -45,9 +44,8 @@ stdout 'handrail warn: no-env-reads'
 
 # An mcp call is classified by its tool name, and server and tool are addressable.
 stdin mcp.json
-exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
-stdout '^code=2$'
-stderr 'handrail block: no-deploys \(project-shared\)'
+exec handrail hook claude PreToolUse
+stdout '"permissionDecisionReason": "handrail block: no-deploys \(project-shared\)'
 
 # A tool no canonical kind names is classified as other rather than dropped, so
 # a rule can still reach it.
@@ -55,11 +53,11 @@ stdin todowrite.json
 exec handrail hook claude PreToolUse
 stdout 'handrail warn: unclassified \(project-shared\)'
 
-# UserPromptSubmit carries the prompt, and blocks with exit 2.
+# UserPromptSubmit carries the prompt, and blocks with a decision.
 stdin prompt.json
-exec sh -c 'handrail hook claude UserPromptSubmit; echo code=$?'
-stdout '^code=2$'
-stderr 'handrail block: no-yolo'
+exec handrail hook claude UserPromptSubmit
+stdout '"decision": "block"'
+stdout '"reason": "handrail block: no-yolo'
 
 # PostToolUse cannot deny a call that has already run, so a block there degrades
 # to the strongest thing left: the message, with the turn proceeding.
@@ -84,11 +82,12 @@ exec handrail hook claude PreToolUse
 ! stdout .
 ! stderr .
 stdin ../cwd.json
-exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
-stdout '^code=2$'
+exec handrail hook claude PreToolUse
+stdout '"permissionDecision": "deny"'
 
 -- expected-multi --
 {
+  "systemMessage": "handrail warn: prefer-fetch (global)\nhandrail warn: slow-network (project-personal)",
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "additionalContext": "handrail warn: prefer-fetch (global)\nUse the fetch tool rather than shelling out to curl.\n\nhandrail warn: slow-network (project-personal)\nNetwork calls make the session slow."

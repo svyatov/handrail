@@ -3,21 +3,23 @@
 # event that cannot fail closed.
 exec handrail trust
 
-# A blocking shell rule: exit 2, message as the reason on stderr.
+# A blocking shell rule: the same JSON deny as Claude Code, on exit 0.
 stdin bash-rm.json
 exec sh -c 'handrail hook codex PreToolUse; echo code=$?'
-stdout '^code=2$'
-stderr '^handrail block: dangerous-rm \(project-shared\)$'
-stderr 'Never delete recursively from the filesystem root'
+stdout '^code=0$'
+! stderr .
+stdout '"permissionDecision": "deny"'
+stdout '"permissionDecisionReason": "handrail block: dangerous-rm \(project-shared\)\\nNever delete recursively from the filesystem root'
+stdout '"systemMessage": "handrail block: dangerous-rm \(project-shared\)'
 
 # apply_patch is Codex's one file-editing tool, and it arrives shell-shaped:
 # the whole edit is a patch envelope under command. The path it names and the
 # lines it adds are what path and content conditions read.
 stdin apply-patch.json
-exec sh -c 'handrail hook codex PreToolUse; echo code=$?'
-stdout '^code=2$'
-stderr 'handrail block: no-secrets \(project-shared\)'
-stderr 'handrail warn: no-env-edits \(project-shared\)'
+exec handrail hook codex PreToolUse
+stdout '"permissionDecision": "deny"'
+stdout 'handrail block: no-secrets \(project-shared\)'
+stdout 'handrail warn: no-env-edits \(project-shared\)'
 
 # A shell rule does not reach it: apply_patch is a file edit, whatever it rides in.
 ! stderr 'no-heredocs'
@@ -27,10 +29,10 @@ stderr 'handrail warn: no-env-edits \(project-shared\)'
 # answers for the first, with no rule reading one file's path against
 # another's content.
 stdin multi-patch.json
-exec sh -c 'handrail hook codex PreToolUse; echo code=$?'
-stdout '^code=2$'
-stderr 'handrail block: no-secrets'
-stderr 'handrail warn: no-env-edits'
+exec handrail hook codex PreToolUse
+stdout '"permissionDecision": "deny"'
+stdout 'handrail block: no-secrets'
+stdout 'handrail warn: no-env-edits'
 
 # Codex cannot fail closed on UserPromptSubmit before the model request, so a
 # block there degrades to the strongest thing left: the message, injected.
@@ -43,9 +45,9 @@ stdout 'handrail block: no-yolo \(project-shared\)'
 
 # The same payload on Claude Code, which can deny there, is denied.
 stdin prompt.json
-exec sh -c 'handrail hook claude UserPromptSubmit; echo code=$?'
-stdout '^code=2$'
-stderr 'handrail block: no-yolo'
+exec handrail hook claude UserPromptSubmit
+stdout '"decision": "block"'
+stdout '"reason": "handrail block: no-yolo'
 
 # A warning proceeds and is injected, same protocol as Claude Code.
 stdin bash-curl.json
@@ -54,9 +56,8 @@ stdout 'handrail warn: prefer-fetch \(global\)'
 
 # An mcp call is classified by its tool name on either harness.
 stdin mcp.json
-exec sh -c 'handrail hook codex PreToolUse; echo code=$?'
-stdout '^code=2$'
-stderr 'handrail block: no-deploys'
+exec handrail hook codex PreToolUse
+stdout '"permissionDecisionReason": "handrail block: no-deploys'
 
 -- .git/HEAD --
 ref: refs/heads/main

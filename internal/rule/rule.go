@@ -46,9 +46,14 @@ type Rule struct {
 	Kind        string
 	Action      Outcome
 	Enabled     bool
-	Conditions  []Condition
-	Examples    []Example
-	Message     string
+	// AgentOnly withholds the human's line, which a warn alone may do.
+	AgentOnly bool
+	// LostAgentOnly marks a Project-shared rule that set agent_only, which
+	// that tier refuses: the rule stays, and the human hears it.
+	LostAgentOnly bool
+	Conditions    []Condition
+	Examples      []Example
+	Message       string
 	// fields names each field the conditions test once, in the order evaluation
 	// chooses a Candidate for them. A Term's slot is its field's index here.
 	fields []string
@@ -140,7 +145,7 @@ func Parse(name string, data []byte) (*Rule, error) {
 
 	r := &Rule{Name: name, Action: Warn, Enabled: true, Message: strings.TrimSpace(body)}
 	seen := make(map[string]bool, len(doc.mapping))
-	var kindLine, actionLine int
+	var kindLine, actionLine, agentOnlyLine int
 	for _, kv := range doc.mapping {
 		if seen[kv.key] {
 			return nil, fmt.Errorf("line %d: duplicate field %q", kv.line, kv.key)
@@ -179,15 +184,19 @@ func Parse(name string, data []byte) (*Rule, error) {
 			default:
 				return nil, fmt.Errorf("line %d: unknown action %q", kv.line, v)
 			}
-		case "enabled":
+		case "enabled", "agent_only":
 			var v string
 			if err := scalarInto(kv, &v); err != nil {
 				return nil, err
 			}
 			if v != "true" && v != "false" {
-				return nil, fmt.Errorf("line %d: enabled must be true or false", kv.line)
+				return nil, fmt.Errorf("line %d: %s must be true or false", kv.line, kv.key)
 			}
-			r.Enabled = v == "true"
+			if kv.key == "enabled" {
+				r.Enabled = v == "true"
+			} else {
+				r.AgentOnly, agentOnlyLine = v == "true", kv.line
+			}
 		case "conditions":
 			if kv.val.seq == nil {
 				return nil, fmt.Errorf("line %d: conditions must be a list", kv.line)
@@ -214,6 +223,11 @@ func Parse(name string, data []byte) (*Rule, error) {
 		}
 	}
 
+	// A denial whose reason the human cannot see is a support ticket, and an
+	// ask without the human has nobody to ask.
+	if r.AgentOnly && r.Action != Warn {
+		return nil, fmt.Errorf("line %d: agent_only applies only to warn", agentOnlyLine)
+	}
 	if err := r.checkEvent(kindLine, actionLine); err != nil {
 		return nil, err
 	}

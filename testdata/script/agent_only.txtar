@@ -1,0 +1,86 @@
+# agent_only is for coaching warns: the human must hear a block or an ask.
+mkdir home/.config/handrail
+cp block.md home/.config/handrail/block.md
+! exec handrail check
+stderr 'block\.md: line 4: agent_only applies only to warn'
+rm home/.config/handrail/block.md
+cp ask.md home/.config/handrail/ask.md
+! exec handrail check
+stderr 'ask\.md: line 5: agent_only applies only to warn'
+rm home/.config/handrail/ask.md
+
+# A repository may not whisper to the agent: in the Project-shared tier
+# agent_only is an error to check.
+exec handrail trust
+mkdir .handrail
+cp warn.md .handrail/coach.md
+! exec handrail check
+stdout '^project-shared +coach +PreToolUse'
+stderr 'coach\.md: agent_only is refused in the Project-shared tier'
+! exec handrail sync
+stderr 'coach\.md: agent_only is refused in the Project-shared tier'
+
+# The hook path keeps the rule and drops the field, so the human hears it...
+stdin ls.json
+exec handrail hook claude PreToolUse
+stdout '"systemMessage": "handrail warn: coach \(project-shared\)"'
+
+# ...and SessionStart names it on both channels, ahead of any rule's message.
+cp hello.md home/.config/handrail/hello.md
+stdin start.json
+exec handrail hook claude SessionStart
+stdout '"systemMessage": "handrail: agent_only dropped from 1 Project-shared rule, so the human hears it: coach; run handrail check\\nhandrail warn: hello \(global\)"'
+stdout '"additionalContext": "handrail: agent_only dropped from 1 Project-shared rule, so the human hears it: coach; run handrail check\\n\\nhandrail warn: hello \(global\)\\nGood morning\."'
+cp warn.md .handrail/coach-too.md
+stdin start.json
+exec handrail hook claude SessionStart
+stdout '"systemMessage": "handrail: agent_only dropped from 2 Project-shared rules, so the human hears them: coach, coach-too; run handrail check'
+
+# The user's own tiers keep it: a Project-personal agent_only is quiet.
+rm .handrail/coach.md
+rm .handrail/coach-too.md
+mkdir .handrail/local
+cp warn.md .handrail/local/coach.md
+exec handrail check
+stdin ls.json
+exec handrail hook claude PreToolUse
+stdout '"additionalContext": "handrail warn: coach \(project-personal\)'
+! stdout systemMessage
+
+-- ls.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- start.json --
+{"hook_event_name": "SessionStart", "source": "startup"}
+-- hello.md --
+---
+event: SessionStart
+---
+Good morning.
+-- home/.claude/settings.json --
+{}
+-- .git/HEAD --
+ref: refs/heads/main
+-- block.md --
+---
+event: PreToolUse
+action: block
+agent_only: true
+---
+A denial whose reason nobody sees.
+-- ask.md --
+---
+event: PreToolUse
+action: ask
+kind: shell
+agent_only: true
+---
+An approval nobody is asked for.
+-- warn.md --
+---
+event: PreToolUse
+agent_only: true
+conditions:
+  - field: command
+    equals: ls
+---
+Prefer the Glob tool for listing.

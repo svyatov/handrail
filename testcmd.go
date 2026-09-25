@@ -189,8 +189,9 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// hook does with the evaluated one.
 	outcome := a.Delivered(matched)
 	out.Outcome = outcome.String()
-	failures = append(failures, loadNotices(rs, event)...)
-	out.Human = a.Human(event, agentMessage(a, rs, matched, failures), strings.Join(failures, "\n"), evaluated)
+	failures = append(failures, loadNotices(rs)...)
+	agent, human := messages(a, rs, event, matched, failures)
+	out.Human = a.Human(event, agent, human, evaluated)
 
 	if *asJSON {
 		if code := writeJSON(stdout, stderr, out); code != 0 {

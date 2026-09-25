@@ -1,0 +1,119 @@
+# The human hears what fired: a block's or ask's body, and one label line per
+# warn, in one combined message on the harness's user-visible field.
+
+# A PreToolUse block is a JSON deny on exit 0: the reason reaches the agent,
+# and the human reads the same body in systemMessage.
+stdin rm.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=0$'
+! stderr .
+stdout '"permissionDecision": "deny"'
+stdout '"permissionDecisionReason": "handrail block: no-rm \(global\)\\nNot from the filesystem root\."'
+stdout '"systemMessage": "handrail block: no-rm \(global\)\\nNot from the filesystem root\."'
+
+# Every rule that fires is one entry of one message, in the agent's order, tier
+# then alphabetical: a warn is a label line, and its body goes to the agent alone.
+stdin rm-tmp.json
+exec handrail hook claude PreToolUse
+stdout '"systemMessage": "handrail warn: a-tmp \(global\)\\nhandrail block: no-rm \(global\)\\nNot from the filesystem root\.\\nhandrail warn: tmp-local \(project-personal\)"'
+stdout '"permissionDecisionReason": "handrail warn: a-tmp \(global\)\\nTemporary files come and go\.\\n\\n'
+
+# On an ask the human's message is the approval prompt, and the agent reads
+# every body as context.
+stdin push.json
+exec handrail hook claude PreToolUse
+stdout '"permissionDecision": "ask"'
+stdout '"permissionDecisionReason": "handrail ask: ask-push \(global\)\\nPushes need a yes\.\\nhandrail warn: push-note \(global\)"'
+stdout '"additionalContext": "handrail ask: ask-push \(global\)\\nPushes need a yes\.\\n\\nhandrail warn: push-note \(global\)\\nPushes publish\."'
+! stdout systemMessage
+
+# agent_only coaches the agent alone: its warn sends the human nothing.
+stdin ls.json
+exec handrail hook claude PreToolUse
+stdout '"additionalContext": "handrail warn: coach \(global\)\\nPrefer the Glob tool for listing\."'
+! stdout systemMessage
+
+# A UserPromptSubmit block is a decision on exit 0, with the reason and the
+# human's text beside it.
+stdin prompt.json
+exec sh -c 'handrail hook claude UserPromptSubmit; echo code=$?'
+stdout '^code=0$'
+! stderr .
+stdout '"decision": "block"'
+stdout '"reason": "handrail block: no-yolo \(global\)\\nSay what you want done\."'
+stdout '"systemMessage": "handrail block: no-yolo \(global\)\\nSay what you want done\."'
+! stdout 'hookSpecificOutput'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- rm.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}
+-- rm-tmp.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "rm -rf /tmp/x"}}
+-- home/.config/handrail/a-tmp.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    contains: /tmp
+---
+Temporary files come and go.
+-- .handrail/local/tmp-local.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    contains: /tmp
+---
+Mind the shared temporary directory.
+-- push.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git push"}}
+-- home/.config/handrail/ask-push.md --
+---
+event: PreToolUse
+action: ask
+conditions:
+  - field: command
+    starts_with: git push
+---
+Pushes need a yes.
+-- home/.config/handrail/push-note.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    contains: push
+---
+Pushes publish.
+-- ls.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- home/.config/handrail/coach.md --
+---
+event: PreToolUse
+agent_only: true
+conditions:
+  - field: command
+    equals: ls
+---
+Prefer the Glob tool for listing.
+-- prompt.json --
+{"hook_event_name": "UserPromptSubmit", "prompt": "just yolo it"}
+-- home/.config/handrail/no-yolo.md --
+---
+event: UserPromptSubmit
+action: block
+conditions:
+  - field: prompt
+    contains: yolo
+---
+Say what you want done.
+-- home/.config/handrail/no-rm.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf
+---
+Not from the filesystem root.

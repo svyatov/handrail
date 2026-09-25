@@ -71,6 +71,18 @@ func (rs *Ruleset) Effective() []*Rule {
 	return out
 }
 
+// Refused names every Project-shared rule that set agent_only, trusted or not:
+// an error to the authoring commands, which the hook path does not skip.
+func (rs *Ruleset) Refused() []Problem {
+	var out []Problem
+	for _, r := range slices.Concat(rs.Rules, rs.Untrusted) {
+		if r.LostAgentOnly {
+			out = append(out, Problem{Path: r.Path, Message: "agent_only is refused in the Project-shared tier"})
+		}
+	}
+	return out
+}
+
 // Unreadable reports whether the load lost rules an event should have been
 // evaluated against: a tier with no directory to read, or a rule file skipped
 // in a tier whose rules count.
@@ -107,6 +119,13 @@ func Load(cwd string) *Ruleset {
 				problems[i].Untrusted = !t.Trusted
 			}
 			rs.Problems = append(rs.Problems, problems...)
+			// A repository rule that speaks to the agent behind the human's back
+			// is refused, and the hook path keeps the rule, louder.
+			for _, r := range rules {
+				if t.Name == TierProjectShared && r.AgentOnly {
+					r.AgentOnly, r.LostAgentOnly = false, true
+				}
+			}
 			if t.Trusted {
 				for _, r := range rules {
 					r.Tier = t.Name

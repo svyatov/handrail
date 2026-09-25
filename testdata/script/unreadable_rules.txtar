@@ -41,7 +41,6 @@ exec handrail hook claude PreToolUse
 ! stdout 'broken'
 ! stdout 'gap-rules'
 ! stdout 'systemMessage'
-stdout 'run handrail trust'
 
 # check still validates it, because it validates every tier.
 ! exec handrail check
