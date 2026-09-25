@@ -184,18 +184,14 @@ func Parse(name string, data []byte) (*Rule, error) {
 			default:
 				return nil, fmt.Errorf("line %d: unknown action %q", kv.line, v)
 			}
-		case "enabled", "agent_only":
-			var v string
-			if err := scalarInto(kv, &v); err != nil {
+		case "enabled":
+			if err := boolInto(kv, &r.Enabled); err != nil {
 				return nil, err
 			}
-			if v != "true" && v != "false" {
-				return nil, fmt.Errorf("line %d: %s must be true or false", kv.line, kv.key)
-			}
-			if kv.key == "enabled" {
-				r.Enabled = v == "true"
-			} else {
-				r.AgentOnly, agentOnlyLine = v == "true", kv.line
+		case "agent_only":
+			agentOnlyLine = kv.line
+			if err := boolInto(kv, &r.AgentOnly); err != nil {
+				return nil, err
 			}
 		case "conditions":
 			if kv.val.seq == nil {
@@ -336,6 +332,18 @@ func scalarInto(kv pair, dst *string) error {
 		return fmt.Errorf("line %d: %s must be a single value", kv.line, kv.key)
 	}
 	*dst = kv.val.scalar
+	return nil
+}
+
+func boolInto(kv pair, dst *bool) error {
+	var v string
+	if err := scalarInto(kv, &v); err != nil {
+		return err
+	}
+	if v != "true" && v != "false" {
+		return fmt.Errorf("line %d: %s must be true or false", kv.line, kv.key)
+	}
+	*dst = v == "true"
 	return nil
 }
 

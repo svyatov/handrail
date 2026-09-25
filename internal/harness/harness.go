@@ -513,7 +513,8 @@ type hookSpecific struct {
 // harness discards, it is the only way left to reach the user, which is what a
 // warning degrades to where context injection does not exist.
 func (a Adapter) toStderr(event string, outcome rule.Outcome) bool {
-	return a.degrade(event, outcome) == rule.Block && a.caps(event).deny == exitTwo || !a.caps(event).inject
+	c := a.caps(event)
+	return (a.degrade(event, outcome) == rule.Block && c.deny == exitTwo) || !c.inject
 }
 
 // Human is the text the user is shown when Deliver sends message and human
