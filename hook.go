@@ -70,7 +70,7 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	matched, outcome := rs.Evaluate(payloads)
 	failures = append(failures, loadNotices(rs, event)...)
 	human := strings.Join(failures, "\n")
-	return a.Deliver(event, agentMessage(rs, matched, failures), human, outcome, stdout, stderr)
+	return a.Deliver(event, agentMessage(a, rs, matched, failures), human, outcome, stdout, stderr)
 }
 
 // readCall reads the harness's payload from stdin and normalizes it. A
@@ -167,10 +167,13 @@ const listedFiles = 10
 // should hear, which is the matched messages, then handrail's own failures,
 // then the trust notice. It stays in the CLI because it is the hook command's own
 // output format, with one caller and nothing to disagree with.
-func agentMessage(rs *rule.Ruleset, matched []rule.Match, failures []string) string {
+func agentMessage(a harness.Adapter, rs *rule.Ruleset, matched []rule.Match, failures []string) string {
 	var sections []string
 	for _, m := range matched {
 		s := fmt.Sprintf("handrail %s: %s (%s)\n%s", m.Action, m.Name, m.Tier, m.Message)
+		if note := a.Note(m.Rule); note != "" {
+			s += "\n" + note
+		}
 		if len(m.Files) > 0 {
 			s += "\nMatched files:\n  " + strings.Join(m.Files[:min(len(m.Files), listedFiles)], "\n  ")
 			if len(m.Files) > listedFiles {

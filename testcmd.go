@@ -190,7 +190,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	outcome := a.Delivered(matched)
 	out.Outcome = outcome.String()
 	failures = append(failures, loadNotices(rs, event)...)
-	out.Human = a.Human(event, agentMessage(rs, matched, failures), strings.Join(failures, "\n"), evaluated)
+	out.Human = a.Human(event, agentMessage(a, rs, matched, failures), strings.Join(failures, "\n"), evaluated)
 
 	if *asJSON {
 		if code := writeJSON(stdout, stderr, out); code != 0 {
@@ -243,8 +243,11 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 
-	if outcome == rule.Block {
+	switch outcome {
+	case rule.Block:
 		return 2
+	case rule.Ask:
+		return 3
 	}
 	return 0
 }

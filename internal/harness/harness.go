@@ -48,6 +48,7 @@ type eventCaps struct {
 	name   string
 	deny   denial // how a block is delivered, or noDenial where it cannot be
 	inject bool   // whether the harness puts a hook's output in front of the agent
+	ask    bool   // whether a hook can hand the call to the human for approval
 }
 
 // denial is how a harness hears a block on one event. The zero value is the
@@ -73,7 +74,7 @@ var adapters = []Adapter{
 		Name: "claude", title: "Claude Code", dir: ".claude", homeEnv: "CLAUDE_CONFIG_DIR", file: "settings.json",
 		aliases: [][]string{{"Agent", "Task"}}, agentTypeKey: "subagent_type", agentPromptKey: "prompt",
 		events: []eventCaps{
-			{name: "PreToolUse", deny: exitTwo, inject: true},
+			{name: "PreToolUse", deny: exitTwo, inject: true, ask: true},
 			{name: "PostToolUse", inject: true},
 			{name: "UserPromptSubmit", deny: exitTwo, inject: true},
 			{name: "SessionStart", inject: true},
@@ -450,6 +451,31 @@ func (a Adapter) caps(event string) eventCaps {
 	return eventCaps{}
 }
 
+// degrade is the Outcome the harness delivers for o on event: o itself, or
+// the nearest one keeping its promise where the harness cannot deliver it. An
+// ask rises to block, since only a denial keeps a call from proceeding without
+// a human yes; a block falls to warn.
+func (a Adapter) degrade(event string, o rule.Outcome) rule.Outcome {
+	c := a.caps(event)
+	if o == rule.Ask && !c.ask {
+		o = rule.Block
+	}
+	if o == rule.Block && c.deny == noDenial {
+		o = rule.Warn
+	}
+	return o
+}
+
+// Note is what an ask this harness turns into a block adds to its message,
+// and "" for any other rule. The one substitution that tightens says so at
+// event time; the others are reported at sync alone.
+func (a Adapter) Note(r *rule.Rule) string {
+	if r.Action == rule.Ask && a.Action(r) == rule.Block {
+		return "This rule asks for approval, and " + a.title + " cannot ask for it, so the call is denied."
+	}
+	return ""
+}
+
 // blockReason says why a denial cannot be honoured, for the degradation report.
 // Only sync and doctor ask; the hot path takes the predicate and no string.
 func (a Adapter) blockReason(event string) string {
@@ -465,8 +491,12 @@ type hookOutput struct {
 }
 
 type hookSpecific struct {
-	HookEventName     string `json:"hookEventName"`
-	AdditionalContext string `json:"additionalContext"`
+	HookEventName string `json:"hookEventName"`
+	// An ask hands the call to the human, who reads the reason in the
+	// approval prompt; the agent reads the same text as context.
+	PermissionDecision       string `json:"permissionDecision,omitempty"`
+	PermissionDecisionReason string `json:"permissionDecisionReason,omitempty"`
+	AdditionalContext        string `json:"additionalContext"`
 }
 
 // toStderr reports whether Deliver sends an event's message on exit 2, the
@@ -475,27 +505,27 @@ type hookSpecific struct {
 // discards, it is the only way left to reach the user, which is what a warning
 // degrades to where context injection does not exist.
 func (a Adapter) toStderr(event string, outcome rule.Outcome) bool {
-	c := a.caps(event)
-	return (outcome == rule.Block && c.deny == exitTwo) || !c.inject
+	return a.degrade(event, outcome) == rule.Block || !a.caps(event).inject
 }
 
 // Human is the text the user is shown when Deliver sends message and human
 // for event, and "" when nothing reaches them. human is part of message, so
 // no message means no human line either.
 func (a Adapter) Human(event, message, human string, outcome rule.Outcome) string {
-	if a.toStderr(event, outcome) {
+	if a.toStderr(event, outcome) || a.degrade(event, outcome) == rule.Ask {
 		return message
 	}
 	return human
 }
 
 // Deliver writes message in the harness's protocol and returns the exit code:
-// a block is exit 2 with the message as the denial reason on stderr, anything
-// else proceeds and injects the message into the agent's context. Both
-// harnesses document the same two channels, exit 2 with a stderr reason and a
-// hookSpecificOutput.additionalContext object, so one implementation serves.
-// human is what the user sees on systemMessage; on the stderr path it is
-// already part of message, which reaches the user there.
+// a block is exit 2 with the message as the denial reason on stderr, an ask
+// is a permissionDecision whose reason the approval prompt shows, and anything
+// else proceeds. Every path but the stderr one injects the message into the
+// agent's context. Both harnesses document the same channels, exit 2 with a
+// stderr reason and a hookSpecificOutput object, so one implementation serves.
+// human is what the user sees on systemMessage; on the stderr and ask paths it
+// is already part of message, which reaches the user there.
 func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, stdout, stderr io.Writer) int {
 	if message == "" {
 		return 0
@@ -508,6 +538,12 @@ func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, std
 	}
 
 	out := hookOutput{human, hookSpecific{HookEventName: event, AdditionalContext: message}}
+	if a.degrade(event, outcome) == rule.Ask {
+		// The approval prompt shows the whole message, human included.
+		out.SystemMessage = ""
+		out.HookSpecificOutput.PermissionDecision = "ask"
+		out.HookSpecificOutput.PermissionDecisionReason = message
+	}
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
 	// Rule messages are prose, so HTML escaping would only mangle them.
