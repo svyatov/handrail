@@ -18,6 +18,7 @@ type failWriter struct{}
 
 func (failWriter) Write([]byte) (int, error) { return 0, errors.New("no space left on device") }
 
+//nolint:paralleltest // sandboxHome sets the process environment and working directory
 func TestCommandsReportAnUnwritableStdout(t *testing.T) {
 	cases := []struct {
 		name string

@@ -21,6 +21,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestScripts(t *testing.T) {
+	t.Parallel()
 	testscript.Run(t, testscript.Params{
 		Dir:                 "testdata/script",
 		RequireExplicitExec: true,
@@ -44,13 +45,14 @@ func condition(cond string) (bool, error) {
 // calling run directly.
 const hookBudget = 50 * time.Millisecond
 
+//nolint:paralleltest // a timing budget measured beside other tests measures them
 func TestHookColdStart(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and execs the binary")
 	}
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "handrail")
-	build := exec.Command("go", "build", "-ldflags", "-s -w", "-o", bin, ".")
+	build := exec.CommandContext(t.Context(), "go", "build", "-ldflags", "-s -w", "-o", bin, ".")
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("building handrail: %v\n%s", err, out)
@@ -90,7 +92,7 @@ func TestHookColdStart(t *testing.T) {
 	)
 	run := func(args ...string) (time.Duration, string) {
 		t.Helper()
-		cmd := exec.Command(bin, args...)
+		cmd := exec.CommandContext(t.Context(), bin, args...)
 		cmd.Dir, cmd.Env = repo, env
 		cmd.Stdin = strings.NewReader(
 			`{"hook_event_name":"PreToolUse","cwd":"` + repo + `","tool_name":"Bash","tool_input":{"command":"echo hi"}}`)

@@ -160,6 +160,8 @@ func (r *reader) stdin(c *call) {
 			r.code(r.word(rd.Word), literal(rd.Word))
 		case syntax.RdrIn, syntax.RdrInOut, syntax.DplIn:
 			r.gaveUp = true
+		default:
+			// An output redirect feeds the call nothing to read.
 		}
 	}
 }

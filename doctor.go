@@ -30,9 +30,9 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 
 	bin, err := os.Executable()
 	if err != nil {
-		r.bad("cannot locate this binary: %v", err)
+		r.badf("cannot locate this binary: %v", err)
 	} else {
-		r.ok("handrail %s at %s", version, bin)
+		r.okf("handrail %s at %s", version, bin)
 	}
 
 	cwd, err := os.Getwd()
@@ -45,27 +45,27 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 	for _, a := range harness.Adapters() {
 		fmt.Fprintln(stdout)
 		if !a.Installed() {
-			r.note("%s: not installed", a.Name)
+			r.notef("%s: not installed", a.Name)
 			continue
 		}
-		r.ok("%s: config at %s", a.Name, a.ConfigPath())
+		r.okf("%s: config at %s", a.Name, a.ConfigPath())
 		r.checkEntries(a, bin)
 		// Degradation is reported at sync time and reprintable here: a rule
 		// weakened months ago is exactly the kind that reads as not firing.
 		for _, line := range a.Report(rs.Effective()) {
-			r.note("%s: %s", a.Name, line)
+			r.notef("%s: %s", a.Name, line)
 		}
 	}
 
 	fmt.Fprintln(stdout)
-	r.ok("project root %s", rs.Root)
+	r.okf("project root %s", rs.Root)
 	r.checkTiers(rs)
 	r.checkExclusion(rs)
 
 	for _, p := range rs.Invalid() {
-		r.bad("%s: %s", p.Path, p.Message)
+		r.badf("%s: %s", p.Path, p.Message)
 	}
-	r.ok("%s valid", countRules(len(rs.Rules)))
+	r.okf("%s valid", countRules(len(rs.Rules)))
 
 	if r.problems > 0 {
 		return 1
@@ -82,16 +82,16 @@ type report struct {
 	problems int
 }
 
-func (r *report) line(status, format string, a ...any) {
+func (r *report) linef(status, format string, a ...any) {
 	fmt.Fprintf(r.w, "%-8s %s\n", status, fmt.Sprintf(format, a...))
 }
 
-func (r *report) ok(format string, a ...any)   { r.line("ok", format, a...) }
-func (r *report) note(format string, a ...any) { r.line("note", format, a...) }
+func (r *report) okf(format string, a ...any)   { r.linef("ok", format, a...) }
+func (r *report) notef(format string, a ...any) { r.linef("note", format, a...) }
 
-func (r *report) bad(format string, a ...any) {
+func (r *report) badf(format string, a ...any) {
 	r.problems++
-	r.line("problem", format, a...)
+	r.linef("problem", format, a...)
 }
 
 // checkEntries answers the question a broken install turns into: is there an
@@ -100,28 +100,28 @@ func (r *report) bad(format string, a ...any) {
 func (r *report) checkEntries(a harness.Adapter, bin string) {
 	entries, err := a.Entries()
 	if err != nil {
-		r.bad("%s: %v", a.Name, err)
+		r.badf("%s: %v", a.Name, err)
 		return
 	}
 	current := 0
 	for _, e := range entries {
 		switch {
 		case e.Binary == "":
-			r.bad("%s: no hook entry for %s; run handrail sync", a.Name, e.Event)
+			r.badf("%s: no hook entry for %s; run handrail sync", a.Name, e.Event)
 		case !runnable(e.Binary):
 			// An install that loses the exec bit leaves every entry in place and
 			// every rule unenforced, which is the failure that looks like none.
-			r.bad("%s: the %s entry names %s, which is not a runnable file; run handrail sync",
+			r.badf("%s: the %s entry names %s, which is not a runnable file; run handrail sync",
 				a.Name, e.Event, e.Binary)
 		case e.Binary != bin:
-			r.bad("%s: the %s entry names %s, and this binary is %s; run handrail sync",
+			r.badf("%s: the %s entry names %s, and this binary is %s; run handrail sync",
 				a.Name, e.Event, e.Binary, bin)
 		default:
 			current++
 		}
 	}
 	if current == len(entries) {
-		r.ok("%s: %d hook entries current", a.Name, current)
+		r.okf("%s: %d hook entries current", a.Name, current)
 	}
 }
 
@@ -133,15 +133,15 @@ func (r *report) checkTiers(rs *rule.Ruleset) {
 		trusted := ""
 		switch {
 		case t.Dir == "":
-			r.bad("%s: no config directory: set HOME or XDG_CONFIG_HOME", t.Name)
+			r.badf("%s: no config directory: set HOME or XDG_CONFIG_HOME", t.Name)
 			continue
 		case t.Skipped:
-			r.bad("%s: %s holds rules this machine has not trusted; run handrail trust", t.Name, t.Dir)
+			r.badf("%s: %s holds rules this machine has not trusted; run handrail trust", t.Name, t.Dir)
 			continue
 		case t.Name == rule.TierProjectShared && t.Trusted:
 			trusted = ", trusted"
 		}
-		r.ok("%s: %s in %s%s", t.Name, countRules(t.Count), t.Dir, trusted)
+		r.okf("%s: %s in %s%s", t.Name, countRules(t.Count), t.Dir, trusted)
 	}
 }
 
@@ -151,13 +151,13 @@ func (r *report) checkTiers(rs *rule.Ruleset) {
 func (r *report) checkExclusion(rs *rule.Ruleset) {
 	switch excluded, path, err := rule.LocalExcluded(rs.Root); {
 	case err != nil:
-		r.bad("cannot read the exclude file of %s: %v", rs.Root, err)
+		r.badf("cannot read the exclude file of %s: %v", rs.Root, err)
 	case path == "":
-		r.ok("%s is not a git working tree, so nothing needs excluding", rs.Root)
+		r.okf("%s is not a git working tree, so nothing needs excluding", rs.Root)
 	case excluded:
-		r.ok(".handrail/local/ is excluded in .git/info/exclude")
+		r.okf(".handrail/local/ is excluded in .git/info/exclude")
 	default:
-		r.bad(".handrail/local/ is not excluded in .git/info/exclude; run handrail sync")
+		r.badf(".handrail/local/ is not excluded in .git/info/exclude; run handrail sync")
 	}
 }
 

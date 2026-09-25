@@ -129,8 +129,9 @@ func input(st *syntax.Stmt) bool {
 		switch rd.Op {
 		case syntax.RdrIn, syntax.RdrInOut, syntax.DplIn, syntax.Hdoc, syntax.DashHdoc, syntax.WordHdoc:
 			return rd.N == nil || rd.N.Value == "0"
+		default:
+			return false
 		}
-		return false
 	})
 }
 
@@ -222,6 +223,8 @@ func (r *reader) redirect(rd *syntax.Redirect) {
 		if lit := rd.Word.Lit(); lit != "" && strings.Trim(lit, "0123456789") == "" || lit == "-" {
 			return
 		}
+	default:
+		// Every other operator names a file.
 	}
 	target := r.word(rd.Word)
 	if target == "/dev/null" || target == "/dev/stdin" || target == "/dev/stdout" ||

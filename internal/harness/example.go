@@ -11,6 +11,7 @@ import (
 // whose file holds the Example: the rule itself, or the rule it replaces.
 type Failure struct {
 	rule.Example
+
 	From *rule.Rule
 }
 
