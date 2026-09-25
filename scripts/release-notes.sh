@@ -5,10 +5,10 @@
 # makes the changelog entry the release body, so there is only one description.
 #
 # With no argument it reads the version bootstrap.sh pins, which is how
-# `task release-check` fails a release whose changelog section is missing before
-# the tag rather than after it.
+# `mise run release-check` fails a release whose changelog section is missing
+# before the tag rather than after it.
 #
-# Run from the repo root, by `task release-check` with no argument and by
+# Run from the repo root, by `mise run release-check` with no argument and by
 # .github/workflows/release.yml with the tag's version. Both CHANGELOG.md and
 # scripts/bootstrap.sh are read relative to the working directory.
 

@@ -24,37 +24,37 @@ flag against its source.
 ## Setup
 
 You need [Go](https://go.dev/dl/) at the version in `go.mod`, currently 1.27.1,
-and [Task](https://taskfile.dev/installation/). Then:
+and [mise](https://mise.jdx.dev/getting-started.html). Then:
 
 ```bash
 git clone https://github.com/svyatov/handrail.git
 cd handrail
-task build
+mise trust && mise install
+mise run build
 ```
 
-Linting additionally needs [golangci-lint](https://golangci-lint.run/docs/welcome/install/)
-v2.13.2, and `task release-check` needs [GoReleaser](https://goreleaser.com/install/).
-Neither is in `go.mod` on purpose: a tool directive would put roughly 200 modules
-into a `go.sum` whose first promise is one third-party runtime dependency.
+`mise install` fetches golangci-lint, GoReleaser, syft and lefthook at the
+versions `mise.toml` pins. None of them is in `go.mod` on purpose: a tool
+directive would put roughly 200 modules into a `go.sum` whose first promise is
+one third-party runtime dependency.
 
 ## Before you push
 
 ```bash
-task test    # go test -race -shuffle=on ./...
-task cover   # the same run with coverage, fails under 95%
-task lint    # go.mod tidy and verified, golangci-lint run, then the formatter, doc-path, flag-source and dash checks
-task vuln    # govulncheck, fetched by go run at a pinned version
-task fuzz    # 30s on each parser fuzz target
+mise run test    # go test -race -shuffle=on ./...
+mise run cover   # the same run with coverage, fails under 95%
+mise run lint    # go.mod tidy and verified, golangci-lint run, then the formatter, doc-path, flag-source and dash checks
+mise run vuln    # govulncheck, fetched by go run at a pinned version
+mise run fuzz    # 30s on each parser fuzz target
 ```
 
 A fuzz target that finds a crash writes the input under the package's
-`testdata/fuzz/`. Commit it with the fix: every `task test` replays it.
+`testdata/fuzz/`. Commit it with the fix: every `mise run test` replays it.
 
 CI runs these same tasks, so a local pass means what a green check means.
 
-To run them without remembering to, install [lefthook](https://lefthook.dev/)
-(`brew install lefthook`) and run `lefthook install` once: every commit then
-runs the formatter and `task lint`, and every push runs `task test`.
+To run them without remembering to, run `lefthook install` once: every commit
+then runs the formatter and `mise run lint`, and every push runs `mise run test`.
 
 ## Tests
 

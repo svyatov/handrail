@@ -3,7 +3,7 @@
 [Serena](https://github.com/oraios/serena) gives an agent LSP-backed navigation over this
 repo's Go code: find a symbol, find its references, replace its body.
 
-It is optional. Nothing in `task test`, `task lint`, or CI touches it. The repo builds
+It is optional. Nothing in `mise run test`, `mise run lint`, or CI touches it. The repo builds
 without it.
 
 ## Setup
