@@ -37,7 +37,8 @@ func TestTrustRefusesAPathThatWouldWriteTwoLines(t *testing.T) {
 		t.Error("the second line was granted")
 	}
 	// A refusal writes nothing at all, so there is no registry to inspect.
-	if _, err := os.Stat(registry); !errors.Is(err, fs.ErrNotExist) {
+	_, err = os.Stat(registry)
+	if !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("stat %s: %v, want it never created", registry, err)
 	}
 }

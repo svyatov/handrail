@@ -10,6 +10,75 @@ import (
 	"strings"
 )
 
+// The fixed part of each parse error, which the message wraps with the line
+// and the value it is about. The ones shared across the package's files are
+// here with the rest.
+var (
+	errDuplicateField          = errors.New("duplicate field")
+	errUnknown                 = errors.New("unknown")
+	errNotList                 = errors.New("must be a list")
+	errNotMapping              = errors.New("must be a mapping")
+	errNotSingle               = errors.New("must be a single value")
+	errNotBool                 = errors.New("must be true or false")
+	errNeverCarries            = errors.New("never carries")
+	errKindNotTool             = errors.New("kind applies only to PreToolUse and PostToolUse")
+	errMissingEvent            = errors.New(`missing required field "event"`)
+	errNoMessage               = errors.New("rule has no message")
+	errAgentOnlyNotWarn        = errors.New("agent_only applies only to warn")
+	errAgentOnlyRefused        = errors.New("agent_only is refused")
+	errAskNotPreToolUse        = errors.New("ask applies only to PreToolUse")
+	errBlockRefused            = errors.New("block is refused")
+	errNoFrontmatter           = errors.New("missing YAML frontmatter")
+	errUnterminatedFrontmatter = errors.New("unterminated YAML frontmatter")
+	errAnyNotAlone             = errors.New("any must be a condition's only key")
+	errAnyNested               = errors.New("any groups cannot nest")
+	errNoField                 = errors.New("condition has no field")
+	errNoOperator              = errors.New("condition has no operator")
+	errOperators               = errors.New("operators")
+	errNotClean                = errors.New("is not clean")
+	errTrailingBackslash       = errors.New("trailing backslash")
+	errEmptyClass              = errors.New("empty character class")
+	errUnterminatedClass       = errors.New("unterminated character class")
+)
+
+// The vocabulary the package spells more than once: the events, kinds, fields
+// and operators a rule names, and the frontmatter keys read in several places.
+const (
+	eventPreToolUse       = "PreToolUse"
+	eventPostToolUse      = "PostToolUse"
+	eventUserPromptSubmit = "UserPromptSubmit"
+	eventSessionStart     = "SessionStart"
+	eventSessionEnd       = "SessionEnd"
+	eventStop             = "Stop"
+	eventSubagentStart    = "SubagentStart"
+	eventSubagentStop     = "SubagentStop"
+
+	kindShell    = "shell"
+	kindFileEdit = "file_edit"
+	kindFileRead = "file_read"
+
+	fieldCommand      = "command"
+	fieldPath         = "path"
+	fieldContent      = "content"
+	fieldTool         = "tool"
+	fieldPrompt       = "prompt"
+	fieldResponse     = "response"
+	fieldAgentType    = "agent_type"
+	fieldURL          = "url"
+	fieldNetworkGrant = "network_grant"
+	fieldUnreadable   = "unreadable"
+
+	opMatches    = "matches"
+	opContains   = "contains"
+	opEquals     = "equals"
+	opStartsWith = "starts_with"
+	opEndsWith   = "ends_with"
+	opGlob       = "glob"
+
+	keyKind   = "kind"
+	keyAction = "action"
+)
+
 // Outcome is the Action and Outcome vocabulary, one type for both: an Outcome
 // takes the strongest Action among the matched rules, so warn, ask and block
 // are the same values under either name. The constants run in the order of the
@@ -25,10 +94,8 @@ const (
 	Block
 )
 
-var outcomes = [...]string{"allow", "warn", "ask", "block"}
-
 // String is the Outcome as a rule file and every report spell it.
-func (o Outcome) String() string { return outcomes[o] }
+func (o Outcome) String() string { return [...]string{"allow", "warn", "ask", "block"}[o] }
 
 // Rule is one guardrail: a matcher (event, kind, conditions) and the message
 // delivered when it matches. Identity is the file's basename.
@@ -44,21 +111,21 @@ type Rule struct {
 	DemotedFrom string
 	Event       string
 	Kind        string
-	Action      Outcome
-	Enabled     bool
+	Message     string
+	Conditions  []Condition
+	Examples    []Example
+	// fields names each field the conditions test once, in the order evaluation
+	// chooses a Candidate for them. A Term's slot is its field's index here.
+	fields []string
+	Action Outcome
+	// agentOnlyLine is where agent_only was set, for the tier's check.
+	agentOnlyLine int
+	Enabled       bool
 	// AgentOnly withholds the human's line, which a warn alone may do.
 	AgentOnly bool
 	// LostAgentOnly marks a Project-shared rule that set agent_only, which
 	// that tier refuses: the rule stays, and the human hears it.
 	LostAgentOnly bool
-	Conditions    []Condition
-	Examples      []Example
-	Message       string
-	// fields names each field the conditions test once, in the order evaluation
-	// chooses a Candidate for them. A Term's slot is its field's index here.
-	fields []string
-	// agentOnlyLine is where agent_only was set, for the tier's check.
-	agentOnlyLine int
 }
 
 // Live reports whether this rule can fire: enabled, not shadowed by a higher
@@ -83,31 +150,35 @@ type Condition struct {
 // parser as the only place a pattern Term can be built: a hand-built one is a
 // nil re, and there is no spelling of it that is merely wrong instead.
 type Term struct {
+	re    *regexp.Regexp
 	Field string
 	Op    string
 	Value string
-	re    *regexp.Regexp
 	line  int
 	slot  int
 }
 
-// events holds the eight core events. Which of them a harness has, and what a
-// hook can do on each, is its Adapter's Capability matrix. The hook path pays for
-// every byte of startup work, so this is an array of constants: static data the
-// linker lays out, with no init to run.
-var events = [...]string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop", "SubagentStart", "SubagentStop"}
+// The closed sets below are switches and functions, not package variables: the
+// hook path pays for every byte of startup work, and code the linker lays out
+// has no init to run before main.
 
-// IsEvent reports whether name is one of the eight core events.
-func IsEvent(name string) bool { return slices.Contains(events[:], name) }
+// IsEvent reports whether name is one of the eight core events. Which of them a
+// harness has, and what a hook can do on each, is its Adapter's Capability
+// matrix.
+func IsEvent(name string) bool {
+	switch name {
+	case eventPreToolUse, eventPostToolUse, eventUserPromptSubmit, eventSessionStart, eventSessionEnd,
+		eventStop, eventSubagentStart, eventSubagentStop:
+		return true
+	}
 
-// The three sets below stay switches: each is written down once, so unlike the
-// events there is no second copy for it to drift from. Switch or array, the
-// rule is the same one: nothing may run before main.
+	return false
+}
 
 // IsKind reports whether name is a canonical tool kind.
 func IsKind(name string) bool {
 	switch name {
-	case "shell", "file_edit", "file_read", "mcp", "agent", "network", "other":
+	case kindShell, kindFileEdit, kindFileRead, "mcp", "agent", "network", "other":
 		return true
 	}
 
@@ -118,8 +189,9 @@ func IsKind(name string) bool {
 // address. raw.* is a v1 non-goal, so this set is closed.
 func IsField(name string) bool {
 	switch name {
-	case "command", "path", "content", "removed_content", "writes_empty", "deletes",
-		"server", "tool", "prompt", "response", "agent_type", "agent_prompt", "model", "url", "domain", "network_grant", "unsandboxed", "unreadable":
+	case fieldCommand, fieldPath, fieldContent, "removed_content", "writes_empty", "deletes",
+		"server", fieldTool, fieldPrompt, fieldResponse, fieldAgentType, "agent_prompt", "model",
+		fieldURL, "domain", fieldNetworkGrant, "unsandboxed", fieldUnreadable:
 		return true
 	}
 
@@ -132,11 +204,13 @@ func IsField(name string) bool {
 // that fails loudly on the hot path. A seventh operator added here alone would
 // parse clean, pass check, and then never match, or, negated, always match.
 // Walking this list is what turns that into a test failure.
-var operators = []string{"matches", "contains", "equals", "starts_with", "ends_with", "glob"}
+func operators() []string {
+	return []string{opMatches, opContains, opEquals, opStartsWith, opEndsWith, opGlob}
+}
 
 // isOperator reports whether key is a condition operator, negated or not.
 func isOperator(key string) bool {
-	return slices.Contains(operators, strings.TrimPrefix(key, "not_"))
+	return slices.Contains(operators(), strings.TrimPrefix(key, "not_"))
 }
 
 // Parse reads one rule file. name is the rule's identity, the file's basename
@@ -147,74 +221,84 @@ func Parse(name string, data []byte) (*Rule, error) {
 		return nil, err
 	}
 
-	r := &Rule{Name: name, Action: Warn, Enabled: true, Message: strings.TrimSpace(body)}
+	parsed := &Rule{
+		Name: name, Path: "", Tier: "", ShadowedBy: nil, Replaces: nil, DroppedBy: nil, DemotedFrom: "",
+		Event: "", Kind: "", Message: strings.TrimSpace(body), Conditions: nil, Examples: nil, fields: nil,
+		Action: Warn, agentOnlyLine: 0, Enabled: true, AgentOnly: false, LostAgentOnly: false,
+	}
 	seen := make(map[string]bool, len(doc.mapping))
 
 	var kindLine, actionLine int
 
-	for _, kv := range doc.mapping {
-		if seen[kv.key] {
-			return nil, fmt.Errorf("line %d: duplicate field %q", kv.line, kv.key)
+	for _, entry := range doc.mapping {
+		if seen[entry.key] {
+			return nil, fmt.Errorf("line %d: %w %q", entry.line, errDuplicateField, entry.key)
 		}
 
-		seen[kv.key] = true
-		switch kv.key {
-		case "kind":
-			kindLine = kv.line
-		case "action":
-			actionLine = kv.line
+		seen[entry.key] = true
+		switch entry.key {
+		case keyKind:
+			kindLine = entry.line
+		case keyAction:
+			actionLine = entry.line
 		}
 
-		if err := r.setField(kv); err != nil {
+		err = parsed.setField(entry)
+		if err != nil {
 			return nil, err
 		}
 	}
 
-	if err := r.checkEvent(kindLine, actionLine); err != nil {
+	err = parsed.checkEvent(kindLine, actionLine)
+	if err != nil {
 		return nil, err
 	}
 
-	if err := r.checkRequired(); err != nil {
+	err = parsed.checkRequired()
+	if err != nil {
 		return nil, err
 	}
 
-	return r, nil
+	return parsed, nil
 }
 
 // setField reads one frontmatter field into the rule.
-func (r *Rule) setField(kv pair) (err error) {
-	switch kv.key {
-	case "event":
-		return oneOf(kv, &r.Event, IsEvent)
-	case "kind":
-		return oneOf(kv, &r.Kind, IsKind)
-	case "action":
-		return r.setAction(kv)
-	case "enabled":
-		return boolInto(kv, &r.Enabled)
-	case "agent_only":
-		r.agentOnlyLine = kv.line
+func (r *Rule) setField(entry pair) error {
+	var err error
 
-		return boolInto(kv, &r.AgentOnly)
+	switch entry.key {
+	case "event":
+		return oneOf(entry, &r.Event, IsEvent)
+	case keyKind:
+		return oneOf(entry, &r.Kind, IsKind)
+	case keyAction:
+		return r.setAction(entry)
+	case "enabled":
+		return boolInto(entry, &r.Enabled)
+	case "agent_only":
+		r.agentOnlyLine = entry.line
+
+		return boolInto(entry, &r.AgentOnly)
 	case "conditions":
-		return r.setConditions(kv)
+		return r.setConditions(entry)
 	case "examples":
-		r.Examples, err = parseExamples(kv)
+		r.Examples, err = parseExamples(entry)
 
 		return err
 	}
 
-	return fmt.Errorf("line %d: unknown frontmatter field %q", kv.line, kv.key)
+	return fmt.Errorf("line %d: %w frontmatter field %q", entry.line, errUnknown, entry.key)
 }
 
 // oneOf is scalarInto for a field whose value must be one of a closed set.
-func oneOf(kv pair, dst *string, valid func(string) bool) error {
-	if err := scalarInto(kv, dst); err != nil {
+func oneOf(entry pair, dst *string, valid func(string) bool) error {
+	err := scalarInto(entry, dst)
+	if err != nil {
 		return err
 	}
 
 	if !valid(*dst) {
-		return fmt.Errorf("line %d: unknown %s %q", kv.line, kv.key, *dst)
+		return fmt.Errorf("line %d: %w %s %q", entry.line, errUnknown, entry.key, *dst)
 	}
 
 	return nil
@@ -222,30 +306,36 @@ func oneOf(kv pair, dst *string, valid func(string) bool) error {
 
 // setAction reads the action, which is any Outcome but allow: allow is the
 // absence of a match, not something a rule can do.
-func (r *Rule) setAction(kv pair) error {
-	var v string
-	if err := scalarInto(kv, &v); err != nil {
+func (r *Rule) setAction(entry pair) error {
+	var value string
+
+	err := scalarInto(entry, &value)
+	if err != nil {
 		return err
 	}
 
-	i := slices.Index(outcomes[:], v)
-	if i <= int(Allow) {
-		return fmt.Errorf("line %d: unknown action %q", kv.line, v)
+	for action := Warn; action <= Block; action++ {
+		if action.String() == value {
+			r.Action = action
+
+			return nil
+		}
 	}
 
-	r.Action = Outcome(i)
-
-	return nil
+	return fmt.Errorf("line %d: %w action %q", entry.line, errUnknown, value)
 }
 
 // setConditions reads the condition list and gives each Term the slot of its
 // field, adding the field to r.fields the first time a Term names it.
-func (r *Rule) setConditions(kv pair) (err error) {
-	if kv.val.seq == nil {
-		return fmt.Errorf("line %d: conditions must be a list", kv.line)
+func (r *Rule) setConditions(entry pair) error {
+	if entry.val.seq == nil {
+		return fmt.Errorf("line %d: conditions %w", entry.line, errNotList)
 	}
 
-	if r.Conditions, err = parseConditions(kv.val); err != nil {
+	var err error
+
+	r.Conditions, err = parseConditions(entry.val)
+	if err != nil {
 		return err
 	}
 
@@ -273,12 +363,12 @@ func (r *Rule) checkRequired() error {
 	}
 
 	if r.Event == "" {
-		return errors.New(`line 1: missing required field "event"`)
+		return fmt.Errorf("line 1: %w", errMissingEvent)
 	}
 	// The message is the product: a rule that matches and says nothing
 	// blocks or warns with an empty reason.
 	if r.Message == "" {
-		return errors.New("line 1: rule has no message")
+		return fmt.Errorf("line 1: %w", errNoMessage)
 	}
 
 	return nil
@@ -291,9 +381,10 @@ func (r *Rule) checkRequired() error {
 func (r *Rule) checkAgentOnly() error {
 	switch {
 	case r.AgentOnly && r.Action != Warn:
-		return fmt.Errorf("line %d: agent_only applies only to warn", r.agentOnlyLine)
-	case r.AgentOnly && (StopEvent(r.Event) || r.Event == "SessionEnd"):
-		return fmt.Errorf("line %d: agent_only is refused on %s, where a warn tells only the human", r.agentOnlyLine, r.Event)
+		return fmt.Errorf("line %d: %w", r.agentOnlyLine, errAgentOnlyNotWarn)
+	case r.AgentOnly && (StopEvent(r.Event) || r.Event == eventSessionEnd):
+		return fmt.Errorf("line %d: %w on %s, where a warn tells only the human",
+			r.agentOnlyLine, errAgentOnlyRefused, r.Event)
 	}
 
 	return nil
@@ -301,7 +392,7 @@ func (r *Rule) checkAgentOnly() error {
 
 // StopEvent reports whether event ends a turn, where any message to the agent
 // makes it continue.
-func StopEvent(event string) bool { return event == "Stop" || event == "SubagentStop" }
+func StopEvent(event string) bool { return event == eventStop || event == eventSubagentStop }
 
 // checkEvent holds the kind, the action, the conditions and the Examples to
 // what the rule's event can carry, and gives each Example the kind it takes:
@@ -315,22 +406,23 @@ func (r *Rule) checkEvent(kindLine, actionLine int) error {
 
 	tool := ToolEvent(r.Event)
 	if r.Kind != "" && !tool {
-		return fmt.Errorf("line %d: kind applies only to PreToolUse and PostToolUse", kindLine)
+		return fmt.Errorf("line %d: %w", kindLine, errKindNotTool)
 	}
 	// Only a tool call not yet made is something a human can approve.
-	if r.Action == Ask && r.Event != "PreToolUse" {
-		return fmt.Errorf("line %d: ask applies only to PreToolUse", actionLine)
+	if r.Action == Ask && r.Event != eventPreToolUse {
+		return fmt.Errorf("line %d: %w", actionLine, errAskNotPreToolUse)
 	}
 	// A block no harness honours is a mislabelled warn. A block one harness
 	// lacks degrades there instead.
 	switch r.Event {
-	case "PostToolUse", "SessionStart", "SessionEnd", "SubagentStart":
+	case eventPostToolUse, eventSessionStart, eventSessionEnd, eventSubagentStart:
 		if r.Action == Block {
-			return fmt.Errorf("line %d: block is refused on %s, where no harness can deny", actionLine, r.Event)
+			return fmt.Errorf("line %d: %w on %s, where no harness can deny", actionLine, errBlockRefused, r.Event)
 		}
 	}
 
-	if err := r.checkConditions(); err != nil {
+	err := r.checkConditions()
+	if err != nil {
 		return err
 	}
 
@@ -342,7 +434,7 @@ func (r *Rule) checkConditions() error {
 	for _, c := range r.Conditions {
 		for _, t := range c.Terms {
 			if !carries(r.Event, t.Field) {
-				return fmt.Errorf("line %d: %s never carries %s", t.line, r.Event, t.Field)
+				return fmt.Errorf("line %d: %s %w %s", t.line, r.Event, errNeverCarries, t.Field)
 			}
 		}
 	}
@@ -354,13 +446,15 @@ func (r *Rule) checkConditions() error {
 // and gives each the kind it takes.
 func (r *Rule) checkExamples() error {
 	for i := range r.Examples {
-		e := &r.Examples[i]
-		if err := CheckCall(r.Event, e.Fields); err != nil {
-			return fmt.Errorf("line %d: %w", e.Line, err)
+		example := &r.Examples[i]
+
+		err := CheckCall(r.Event, example.Fields)
+		if err != nil {
+			return fmt.Errorf("line %d: %w", example.Line, err)
 		}
 
-		if e.Kind == "" {
-			e.Kind = r.Kind
+		if example.Kind == "" {
+			example.Kind = r.Kind
 		}
 	}
 
@@ -369,67 +463,65 @@ func (r *Rule) checkExamples() error {
 
 // ToolEvent reports whether event is about a tool call, the only events that
 // carry a kind.
-func ToolEvent(event string) bool { return event == "PreToolUse" || event == "PostToolUse" }
+func ToolEvent(event string) bool { return event == eventPreToolUse || event == eventPostToolUse }
 
 // carries is the per-event field table: whether a payload of event can hold
 // field on either harness. unreadable is on every event, since any read can
 // fail.
 func carries(event, field string) bool {
 	switch {
-	case field == "unreadable":
+	case field == fieldUnreadable:
 		return true
-	case event == "UserPromptSubmit":
-		return field == "prompt"
-	case event == "Stop":
-		return field == "response"
-	case event == "SubagentStart":
-		return field == "agent_type"
-	case event == "SubagentStop":
-		return field == "agent_type" || field == "response"
+	case event == eventUserPromptSubmit:
+		return field == fieldPrompt
+	case event == eventStop:
+		return field == fieldResponse
+	case event == eventSubagentStart:
+		return field == fieldAgentType
+	case event == eventSubagentStop:
+		return field == fieldAgentType || field == fieldResponse
 	}
 
-	return ToolEvent(event) && field != "prompt"
+	return ToolEvent(event) && field != fieldPrompt
 }
 
 // parseFrontmatter reads a markdown file's YAML frontmatter as a mapping, and
 // returns it with the body below. The Importer reads upstream files with it too:
 // their frontmatter is the same block-style subset.
-func parseFrontmatter(data []byte) (doc *node, body string, err error) {
-	fm, body, err := splitFrontmatter(strings.ReplaceAll(string(data), "\r\n", "\n"))
-	if err != nil {
-		return nil, "", err
+func parseFrontmatter(data []byte) (*node, string, error) {
+	text := strings.TrimPrefix(strings.ReplaceAll(string(data), "\r\n", "\n"), "\ufeff")
+
+	lines := strings.Split(text, "\n")
+	if !isFence(lines[0]) {
+		return nil, "", fmt.Errorf("line 1: %w", errNoFrontmatter)
 	}
 
-	doc, err = parseYAML(strings.Split(fm, "\n"))
+	end := slices.IndexFunc(lines[1:], isFence) + 1
+	if end == 0 {
+		return nil, "", fmt.Errorf("line 1: %w", errUnterminatedFrontmatter)
+	}
+	// parseYAML rewrites the lines it is handed in place, and the body's lie
+	// past them, so the shared array is safe to hand it.
+	body := strings.Join(lines[end+1:], "\n")
+
+	doc, err := parseYAML(lines[1:end])
 	if err != nil {
 		return nil, "", err
 	}
 
 	if !doc.isMapping() {
-		return nil, "", errors.New("line 2: frontmatter must be a mapping")
+		return nil, "", fmt.Errorf("line 2: frontmatter %w", errNotMapping)
 	}
 
 	return doc, body, nil
 }
 
-func splitFrontmatter(s string) (frontmatter, body string, err error) {
-	lines := strings.Split(strings.TrimPrefix(s, "\ufeff"), "\n")
-	if strings.TrimRight(lines[0], " ") != "---" {
-		return "", "", errors.New("line 1: missing YAML frontmatter")
-	}
-
-	for i := 1; i < len(lines); i++ {
-		if strings.TrimRight(lines[i], " ") == "---" {
-			return strings.Join(lines[1:i], "\n"), strings.Join(lines[i+1:], "\n"), nil
-		}
-	}
-
-	return "", "", errors.New("line 1: unterminated YAML frontmatter")
-}
+// isFence reports whether line is the "---" that opens or closes frontmatter.
+func isFence(line string) bool { return strings.TrimRight(line, " ") == "---" }
 
 func scalarInto(kv pair, dst *string) error {
 	if !kv.val.isScalar {
-		return fmt.Errorf("line %d: %s must be a single value", kv.line, kv.key)
+		return fmt.Errorf("line %d: %s %w", kv.line, kv.key, errNotSingle)
 	}
 
 	*dst = kv.val.scalar
@@ -437,17 +529,22 @@ func scalarInto(kv pair, dst *string) error {
 	return nil
 }
 
-func boolInto(kv pair, dst *bool) error {
-	var v string
-	if err := scalarInto(kv, &v); err != nil {
+func boolInto(entry pair, dst *bool) error {
+	var value string
+
+	err := scalarInto(entry, &value)
+	if err != nil {
 		return err
 	}
 
-	if v != "true" && v != "false" {
-		return fmt.Errorf("line %d: %s must be true or false", kv.line, kv.key)
+	switch value {
+	case "true":
+		*dst = true
+	case "false":
+		*dst = false
+	default:
+		return fmt.Errorf("line %d: %s %w", entry.line, entry.key, errNotBool)
 	}
-
-	*dst = v == "true"
 
 	return nil
 }
@@ -456,7 +553,7 @@ func parseConditions(list *node) ([]Condition, error) {
 	out := make([]Condition, 0, len(list.seq))
 	for _, item := range list.seq {
 		if !item.isMapping() {
-			return nil, fmt.Errorf("line %d: condition must be a mapping", item.line)
+			return nil, fmt.Errorf("line %d: condition %w", item.line, errNotMapping)
 		}
 
 		if !item.has("any") {
@@ -484,22 +581,22 @@ func parseConditions(list *node) ([]Condition, error) {
 // parseAny reads a condition that is an any group: one Term per entry.
 func parseAny(item *node) (Condition, error) {
 	if len(item.mapping) != 1 {
-		return Condition{}, fmt.Errorf("line %d: any must be a condition's only key", item.line)
+		return Condition{}, fmt.Errorf("line %d: %w", item.line, errAnyNotAlone)
 	}
 
 	group := item.mapping[0]
 	if group.val.seq == nil {
-		return Condition{}, fmt.Errorf("line %d: any must be a list", group.line)
+		return Condition{}, fmt.Errorf("line %d: any %w", group.line, errNotList)
 	}
 
 	terms := make([]Term, 0, len(group.val.seq))
 	for _, sub := range group.val.seq {
 		if !sub.isMapping() {
-			return Condition{}, fmt.Errorf("line %d: condition must be a mapping", sub.line)
+			return Condition{}, fmt.Errorf("line %d: condition %w", sub.line, errNotMapping)
 		}
 
 		if sub.has("any") {
-			return Condition{}, fmt.Errorf("line %d: any groups cannot nest", sub.line)
+			return Condition{}, fmt.Errorf("line %d: %w", sub.line, errAnyNested)
 		}
 
 		t, err := parseTerm(sub)
@@ -513,46 +610,48 @@ func parseAny(item *node) (Condition, error) {
 	return Condition{Terms: terms}, nil
 }
 
-func parseTerm(n *node) (*Term, error) {
-	t := &Term{}
+func parseTerm(item *node) (*Term, error) {
+	parsed := &Term{re: nil, Field: "", Op: "", Value: "", line: 0, slot: 0}
 
 	var ops []string
 
-	seen := make(map[string]bool, len(n.mapping))
-	for _, kv := range n.mapping {
-		if seen[kv.key] {
-			return nil, fmt.Errorf("line %d: duplicate field %q", kv.line, kv.key)
+	seen := make(map[string]bool, len(item.mapping))
+	for _, entry := range item.mapping {
+		if seen[entry.key] {
+			return nil, fmt.Errorf("line %d: %w %q", entry.line, errDuplicateField, entry.key)
 		}
 
-		seen[kv.key] = true
-		if !kv.val.isScalar {
-			return nil, fmt.Errorf("line %d: %s must be a single value", kv.line, kv.key)
+		seen[entry.key] = true
+		if !entry.val.isScalar {
+			return nil, fmt.Errorf("line %d: %s %w", entry.line, entry.key, errNotSingle)
 		}
 
 		switch {
-		case kv.key == "field":
-			if !IsField(kv.val.scalar) {
-				return nil, fmt.Errorf("line %d: unknown condition field %q", kv.line, kv.val.scalar)
+		case entry.key == "field":
+			if !IsField(entry.val.scalar) {
+				return nil, fmt.Errorf("line %d: %w condition field %q", entry.line, errUnknown, entry.val.scalar)
 			}
 
-			t.Field = kv.val.scalar
-		case isOperator(kv.key):
-			ops = append(ops, kv.key)
-			t.Op, t.Value, t.line = kv.key, kv.val.scalar, kv.line
+			parsed.Field = entry.val.scalar
+		case isOperator(entry.key):
+			ops = append(ops, entry.key)
+			parsed.Op, parsed.Value, parsed.line = entry.key, entry.val.scalar, entry.line
 		default:
-			return nil, fmt.Errorf("line %d: unknown condition key %q", kv.line, kv.key)
+			return nil, fmt.Errorf("line %d: %w condition key %q", entry.line, errUnknown, entry.key)
 		}
 	}
 
-	if err := t.complete(n.line, ops); err != nil {
+	err := parsed.complete(item.line, ops)
+	if err != nil {
 		return nil, err
 	}
 
-	if err := t.compile(); err != nil {
+	err = parsed.compile()
+	if err != nil {
 		return nil, err
 	}
 
-	return t, nil
+	return parsed, nil
 }
 
 // complete reports a condition at line that names no field, or does not name
@@ -560,11 +659,11 @@ func parseTerm(n *node) (*Term, error) {
 func (t *Term) complete(line int, ops []string) error {
 	switch {
 	case t.Field == "":
-		return fmt.Errorf("line %d: condition has no field", line)
+		return fmt.Errorf("line %d: %w", line, errNoField)
 	case len(ops) == 0:
-		return fmt.Errorf("line %d: condition has no operator", line)
+		return fmt.Errorf("line %d: %w", line, errNoOperator)
 	case len(ops) > 1:
-		return fmt.Errorf("line %d: condition has %d operators: %s", line, len(ops), strings.Join(ops, ", "))
+		return fmt.Errorf("line %d: condition has %d %w: %s", line, len(ops), errOperators, strings.Join(ops, ", "))
 	}
 
 	return nil
@@ -577,19 +676,19 @@ func (t *Term) compile() error {
 	// failure the format exists to prevent: catch it here, while authoring.
 	// The same goes for a path glob or equals value no cleaned path can meet.
 	op := strings.TrimPrefix(t.Op, "not_")
-	if clean := path.Clean(t.Value); t.Field == "path" && (op == "glob" || op == "equals") && clean != t.Value {
-		return fmt.Errorf("line %d: path value %q is not clean, write %q", t.line, t.Value, clean)
+	if clean := path.Clean(t.Value); t.Field == fieldPath && (op == opGlob || op == opEquals) && clean != t.Value {
+		return fmt.Errorf("line %d: path value %q %w, write %q", t.line, t.Value, errNotClean, clean)
 	}
 
 	switch op {
-	case "matches":
+	case opMatches:
 		re, err := regexp.Compile(t.Value)
 		if err != nil {
 			return fmt.Errorf("line %d: invalid regexp: %w", t.line, err)
 		}
 
 		t.re = re
-	case "glob":
+	case opGlob:
 		re, err := globToRegexp(t.Value)
 		if err != nil {
 			return fmt.Errorf("line %d: invalid glob: %w", t.line, err)
@@ -605,114 +704,114 @@ func (t *Term) compile() error {
 // validation (a pattern that cannot compile would never match) and the matcher.
 // The dialect is path.Match plus **, spelled out in docs/spec.md section 2.
 func globToRegexp(pattern string) (*regexp.Regexp, error) {
-	var b strings.Builder
-	b.WriteByte('^')
+	var out strings.Builder
+	out.WriteByte('^')
 
-	for i := 0; i < len(pattern); i++ {
-		switch pattern[i] {
+	for pos := 0; pos < len(pattern); pos++ {
+		switch pattern[pos] {
 		case '\\':
-			if i == len(pattern)-1 {
-				return nil, errors.New("trailing backslash")
+			if pos == len(pattern)-1 {
+				return nil, errTrailingBackslash
 			}
 
-			i++
-			b.WriteString(regexp.QuoteMeta(pattern[i : i+1]))
+			pos++
+			out.WriteString(regexp.QuoteMeta(pattern[pos : pos+1]))
 		case '*':
-			var star string
-
-			star, i = globStar(pattern, i)
-			b.WriteString(star)
+			pos = globStar(&out, pattern, pos)
 		case '?':
-			b.WriteString(`[^/]`)
+			out.WriteString(`[^/]`)
 		case '[':
-			class, end, err := globClass(pattern, i)
+			end, err := globClass(&out, pattern, pos)
 			if err != nil {
 				return nil, err
 			}
 
-			b.WriteString(class)
-
-			i = end
+			pos = end
 		default:
-			b.WriteString(regexp.QuoteMeta(pattern[i : i+1]))
+			out.WriteString(regexp.QuoteMeta(pattern[pos : pos+1]))
 		}
 	}
 
-	b.WriteByte('$')
+	out.WriteByte('$')
 
-	return regexp.Compile(b.String())
+	return regexp.Compile(out.String())
 }
 
-// globStar translates the star at pattern[i], alone or the first of a **, and
-// returns it with the index of the last byte it consumed.
-func globStar(pattern string, i int) (re string, end int) {
+// globStar writes the translation of the star at pattern[pos], alone or the
+// first of a **, and returns the index of the last byte it consumed.
+func globStar(out *strings.Builder, pattern string, pos int) int {
 	// ** only crosses separators on its own segment, so it needs a
 	// boundary on both sides: in foo**/bar and in **.env the stars
 	// belong to their neighbour, and treating them as a segment skip
 	// would quietly match foobar and nested/x.env.
-	atBoundary := i == 0 || pattern[i-1] == '/'
+	atBoundary := pos == 0 || pattern[pos-1] == '/'
 	switch {
-	case atBoundary && i+2 < len(pattern) && pattern[i+1] == '*' && pattern[i+2] == '/':
+	case atBoundary && strings.HasPrefix(pattern[pos:], "**/"):
 		// Zero directories included, so **/*.env covers a root file.
-		return `(?:[^/]*/)*`, i + 2
-	case atBoundary && i+2 == len(pattern) && pattern[i+1] == '*':
-		return `.*`, i + 1
+		out.WriteString(`(?:[^/]*/)*`)
+
+		return pos + len("**/") - 1
+	case atBoundary && pattern[pos:] == "**":
+		out.WriteString(`.*`)
+
+		return pos + 1
 	}
 
-	return `[^/]*`, i
+	out.WriteString(`[^/]*`)
+
+	return pos
 }
 
-// globClass translates the character class starting at pattern[start] and
-// returns it with the index of its closing bracket. Negation is ^, as in
-// path.Match; ! is an ordinary member.
-func globClass(pattern string, start int) (class string, end int, err error) {
-	var b strings.Builder
-	b.WriteByte('[')
+// globClass writes the translation of the character class starting at
+// pattern[start] and returns the index of its closing bracket. Negation is ^,
+// as in path.Match; ! is an ordinary member.
+func globClass(out *strings.Builder, pattern string, start int) (int, error) {
+	out.WriteByte('[')
 
-	i := start + 1
-	if i < len(pattern) && pattern[i] == '^' {
-		b.WriteByte('^')
+	pos := start + 1
+	if pos < len(pattern) && pattern[pos] == '^' {
+		out.WriteByte('^')
 
-		i++
+		pos++
 	}
 
-	if i >= len(pattern) || pattern[i] == ']' {
-		return "", 0, errors.New("empty character class")
+	if pos >= len(pattern) || pattern[pos] == ']' {
+		return 0, errEmptyClass
 	}
 
-	for ; i < len(pattern) && pattern[i] != ']'; i++ {
-		if pattern[i] != '\\' {
-			b.WriteByte(pattern[i])
+	for ; pos < len(pattern) && pattern[pos] != ']'; pos++ {
+		if pattern[pos] != '\\' {
+			out.WriteByte(pattern[pos])
 
 			continue
 		}
 
-		if i == len(pattern)-1 {
-			return "", 0, errors.New("trailing backslash")
+		if pos == len(pattern)-1 {
+			return 0, errTrailingBackslash
 		}
 
-		i++
-		writeClassEscape(&b, pattern[i])
+		pos++
+		writeClassEscape(out, pattern[pos])
 	}
 
-	if i >= len(pattern) {
-		return "", 0, errors.New("unterminated character class")
+	if pos >= len(pattern) {
+		return 0, errUnterminatedClass
 	}
 
-	b.WriteByte(']')
+	out.WriteByte(']')
 
-	return b.String(), i, nil
+	return pos, nil
 }
 
 // writeClassEscape writes the member a backslash escaped inside a class.
-func writeClassEscape(b *strings.Builder, c byte) {
+func writeClassEscape(out *strings.Builder, member byte) {
 	// QuoteMeta leaves - alone, which inside a class turns an escaped
 	// member into a range: [a\-z] would silently become [a-z].
-	if !isAlphanumeric(c) {
-		b.WriteByte('\\')
+	if !isAlphanumeric(member) {
+		out.WriteByte('\\')
 	}
 
-	b.WriteByte(c)
+	out.WriteByte(member)
 }
 
 // isAlphanumeric reports whether c is a byte RE2 reads as itself, so escaping

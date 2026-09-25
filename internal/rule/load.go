@@ -47,16 +47,16 @@ type Tier struct {
 // Problems are reported, never judged: the hook path is loud fail-open and the
 // authoring commands are strict.
 type Ruleset struct {
-	Root  string  // the project root: the repo root, or the cwd outside a repo
-	Rules []*Rule // delivery order, shadowed and disabled included
+	Root string // the project root: the repo root, or the cwd outside a repo
+	// Demoted says why .handrail/local/ was read as Project-shared, and is ""
+	// where it is the Project-personal tier.
+	Demoted string
+	Rules   []*Rule // delivery order, shadowed and disabled included
 	// Untrusted holds the rules of a tier trust skipped: none of them counts,
 	// and check still runs their Examples.
 	Untrusted []*Rule
 	Tiers     []Tier
 	Problems  []Problem
-	// Demoted says why .handrail/local/ was read as Project-shared, and is ""
-	// where it is the Project-personal tier.
-	Demoted string
 }
 
 // Effective returns the Effective ruleset: the rules that can fire, in
@@ -84,7 +84,7 @@ func (rs *Ruleset) Invalid() []Problem {
 	out := slices.Clone(rs.Problems)
 	for _, r := range slices.Concat(rs.Rules, rs.Untrusted) {
 		if r.LostAgentOnly {
-			out = append(out, Problem{Path: r.Path, Message: RefusedAgentOnly})
+			out = append(out, Problem{Path: r.Path, Message: RefusedAgentOnly, Untrusted: false})
 		}
 	}
 
@@ -110,7 +110,7 @@ func Load(cwd string) *Ruleset {
 		root = RepoRoot(cwd)
 	}
 
-	rs := &Ruleset{Root: root}
+	ruleset := &Ruleset{Root: root, Demoted: "", Rules: nil, Untrusted: nil, Tiers: nil, Problems: nil}
 	inRoot := func(dir func(string) string) string {
 		if root == "" {
 			return ""
@@ -120,15 +120,19 @@ func Load(cwd string) *Ruleset {
 	}
 
 	global := configDir()
-	rs.gather(inRoot(LocalDir), Tier{Name: TierGlobal, Dir: global, Trusted: true}, global)
+	ruleset.gather(inRoot(LocalDir), Tier{Name: TierGlobal, Dir: global, Count: 0, Trusted: true, Skipped: false}, global)
 	// A Global file that does not parse still names a Global rule, so it keeps
 	// a shared namesake out just as the parsed rule would. Every problem so far
 	// is the Global tier's.
 	byName := make(map[string]*Rule)
 
-	for _, p := range rs.Problems {
+	for _, p := range ruleset.Problems {
 		if name, ok := strings.CutSuffix(filepath.Base(p.Path), ".md"); ok {
-			byName[name] = &Rule{Name: name, Path: p.Path, Tier: TierGlobal}
+			byName[name] = &Rule{
+				Name: name, Path: p.Path, Tier: TierGlobal, ShadowedBy: nil, Replaces: nil, DroppedBy: nil,
+				DemotedFrom: "", Event: "", Kind: "", Message: "", Conditions: nil, Examples: nil, fields: nil,
+				Action: Allow, agentOnlyLine: 0, Enabled: false, AgentOnly: false, LostAgentOnly: false,
+			}
 		}
 	}
 	// A user-level hook entry means any repo on the machine is enforced, so a
@@ -139,25 +143,26 @@ func Load(cwd string) *Ruleset {
 	shared, local := inRoot(sharedDir), inRoot(LocalDir)
 
 	if root != "" {
-		rs.Demoted = demotion(root)
+		ruleset.Demoted = demotion(root)
 	}
 
-	if rs.Demoted == "" {
-		rs.gather(local, Tier{Name: TierProjectShared, Dir: shared, Trusted: isTrusted(root)}, shared)
-		rs.gather(local, Tier{Name: TierProjectPersonal, Dir: local, Trusted: true}, local)
+	sharedTier := Tier{Name: TierProjectShared, Dir: shared, Count: 0, Trusted: isTrusted(root), Skipped: false}
+	if ruleset.Demoted == "" {
+		ruleset.gather(local, sharedTier, shared)
+		ruleset.gather(local, Tier{Name: TierProjectPersonal, Dir: local, Count: 0, Trusted: true, Skipped: false}, local)
 	} else {
-		rs.gather(local, Tier{Name: TierProjectShared, Dir: shared, Trusted: isTrusted(root)}, shared, local)
+		ruleset.gather(local, sharedTier, shared, local)
 
-		for _, r := range slices.Concat(rs.Rules, rs.Untrusted) {
+		for _, r := range slices.Concat(ruleset.Rules, ruleset.Untrusted) {
 			if strings.HasPrefix(r.Path, local+string(filepath.Separator)) {
 				r.DemotedFrom = TierProjectPersonal
 			}
 		}
 	}
 
-	rs.shadow(byName)
+	ruleset.shadow(byName)
 
-	return rs
+	return ruleset
 }
 
 // gather loads one tier into the ruleset, skip being the directory its walk
@@ -165,29 +170,29 @@ func Load(cwd string) *Ruleset {
 // strict validation is what check promises for every tier, and .handrail/
 // existing says nothing on its own, since the Project-personal tier lives
 // inside it.
-func (rs *Ruleset) gather(skip string, t Tier, dirs ...string) {
-	if t.Dir != "" {
-		rules, problems := load(skip, t.Name == TierProjectShared, dirs...)
+func (rs *Ruleset) gather(skip string, tier Tier, dirs ...string) {
+	if tier.Dir != "" {
+		rules, problems := load(skip, tier.Name == TierProjectShared, dirs...)
 		for i := range problems {
-			problems[i].Untrusted = !t.Trusted
+			problems[i].Untrusted = !tier.Trusted
 		}
 
 		rs.Problems = append(rs.Problems, problems...)
 
-		if t.Trusted {
+		if tier.Trusted {
 			for _, r := range rules {
-				r.Tier = t.Name
+				r.Tier = tier.Name
 			}
 
-			t.Count = len(rules)
+			tier.Count = len(rules)
 			rs.Rules = append(rs.Rules, rules...)
 		} else {
-			t.Skipped = len(rules)+len(problems) > 0
+			tier.Skipped = len(rules)+len(problems) > 0
 			rs.Untrusted = append(rs.Untrusted, rules...)
 		}
 	}
 
-	rs.Tiers = append(rs.Tiers, t)
+	rs.Tiers = append(rs.Tiers, tier)
 }
 
 // shadow resolves Shadowing across the loaded tiers. byName starts out
@@ -198,14 +203,14 @@ func (rs *Ruleset) shadow(byName map[string]*Rule) {
 	// exception: the shared tier is add-only against Global, so a shared file
 	// naming a Global rule is dropped and takes no part in shadowing. That
 	// leaves at most one rule for any shadow to replace.
-	for _, r := range rs.Rules {
-		if global := byName[r.Name]; global != nil && global.Tier == TierGlobal && r.Tier == TierProjectShared {
-			r.DroppedBy = global
+	for _, loaded := range rs.Rules {
+		if global := byName[loaded.Name]; global != nil && global.Tier == TierGlobal && loaded.Tier == TierProjectShared {
+			loaded.DroppedBy = global
 
 			continue
 		}
 
-		byName[r.Name] = r
+		byName[loaded.Name] = loaded
 	}
 
 	for _, r := range rs.Rules {
@@ -261,12 +266,14 @@ func xdgSubdir(env, fallback string) string {
 // "" when it is genuinely local or absent. An index that cannot be read cannot
 // vouch for the tier, so it is read as the repository's too.
 func demotion(root string) string {
-	if _, err := os.Lstat(LocalDir(root)); err != nil {
+	_, err := os.Lstat(LocalDir(root))
+	if err != nil {
 		return ""
 	}
 
 	for _, dir := range []string{sharedDir(root), LocalDir(root)} {
-		if fi, err := os.Lstat(dir); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		info, statErr := os.Lstat(dir)
+		if statErr == nil && info.Mode()&fs.ModeSymlink != 0 {
 			return dir + " is a symlink"
 		}
 	}
@@ -299,43 +306,43 @@ func load(skip string, shared bool, dirs ...string) ([]*Rule, []Problem) {
 	skipped, _ := os.Stat(skip) // nil where there is nothing to skip
 
 	for _, dir := range dirs {
-		err := fs.WalkDir(os.DirFS(dir), ".", func(rel string, d fs.DirEntry, err error) error {
-			p := filepath.Join(dir, filepath.FromSlash(rel))
+		err := fs.WalkDir(os.DirFS(dir), ".", func(rel string, entry fs.DirEntry, err error) error {
+			file := filepath.Join(dir, filepath.FromSlash(rel))
 			if err != nil {
 				if rel == "." && errors.Is(err, fs.ErrNotExist) {
 					return nil
 				}
 
-				problems = append(problems, Problem{Path: p, Message: err.Error()})
+				problems = append(problems, Problem{Path: file, Message: err.Error(), Untrusted: false})
 
 				return nil
 			}
 
-			if d.IsDir() {
-				if skips(d, rel, skipped) {
+			if entry.IsDir() {
+				if skips(entry, rel, skipped) {
 					return fs.SkipDir
 				}
 
 				return nil
 			}
 
-			if !strings.HasSuffix(d.Name(), ".md") {
+			if !strings.HasSuffix(entry.Name(), ".md") {
 				return nil
 			}
 
-			r, err := readRule(p, strings.TrimSuffix(d.Name(), ".md"), shared)
+			parsed, err := readRule(file, strings.TrimSuffix(entry.Name(), ".md"), shared)
 			if err != nil {
-				problems = append(problems, Problem{Path: p, Message: err.Error()})
+				problems = append(problems, Problem{Path: file, Message: err.Error(), Untrusted: false})
 
 				return nil //nolint:nilerr // the walk reports bad rules, it does not abort on them
 			}
 
-			rules = append(rules, r)
+			rules = append(rules, parsed)
 
 			return nil
 		})
 		if err != nil {
-			problems = append(problems, Problem{Path: dir, Message: err.Error()})
+			problems = append(problems, Problem{Path: dir, Message: err.Error(), Untrusted: false})
 		}
 	}
 
@@ -355,32 +362,33 @@ func skips(d fs.DirEntry, rel string, skipped fs.FileInfo) bool {
 	return err == nil && rel != "." && os.SameFile(info, skipped)
 }
 
-// readRule reads and parses the rule file at p, holding a Project-shared rule
-// to what that tier allows.
-func readRule(p, name string, shared bool) (*Rule, error) {
-	data, err := os.ReadFile(p)
+// readRule reads and parses the rule file at file, holding a Project-shared
+// rule to what that tier allows.
+func readRule(file, name string, shared bool) (*Rule, error) {
+	data, err := os.ReadFile(file)
 	if err != nil {
 		return nil, err
 	}
 
-	r, err := Parse(name, data)
+	parsed, err := Parse(name, data)
 	if err != nil {
 		return nil, err
 	}
 	// A repository rule that speaks to the agent behind the human's
 	// back is refused, and the hook path keeps the rule, louder: a
 	// block that set it still blocks.
-	if shared && r.AgentOnly {
-		r.AgentOnly, r.LostAgentOnly = false, true
+	if shared && parsed.AgentOnly {
+		parsed.AgentOnly, parsed.LostAgentOnly = false, true
 	}
 
-	if err := r.checkAgentOnly(); err != nil {
+	err = parsed.checkAgentOnly()
+	if err != nil {
 		return nil, err
 	}
 
-	r.Path = p
+	parsed.Path = file
 
-	return r, nil
+	return parsed, nil
 }
 
 // unique keeps the first of each name among rules sorted by name, and reports
@@ -389,17 +397,18 @@ func unique(rules []*Rule) ([]*Rule, []Problem) {
 	var problems []Problem
 	// Identity is the basename, so a repeat inside one tier is ambiguous.
 	kept := make([]*Rule, 0, len(rules))
-	for i, r := range rules {
-		if i > 0 && rules[i-1].Name == r.Name {
+	for i, sorted := range rules {
+		if i > 0 && rules[i-1].Name == sorted.Name {
 			problems = append(problems, Problem{
-				Path:    r.Path,
-				Message: fmt.Sprintf("duplicate rule name %q (also at %s)", r.Name, rules[i-1].Path),
+				Path:      sorted.Path,
+				Message:   fmt.Sprintf("duplicate rule name %q (also at %s)", sorted.Name, rules[i-1].Path),
+				Untrusted: false,
 			})
 
 			continue
 		}
 
-		kept = append(kept, r)
+		kept = append(kept, sorted)
 	}
 
 	return kept, problems
@@ -419,20 +428,22 @@ func RepoRoot(dir string) string {
 	// the same way as the one handrail trust saw: /tmp and /private/tmp are one
 	// repo, and a grant given through one must not read as absent through the
 	// other. Resolving here settles it for every caller at once.
-	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err == nil {
 		dir = resolved
 	}
 
-	for d := dir; ; {
-		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil {
-			return d
+	for current := dir; ; {
+		_, err := os.Lstat(filepath.Join(current, ".git"))
+		if err == nil {
+			return current
 		}
 
-		parent := filepath.Dir(d)
-		if parent == d {
+		parent := filepath.Dir(current)
+		if parent == current {
 			return dir
 		}
 
-		d = parent
+		current = parent
 	}
 }

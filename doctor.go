@@ -161,12 +161,12 @@ func (r *report) checkTiers(rs *rule.Ruleset) {
 // out of version control. Outside a working tree there is nothing to exclude,
 // which is not the same as an exclusion that went missing.
 func (r *report) checkExclusion(rs *rule.Ruleset) {
-	switch excluded, path, err := rule.LocalExcluded(rs.Root); {
+	switch file, err := rule.LocalExcluded(rs.Root); {
 	case err != nil:
 		r.badf("cannot read the exclude file of %s: %v", rs.Root, err)
-	case path == "":
+	case file.Path == "":
 		r.okf("%s is not a git working tree, so nothing needs excluding", rs.Root)
-	case excluded:
+	case file.Excluded:
 		r.okf(".handrail/local/ is excluded in .git/info/exclude")
 	default:
 		r.badf(".handrail/local/ is not excluded in .git/info/exclude; run handrail sync")
