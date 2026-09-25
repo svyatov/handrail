@@ -1,0 +1,156 @@
+[!exec:git] skip
+
+# The supply check reads every index format git writes. Each case first shows a
+# local/ the index does not track staying Project-personal, which a misread
+# entry would get wrong, then tracks it.
+env GIT_CONFIG_GLOBAL=$WORK/gitconfig
+
+# v3: an intent-to-add entry carries extended flags.
+exec cp -R tree v3
+cd v3
+exec git init -q
+exec handrail trust
+exec git add -N .a.md
+exec git add .handrail/shared.md zz.md
+exec od -An -tx1 -j4 -N4 .git/index
+stdout '00 +00 +00 +03'
+exec handrail check --json
+stdout '"tier": "project-personal"'
+exec git add -N -f .handrail/local/mine.md
+exec handrail check --json
+stdout '"demoted_from": "project-personal"'
+cd ..
+
+# v4: each path is stored as a count of bytes to cut from the previous one, and
+# the rest, with no padding. The long path makes the next one cut more than a
+# varint's single byte holds.
+exec cp -R tree v4
+cd v4
+exec git init -q
+exec handrail trust
+exec git add .a.md .b .handrail/shared.md zz.md
+exec git update-index --index-version 4
+exec od -An -tx1 -j4 -N4 .git/index
+stdout '00 +00 +00 +04'
+exec handrail check --json
+stdout '"tier": "project-personal"'
+exec git add -f .handrail/local/mine.md
+exec handrail check --json
+stdout '"demoted_from": "project-personal"'
+cd ..
+
+# SHA-256: object names are 32 bytes, which only the repository's config says.
+exec cp -R tree sha256
+cd sha256
+exec git init -q --object-format=sha256
+exec handrail trust
+exec git add .a.md .b .handrail/shared.md zz.md
+exec handrail check --json
+stdout '"tier": "project-personal"'
+exec git add -f .handrail/local/mine.md
+exec handrail check --json
+stdout '"demoted_from": "project-personal"'
+cd ..
+
+# A linked worktree reads its own index, and its config from the main checkout.
+exec cp -R tree main
+cd main
+exec git init -q --object-format=sha256
+exec git add .a.md .b .handrail/shared.md zz.md
+exec git commit -q -m init
+exec git worktree add -q ../wt
+cd ../wt
+exec handrail trust
+exec cp -R ../tree/.handrail/local .handrail/local
+exec handrail check --json
+stdout '"tier": "project-personal"'
+exec git add -f .handrail/local/mine.md
+exec handrail check --json
+stdout '"demoted_from": "project-personal"'
+cd ../main
+exec handrail trust
+exec handrail check --json
+stdout '"tier": "project-personal"'
+cd ..
+
+# A sparse index stores a directory outside the cone as one entry: .b/ covers
+# nothing of .handrail/local/, and .handrail/ covers all of it.
+exec cp -R tree sparse
+cd sparse
+exec git init -q
+exec handrail trust
+exec git add .a.md .b .handrail/shared.md zz.md
+exec git add -f .handrail/local/mine.md
+exec git commit -q -m init
+exec git rm -q --cached .handrail/local/mine.md
+exec git commit -q -m untrack
+exec git sparse-checkout set --cone --sparse-index .handrail
+exec git ls-files --sparse
+stdout '^\.b/$'
+exec handrail check --json
+stdout '"tier": "project-personal"'
+exec git checkout -q HEAD~1
+exec git sparse-checkout set --cone --sparse-index other
+exec git ls-files --sparse
+stdout '^\.handrail/$'
+exec cp -R ../tree/.handrail .
+exec handrail check --json
+stdout '"demoted_from": "project-personal"'
+cd ..
+
+# A split index keeps most entries in a shared index and the changes since in
+# .git/index: replaced entries, a bitmap of deleted ones, and additions.
+exec cp -R tree split
+cd split
+exec git init -q
+exec git config splitIndex.maxPercentChange 100
+exec handrail trust
+exec git add .a.md .b .handrail/shared.md zz.md
+exec git add -f .handrail/local/mine.md
+exec git update-index --split-index
+exec sh -c 'ls .git/sharedindex.*'
+exec handrail check --json
+stdout '"demoted_from": "project-personal"'
+
+# Deleted from the shared index, with replaced entries around it.
+exec git rm -q --cached .handrail/local/mine.md
+cp ../tree/.handrail/shared.md .a.md
+cp ../tree/.handrail/shared.md zz.md
+exec git add .a.md zz.md
+exec handrail check --json
+stdout '"tier": "project-personal"'
+
+# Added since the split.
+exec git add -f .handrail/local/mine.md
+exec handrail check --json
+stdout '"demoted_from": "project-personal"'
+
+# Enough deleted entries in a row that the bitmap stores whole words of them as
+# a run rather than bit by bit.
+exec sh -c 'for i in $(seq 200); do echo > .handrail/local/f$i.txt; done'
+exec git add -f .handrail/local
+exec git update-index --split-index
+exec git rm -q -r --cached .handrail/local
+exec handrail check --json
+stdout '"tier": "project-personal"'
+cd ..
+
+-- gitconfig --
+[user]
+	email = t@example.com
+	name = T
+[init]
+	defaultBranch = main
+-- tree/.a.md --
+-- tree/.b/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.md --
+-- tree/zz.md --
+-- tree/.handrail/shared.md --
+---
+event: Stop
+---
+A committed rule.
+-- tree/.handrail/local/mine.md --
+---
+event: Stop
+---
+A local rule.

@@ -1,0 +1,33 @@
+# A .handrail/local/ reached through a symlink is supplied by whatever the link
+# points at, so it is read as Project-shared, and still read.
+exec handrail trust
+symlink .handrail/local -> ../elsewhere
+exec handrail check --json
+stdout '"rule": "linked",\n +"tier": "project-shared"'
+stdout '"demoted_from": "project-personal"'
+stdout '"rule": "shared",\n +"tier": "project-shared"'
+
+# So is one under a .handrail that is itself a symlink, and the shared tier is
+# read through the link.
+rm .handrail/local
+mv .handrail rules
+symlink .handrail -> rules
+mkdir rules/local
+cp elsewhere/linked.md rules/local/linked.md
+exec handrail check --json
+stdout '"rule": "linked",\n +"tier": "project-shared"'
+stdout '"demoted_from": "project-personal"'
+stdout '"rule": "shared",\n +"tier": "project-shared",(.|\n)*"demoted_from": null'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/shared.md --
+---
+event: Stop
+---
+A committed rule.
+-- elsewhere/linked.md --
+---
+event: Stop
+---
+A rule the link supplies.

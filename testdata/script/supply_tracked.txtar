@@ -1,0 +1,111 @@
+[!exec:git] skip
+
+env GIT_CONFIG_GLOBAL=$WORK/gitconfig
+
+# A .handrail/local/ that is genuinely local is the Project-personal tier.
+exec git init -q
+exec git add .handrail/shared.md
+exec handrail check --json
+stdout '"rule": "mine",\n +"tier": "project-personal"'
+stdout '"demoted_from": null'
+! stdout '"demoted_from": "'
+
+# Once a path under it is in the git index, the repository supplies it, so it
+# is read as Project-shared, and gated by trust like the rest of that tier.
+exec git add -f .handrail/local/mine.md
+stdin stop.json
+exec handrail hook claude Stop
+! stdout 'meant to stay local'
+stdout 'run handrail trust'
+
+exec handrail trust
+exec handrail check --json
+stdout '"rule": "mine",\n +"tier": "project-shared"'
+stdout '"demoted_from": "project-personal"'
+exec handrail check
+stdout '^project-shared +mine +Stop'
+stderr '^handrail: .*/\.handrail/local/mine\.md: read as Project-shared: \.handrail/local/ is in the git index$'
+stdin stop.json
+exec handrail hook claude Stop
+stdout 'handrail warn: mine \(project-shared\)'
+
+# It is bound by the add-only rule too: it may not replace a Global rule.
+mkdir home/.config/handrail
+cp mine-global.md home/.config/handrail/mine.md
+exec handrail check --json
+stdout '"dropped_by": ".*/\.config/handrail/mine\.md"'
+rm home/.config/handrail/mine.md
+
+# The check spawns no process: a git that would leave a mark is never run.
+chmod 0755 bin/git
+env REALPATH=$PATH
+env PATH=$WORK/bin:$PATH
+exec handrail check --json
+stdout '"demoted_from": "project-personal"'
+! exists spawned
+env PATH=$REALPATH
+
+# A submodule or a symlink at .handrail/local is one entry naming the path
+# itself.
+exec git rm -q --cached .handrail/local/mine.md
+exec git update-index --add --cacheinfo 160000,1111111111111111111111111111111111111111,.handrail/local
+exec handrail check --json
+stdout '"demoted_from": "project-personal"'
+exec git update-index --force-remove .handrail/local
+
+# A case-insensitive filesystem checks .Handrail/LOCAL/ out as the same
+# directory, so any spelling of the path counts.
+exec git hash-object -w zz.md
+exec git update-index --add --cacheinfo 100644,e69de29bb2d1d6434b8b29ae775ad8c2e48c5391,.Handrail/LOCAL/x.md
+exec handrail check --json
+stdout '"demoted_from": "project-personal"'
+exec git update-index --force-remove .Handrail/LOCAL/x.md
+exec git update-index --add --cacheinfo 160000,1111111111111111111111111111111111111111,.handrail/Local
+exec handrail check --json
+stdout '"demoted_from": "project-personal"'
+exec git update-index --force-remove .handrail/Local
+
+# The read stops at the first entry past .handrail/local/, so what comes after
+# is never read: an index cut short after .handrail/shared.md, 12 bytes of
+# header and an 88-byte entry, still answers.
+exec git add zz.md
+exec sh -c 'head -c 100 .git/index > cut && mv cut .git/index'
+exec handrail check --json
+stdout '"tier": "project-personal"'
+
+# An index that cannot be read cannot vouch for the tier.
+exec sh -c 'head -c 50 .git/index > cut && mv cut .git/index'
+exec handrail check
+stdout '^project-shared +mine +Stop'
+stderr 'read as Project-shared: cannot read the git index: truncated'
+cp shared.md .git/index
+exec handrail check
+stderr 'read as Project-shared: cannot read the git index: not a git index'
+
+-- gitconfig --
+[user]
+	email = t@example.com
+	name = T
+-- bin/git --
+#!/bin/sh
+touch "$WORK/spawned"
+-- stop.json --
+{"hook_event_name": "Stop"}
+-- zz.md --
+-- .handrail/shared.md --
+---
+event: Stop
+---
+A committed rule.
+-- shared.md --
+A file that is no index.
+-- .handrail/local/mine.md --
+---
+event: Stop
+---
+A rule that was meant to stay local.
+-- mine-global.md --
+---
+event: Stop
+---
+The user's own rule.

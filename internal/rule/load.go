@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/svyatov/handrail/internal/gitindex"
 )
 
 // Problem is one rule file that could not be used, and why.
@@ -51,6 +53,9 @@ type Ruleset struct {
 	Untrusted []*Rule
 	Tiers     []Tier
 	Problems  []Problem
+	// Demoted says why .handrail/local/ was read as Project-shared, and is ""
+	// where it is the Project-personal tier.
+	Demoted string
 }
 
 // Effective returns the Effective ruleset: the rules that can fire, in
@@ -95,9 +100,9 @@ func Load(cwd string) *Ruleset {
 	// An untrusted tier is read and then dropped, not left unread: strict
 	// validation is what check promises for every tier, and .handrail/ existing
 	// says nothing on its own, since the Project-personal tier lives inside it.
-	gather := func(t Tier, skipLocal bool) {
+	gather := func(t Tier, dirs ...string) {
 		if t.Dir != "" {
-			rules, problems := load(t.Dir, skipLocal)
+			rules, problems := load(inRoot(LocalDir), dirs...)
 			for i := range problems {
 				problems[i].Untrusted = !t.Trusted
 			}
@@ -116,7 +121,8 @@ func Load(cwd string) *Ruleset {
 		rs.Tiers = append(rs.Tiers, t)
 	}
 
-	gather(Tier{Name: TierGlobal, Dir: configDir(), Trusted: true}, false)
+	global := configDir()
+	gather(Tier{Name: TierGlobal, Dir: global, Trusted: true}, global)
 	// A Global file that does not parse still names a Global rule, so it keeps
 	// a shared namesake out just as the parsed rule would. Every problem so far
 	// is the Global tier's.
@@ -129,8 +135,23 @@ func Load(cwd string) *Ruleset {
 	// A user-level hook entry means any repo on the machine is enforced, so a
 	// clone's committed rules wait for an explicit grant. The user's own two
 	// tiers are never gated.
-	gather(Tier{Name: TierProjectShared, Dir: inRoot(sharedDir), Trusted: isTrusted(root)}, true)
-	gather(Tier{Name: TierProjectPersonal, Dir: inRoot(LocalDir), Trusted: true}, false)
+	// A tier's identity is its supply: a .handrail/local/ the repository
+	// supplies is read as part of the shared tier, gated and add-only with it.
+	shared, local := inRoot(sharedDir), inRoot(LocalDir)
+	if root != "" {
+		rs.Demoted = demotion(root)
+	}
+	if rs.Demoted == "" {
+		gather(Tier{Name: TierProjectShared, Dir: shared, Trusted: isTrusted(root)}, shared)
+		gather(Tier{Name: TierProjectPersonal, Dir: local, Trusted: true}, local)
+	} else {
+		gather(Tier{Name: TierProjectShared, Dir: shared, Trusted: isTrusted(root)}, shared, local)
+		for _, r := range slices.Concat(rs.Rules, rs.Untrusted) {
+			if strings.HasPrefix(r.Path, local+string(filepath.Separator)) {
+				r.DemotedFrom = TierProjectPersonal
+			}
+		}
+	}
 
 	// Identity is the basename, so the highest tier holding a name carries the
 	// effective rule and every lower one is shadowed by it, wholesale. The one
@@ -192,47 +213,74 @@ func xdgSubdir(env, fallback string) string {
 	return filepath.Join(base, "handrail")
 }
 
-// load parses every rule file under dir, recursively. Rules come back sorted by
-// name; every file that cannot be used comes back as a Problem instead. A
-// missing dir is not a problem: a repo without rules is a valid repo. skipLocal
-// holds back dir/local, which is the Project-personal tier's own scan.
-func load(dir string, skipLocal bool) ([]*Rule, []Problem) {
+// demotion says why root's .handrail/local/ is supplied by the repository, and
+// "" when it is genuinely local or absent. An index that cannot be read cannot
+// vouch for the tier, so it is read as the repository's too.
+func demotion(root string) string {
+	if _, err := os.Lstat(LocalDir(root)); err != nil {
+		return ""
+	}
+	for _, dir := range []string{sharedDir(root), LocalDir(root)} {
+		if fi, err := os.Lstat(dir); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+			return dir + " is a symlink"
+		}
+	}
+	tracked, err := gitindex.Under(root, excludeLine[:len(excludeLine)-1])
+	switch {
+	case err != nil:
+		return "cannot read the git index: " + err.Error()
+	case tracked:
+		return excludeLine + " is in the git index"
+	}
+	return ""
+}
+
+// load parses every rule file under dirs, recursively, as one tier. Rules come
+// back sorted by name; every file that cannot be used comes back as a Problem
+// instead. A missing dir is not a problem: a repo without rules is a valid
+// repo. skip is a directory no walk enters, since the Project-personal tier
+// sits inside the shared one; it is still walked when it is one of dirs. A dir
+// that is a symlink is followed, one inside a dir is not.
+func load(skip string, dirs ...string) ([]*Rule, []Problem) {
 	var rules []*Rule
 	var problems []Problem
 
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if p == dir && errors.Is(err, fs.ErrNotExist) {
+	for _, dir := range dirs {
+		err := fs.WalkDir(os.DirFS(dir), ".", func(rel string, d fs.DirEntry, err error) error {
+			p := filepath.Join(dir, filepath.FromSlash(rel))
+			if err != nil {
+				if rel == "." && errors.Is(err, fs.ErrNotExist) {
+					return nil
+				}
+				problems = append(problems, Problem{Path: p, Message: err.Error()})
 				return nil
 			}
-			problems = append(problems, Problem{Path: p, Message: err.Error()})
-			return nil
-		}
-		if d.IsDir() {
-			if skipLocal && d.Name() == localName && filepath.Dir(p) == dir {
-				return fs.SkipDir
+			if d.IsDir() {
+				if rel != "." && p == skip {
+					return fs.SkipDir
+				}
+				return nil
 			}
+			if !strings.HasSuffix(d.Name(), ".md") {
+				return nil
+			}
+			data, err := os.ReadFile(p)
+			if err != nil {
+				problems = append(problems, Problem{Path: p, Message: err.Error()})
+				return nil //nolint:nilerr // the walk reports bad rules, it does not abort on them
+			}
+			r, err := Parse(strings.TrimSuffix(d.Name(), ".md"), data)
+			if err != nil {
+				problems = append(problems, Problem{Path: p, Message: err.Error()})
+				return nil //nolint:nilerr // the walk reports bad rules, it does not abort on them
+			}
+			r.Path = p
+			rules = append(rules, r)
 			return nil
-		}
-		if !strings.HasSuffix(d.Name(), ".md") {
-			return nil
-		}
-		data, err := os.ReadFile(p)
+		})
 		if err != nil {
-			problems = append(problems, Problem{Path: p, Message: err.Error()})
-			return nil //nolint:nilerr // the walk reports bad rules, it does not abort on them
+			problems = append(problems, Problem{Path: dir, Message: err.Error()})
 		}
-		r, err := Parse(strings.TrimSuffix(d.Name(), ".md"), data)
-		if err != nil {
-			problems = append(problems, Problem{Path: p, Message: err.Error()})
-			return nil //nolint:nilerr // the walk reports bad rules, it does not abort on them
-		}
-		r.Path = p
-		rules = append(rules, r)
-		return nil
-	})
-	if err != nil {
-		problems = append(problems, Problem{Path: dir, Message: err.Error()})
 	}
 
 	slices.SortFunc(rules, func(a, b *Rule) int {
