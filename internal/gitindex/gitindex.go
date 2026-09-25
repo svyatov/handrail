@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -114,7 +115,7 @@ func (s scan) under(name string) bool {
 
 // file reads the index at path up to the first entry past dir, passing over
 // the entries whose position deleted holds.
-func (s scan) file(path string, deleted map[uint64]bool) (bool, error) {
+func (s scan) file(path string, deleted bitmap) (bool, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return false, err
@@ -129,7 +130,7 @@ func (s scan) file(path string, deleted map[uint64]bool) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if !deleted[i] && s.under(name) {
+		if !deleted.has(i) && s.under(name) {
 			return true, nil
 		}
 		if name > s.below {
@@ -174,7 +175,7 @@ func (s scan) split(own, index string) (bool, error) {
 // shared entries this index deletes. The name is "" when there is no link.
 // The replace bitmap after them is not read: git writes a replaced entry with
 // an empty path, and the shared entry it replaces keeps its path.
-func link(ext []byte, hashLen int) (string, map[uint64]bool, error) {
+func link(ext []byte, hashLen int) (string, bitmap, error) {
 	for len(ext) >= 8 {
 		size := uint64(binary.BigEndian.Uint32(ext[4:8]))
 		if size > uint64(len(ext[8:])) {
@@ -194,11 +195,39 @@ func link(ext []byte, hashLen int) (string, map[uint64]bool, error) {
 	return "", nil, nil
 }
 
-// ewah decodes git's EWAH bitmap into the positions of its set bits. It is a
-// bit count, a word count, then the words: each marker word says how many
-// words of all ones or all zeros follow, stored as nothing, and how many
-// literal words follow it, stored as themselves, low bit first.
-func ewah(b []byte) (map[uint64]bool, error) {
+// bitmap holds set bits as sorted, disjoint [start, end) runs, so what it
+// costs grows with the bitmap's bytes, not with the positions they describe.
+type bitmap [][2]uint64
+
+// add sets [start, end), which begins at or after every run already held.
+func (m *bitmap) add(start, end uint64) {
+	if n := len(*m); n > 0 && (*m)[n-1][1] == start {
+		(*m)[n-1][1] = end
+		return
+	}
+	*m = append(*m, [2]uint64{start, end})
+}
+
+// has reports whether bit pos is set.
+func (m *bitmap) has(pos uint64) bool {
+	_, found := slices.BinarySearchFunc(*m, pos, func(run [2]uint64, pos uint64) int {
+		switch {
+		case run[1] <= pos:
+			return -1
+		case run[0] > pos:
+			return 1
+		default:
+			return 0
+		}
+	})
+	return found
+}
+
+// ewah decodes git's EWAH bitmap into its set bits. It is a bit count, a word
+// count, then the words: each marker word says how many words of all ones or
+// all zeros follow, stored as nothing, and how many literal words follow it,
+// stored as themselves, low bit first.
+func ewah(b []byte) (bitmap, error) {
 	if len(b) < 8 {
 		return nil, errors.New("truncated git index bitmap")
 	}
@@ -209,16 +238,14 @@ func ewah(b []byte) (map[uint64]bool, error) {
 	}
 	word := func(i uint64) uint64 { return binary.BigEndian.Uint64(b[8+8*i:]) }
 
-	set := make(map[uint64]bool)
+	var set bitmap
 	var pos uint64
 	for i := uint64(0); i < words; {
 		marker := word(i)
 		i++
 		end := pos + (marker>>1&0xffffffff)*64
-		if marker&1 != 0 {
-			for ; pos < min(end, bits); pos++ {
-				set[pos] = true
-			}
+		if marker&1 != 0 && pos < min(end, bits) {
+			set.add(pos, min(end, bits))
 		}
 		pos = end
 		literals := marker >> 33
@@ -228,7 +255,7 @@ func ewah(b []byte) (map[uint64]bool, error) {
 		for range literals {
 			for bit := range uint64(64) {
 				if word(i)>>bit&1 != 0 {
-					set[pos+bit] = true
+					set.add(pos+bit, pos+bit+1)
 				}
 			}
 			pos += 64
