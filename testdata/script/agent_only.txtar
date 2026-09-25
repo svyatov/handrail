@@ -36,6 +36,17 @@ stdin start.json
 exec handrail hook claude SessionStart
 stdout '"systemMessage": "handrail: agent_only dropped from 2 Project-shared rules, so the human hears them: coach, coach-too; run handrail check'
 
+# A shared block that sets it is refused the same way, and keeps blocking: a
+# repository cannot switch its own block off with one line.
+cp block-ls.md .handrail/block-ls.md
+! exec handrail check
+stderr 'block-ls\.md: agent_only is refused in the Project-shared tier'
+stdin ls.json
+exec handrail hook claude PreToolUse
+stdout '"permissionDecision": "deny"'
+stdout '"systemMessage": ".*handrail block: block-ls \(project-shared\)'
+rm .handrail/block-ls.md
+
 # The user's own tiers keep it: a Project-personal agent_only is quiet.
 rm .handrail/coach.md
 rm .handrail/coach-too.md
@@ -75,6 +86,16 @@ kind: shell
 agent_only: true
 ---
 An approval nobody is asked for.
+-- block-ls.md --
+---
+event: PreToolUse
+action: block
+agent_only: true
+conditions:
+  - field: command
+    equals: ls
+---
+Not in this repository.
 -- warn.md --
 ---
 event: PreToolUse

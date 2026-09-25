@@ -114,18 +114,11 @@ func Load(cwd string) *Ruleset {
 	// says nothing on its own, since the Project-personal tier lives inside it.
 	gather := func(t Tier, dirs ...string) {
 		if t.Dir != "" {
-			rules, problems := load(inRoot(LocalDir), dirs...)
+			rules, problems := load(inRoot(LocalDir), t.Name == TierProjectShared, dirs...)
 			for i := range problems {
 				problems[i].Untrusted = !t.Trusted
 			}
 			rs.Problems = append(rs.Problems, problems...)
-			// A repository rule that speaks to the agent behind the human's back
-			// is refused, and the hook path keeps the rule, louder.
-			for _, r := range rules {
-				if t.Name == TierProjectShared && r.AgentOnly {
-					r.AgentOnly, r.LostAgentOnly = false, true
-				}
-			}
 			if t.Trusted {
 				for _, r := range rules {
 					r.Tier = t.Name
@@ -261,8 +254,8 @@ func demotion(root string) string {
 // sits inside the shared one; it is still walked when it is one of dirs. It is
 // matched by identity, not spelling, because a case-insensitive filesystem
 // gives it more than one. A dir that is a symlink is followed, one inside a
-// dir is not.
-func load(skip string, dirs ...string) ([]*Rule, []Problem) {
+// dir is not. shared marks the Project-shared tier, which refuses agent_only.
+func load(skip string, shared bool, dirs ...string) ([]*Rule, []Problem) {
 	var rules []*Rule
 	var problems []Problem
 	skipped, _ := os.Stat(skip) // nil where there is nothing to skip
@@ -292,6 +285,15 @@ func load(skip string, dirs ...string) ([]*Rule, []Problem) {
 				return nil //nolint:nilerr // the walk reports bad rules, it does not abort on them
 			}
 			r, err := Parse(strings.TrimSuffix(d.Name(), ".md"), data)
+			// A repository rule that speaks to the agent behind the human's
+			// back is refused, and the hook path keeps the rule, louder: a
+			// block that set it still blocks.
+			if err == nil && shared && r.AgentOnly {
+				r.AgentOnly, r.LostAgentOnly = false, true
+			}
+			if err == nil {
+				err = r.checkAgentOnly()
+			}
 			if err != nil {
 				problems = append(problems, Problem{Path: p, Message: err.Error()})
 				return nil //nolint:nilerr // the walk reports bad rules, it does not abort on them
