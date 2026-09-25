@@ -79,7 +79,7 @@ stderr '^handrail: .*/\.handrail/local/no-rm\.md: line 13 of .*/\.config/handrai
 ! stderr 'no_match'
 exec sh -c 'handrail check --json; echo code=$?'
 stdout '^code=1$'
-stdout '"command": "rm -rf build"'
+stdout '"command": "rm -rf build"\n +\},\n +"line": 13,\n +"from": ".*/\.config/handrail/no-rm\.md"'
 ! stdout '"command": "rm -rf /"'
 
 # The drift is a report, never enforcement: the copy still lets the call through.
@@ -89,6 +89,19 @@ stdout '^code=0$'
 stdin start.json
 exec handrail hook claude SessionStart
 stdout '"systemMessage": ".*handrail: 1 rule fails its Examples: no-rm \(project-personal\); run handrail check"'
+
+# A copy that declares its exception, a no_match Example for the very call the
+# original's match Example names, has relaxed the rule on purpose: no drift.
+cp excepted.md .handrail/local/no-rm.md
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=0$'
+! stderr 'example'
+
+# The same fields under another kind are another call, so they declare nothing.
+cp kindless.md .handrail/local/no-rm.md
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=1$'
+stderr 'local/no-rm\.md: line 13 of .*: match example fails: command="rm -rf build"$'
 
 # A disabled stub is exempt: switching the whole rule off is its purpose.
 cp stub.md .handrail/local/no-rm.md
@@ -102,6 +115,18 @@ cp moved.md .handrail/local/no-rm.md
 exec sh -c 'handrail check; echo code=$?'
 stdout '^code=1$'
 stderr 'local/no-rm\.md: line 12 of .*: match example fails: command="rm -rf /"$'
+
+# A Global file that does not parse still names a Global rule: its shared
+# namesake is dropped, not enforced in its place.
+cp broken-global.md home/.config/handrail/no-ls.md
+cp shared-no-ls.md .handrail/no-ls.md
+exec sh -c 'handrail check; echo code=$?'
+stdout '^code=1$'
+stdout '^project-shared +no-ls +PreToolUse +shell +warn +dropped by global$'
+stderr '^handrail: .*/\.handrail/no-ls\.md: dropped: a Project-shared rule may not replace the Global rule .*/\.config/handrail/no-ls\.md$'
+stdin ls.json
+exec handrail hook claude PreToolUse
+! stdout 'shared no-ls'
 
 -- .git/HEAD --
 ref: refs/heads/main
@@ -131,6 +156,13 @@ conditions:
     starts_with: rm -rf
   - field: command
     not_contains: build
+examples:
+  no_match:
+    - command: rm -rf build/cache
+    - command: rm -rf build
+      tool: Bash
+    - command: rm -rf build
+      kind: other
 ---
 Never delete recursively, except the build output.
 -- drifted-no-rm.md --
@@ -151,6 +183,52 @@ examples:
     - command: rm -rf /tmp/x
 ---
 Never delete recursively, the build output included.
+-- excepted.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf
+  - field: command
+    not_contains: build
+examples:
+  no_match:
+    - command: rm -rf build
+---
+Never delete recursively, except the build output.
+-- ls.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- broken-global.md --
+---
+event: PreToolUse
+bogus: true
+---
+A Global rule with a typo.
+-- shared-no-ls.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: ls
+---
+The shared no-ls message.
+-- kindless.md --
+---
+event: PreToolUse
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf
+  - field: command
+    not_contains: build
+examples:
+  no_match:
+    - command: rm -rf build
+---
+Every kind, except the build output.
 -- moved.md --
 ---
 event: PostToolUse

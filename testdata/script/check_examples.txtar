@@ -48,7 +48,7 @@ stderr 'list-fails\.md: line 8: no_match example fails: url=\["https://docs.exam
 # --json carries each rule's passed count and every failing Example's fields.
 exec sh -c 'handrail check --json; echo code=$?'
 stdout '^code=1$'
-stdout '"examples": \{\n +"passed": 1,\n +"failed": \[\n +\{\n +"expect": "match",\n +"fields": \{\n +"command": "sudo rm -rf /"\n +\}'
+stdout '"examples": \{\n +"passed": 1,\n +"failed": \[\n +\{\n +"expect": "match",\n +"fields": \{\n +"command": "sudo rm -rf /"\n +\},\n +"line": \d+,\n +"from": null'
 stdout '"passed": 2,\n +"failed": \[\]'
 stdout '"url": \[\n +"https://docs.example/",'
 

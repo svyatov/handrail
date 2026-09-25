@@ -130,13 +130,14 @@ func droppedNotice(rules []*rule.Rule) string {
 			dropped++
 		}
 	}
-	switch dropped {
-	case 0:
+	if dropped == 0 {
 		return ""
-	case 1:
-		return "handrail: 1 Project-shared rule dropped for naming a Global rule; run handrail check"
 	}
-	return fmt.Sprintf("handrail: %d Project-shared rules dropped for naming Global rules; run handrail check", dropped)
+	count := fmt.Sprintf("%d Project-shared rules dropped for naming Global rules", dropped)
+	if dropped == 1 {
+		count = "1 Project-shared rule dropped for naming a Global rule"
+	}
+	return fmt.Sprintf("handrail: %s; run handrail check", count)
 }
 
 // examplesNotice names the rules whose Examples fail, and "" when none do. It
@@ -144,7 +145,7 @@ func droppedNotice(rules []*rule.Rule) string {
 func examplesNotice(rules []*rule.Rule) string {
 	var failing []string
 	for _, r := range rules {
-		if harness.FailingExamples(r) != nil || harness.DriftedExamples(r) != nil {
+		if harness.FailingExamples(r) != nil {
 			failing = append(failing, fmt.Sprintf("%s (%s)", r.Name, r.Tier))
 		}
 	}

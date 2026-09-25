@@ -38,6 +38,8 @@ type checkExamples struct {
 type checkExample struct {
 	Expect string         `json:"expect"`
 	Fields map[string]any `json:"fields"`
+	Line   int            `json:"line"`
+	From   *string        `json:"from"` // the replaced rule's file for a drifted Example, else null
 }
 
 type checkError struct {
@@ -76,17 +78,22 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 		}
 		for _, r := range rs.Rules {
 			failing := harness.FailingExamples(r)
-			// A drifted Example belongs to the rule this one replaces, so it
-			// fails here and counts nothing toward this rule's own passes.
-			drifted := harness.DriftedExamples(r)
-			examplesFailed = examplesFailed || len(failing)+len(drifted) > 0
-			examples := checkExamples{Passed: len(r.Examples) - len(failing), Failed: []checkExample{}}
-			for _, e := range slices.Concat(failing, drifted) {
+			examplesFailed = examplesFailed || len(failing) > 0
+			examples := checkExamples{Passed: len(r.Examples), Failed: []checkExample{}}
+			for _, e := range failing {
+				// A drifted Example belongs to the rule this one replaces, so
+				// it fails here and counts nothing toward this rule's passes.
+				var from *string
+				if e.From == r {
+					examples.Passed--
+				} else {
+					from = &e.From.Path
+				}
 				fields := make(map[string]any, len(e.Fields))
 				for _, f := range e.Fields {
 					fields[f.Name] = f.Value()
 				}
-				examples.Failed = append(examples.Failed, checkExample{Expect: e.Expect, Fields: fields})
+				examples.Failed = append(examples.Failed, checkExample{Expect: e.Expect, Fields: fields, Line: e.Line, From: from})
 			}
 			out.Rules = append(out.Rules, checkRule{
 				Rule:       r.Name,
@@ -109,7 +116,7 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 		for _, r := range rs.Untrusted {
 			for _, e := range harness.FailingExamples(r) {
 				examplesFailed = true
-				out.Errors = append(out.Errors, checkError{Path: r.Path, Message: exampleFailure(e)})
+				out.Errors = append(out.Errors, checkError{Path: r.Path, Message: exampleFailure(r, e)})
 			}
 		}
 		if code := writeJSON(stdout, stderr, out); code != 0 {
@@ -147,12 +154,7 @@ func reportExamples(rules []*rule.Rule, stderr io.Writer) bool {
 	failed := false
 	for _, r := range rules {
 		for _, e := range harness.FailingExamples(r) {
-			fmt.Fprintf(stderr, "handrail: %s: %s\n", r.Path, exampleFailure(e))
-			failed = true
-		}
-		for _, e := range harness.DriftedExamples(r) {
-			fmt.Fprintf(stderr, "handrail: %s: line %d of %s: %s example fails: %s\n",
-				r.Path, e.Line, r.Replaces.Path, e.Expect, e)
+			fmt.Fprintf(stderr, "handrail: %s: %s\n", r.Path, exampleFailure(r, e))
 			failed = true
 		}
 	}
@@ -171,9 +173,14 @@ func reportDropped(rules []*rule.Rule, stderr io.Writer) {
 	}
 }
 
-// exampleFailure names a failing Example the way a rule file problem is named.
-func exampleFailure(e rule.Example) string {
-	return fmt.Sprintf("line %d: %s example fails: %s", e.Line, e.Expect, e)
+// exampleFailure names a failing Example of r the way a rule file problem is
+// named, adding the file that holds it when that is the rule r replaces.
+func exampleFailure(r *rule.Rule, e harness.Failure) string {
+	line := fmt.Sprintf("line %d", e.Line)
+	if e.From != r {
+		line += " of " + e.From.Path
+	}
+	return fmt.Sprintf("%s: %s example fails: %s", line, e.Expect, e.Example)
 }
 
 // printRuleset renders the effective ruleset annotated with tier, shadowing,
