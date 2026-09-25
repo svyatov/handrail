@@ -46,12 +46,19 @@ type Rule struct {
 	Kind        string
 	Action      Outcome
 	Enabled     bool
-	Conditions  []Condition
-	Examples    []Example
-	Message     string
+	// AgentOnly withholds the human's line, which a warn alone may do.
+	AgentOnly bool
+	// LostAgentOnly marks a Project-shared rule that set agent_only, which
+	// that tier refuses: the rule stays, and the human hears it.
+	LostAgentOnly bool
+	Conditions    []Condition
+	Examples      []Example
+	Message       string
 	// fields names each field the conditions test once, in the order evaluation
 	// chooses a Candidate for them. A Term's slot is its field's index here.
 	fields []string
+	// agentOnlyLine is where agent_only was set, for the tier's check.
+	agentOnlyLine int
 }
 
 // Live reports whether this rule can fire: enabled, not shadowed by a higher
@@ -180,14 +187,14 @@ func Parse(name string, data []byte) (*Rule, error) {
 				return nil, fmt.Errorf("line %d: unknown action %q", kv.line, v)
 			}
 		case "enabled":
-			var v string
-			if err := scalarInto(kv, &v); err != nil {
+			if err := boolInto(kv, &r.Enabled); err != nil {
 				return nil, err
 			}
-			if v != "true" && v != "false" {
-				return nil, fmt.Errorf("line %d: enabled must be true or false", kv.line)
+		case "agent_only":
+			r.agentOnlyLine = kv.line
+			if err := boolInto(kv, &r.AgentOnly); err != nil {
+				return nil, err
 			}
-			r.Enabled = v == "true"
 		case "conditions":
 			if kv.val.seq == nil {
 				return nil, fmt.Errorf("line %d: conditions must be a list", kv.line)
@@ -238,6 +245,17 @@ func Parse(name string, data []byte) (*Rule, error) {
 // the one it writes, else the rule's. With neither, the spec's other and no
 // kind read alike, since only a rule naming a kind reads one. A rule with no
 // event is a disabled stub, with no event to hold anything to.
+// checkAgentOnly holds agent_only to a warn. It runs after the tier has had its
+// say, since the Project-shared tier drops the field rather than the rule. A
+// denial whose reason the human cannot see is a support ticket, and an ask
+// without the human has nobody to ask.
+func (r *Rule) checkAgentOnly() error {
+	if r.AgentOnly && r.Action != Warn {
+		return fmt.Errorf("line %d: agent_only applies only to warn", r.agentOnlyLine)
+	}
+	return nil
+}
+
 func (r *Rule) checkEvent(kindLine, actionLine int) error {
 	if r.Event == "" {
 		return nil
@@ -322,6 +340,18 @@ func scalarInto(kv pair, dst *string) error {
 		return fmt.Errorf("line %d: %s must be a single value", kv.line, kv.key)
 	}
 	*dst = kv.val.scalar
+	return nil
+}
+
+func boolInto(kv pair, dst *bool) error {
+	var v string
+	if err := scalarInto(kv, &v); err != nil {
+		return err
+	}
+	if v != "true" && v != "false" {
+		return fmt.Errorf("line %d: %s must be true or false", kv.line, kv.key)
+	}
+	*dst = v == "true"
 	return nil
 }
 

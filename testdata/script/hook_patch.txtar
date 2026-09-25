@@ -12,7 +12,7 @@ stdout 'handrail warn: env-edit'
 # A rule that matches several edits is delivered once, naming each file.
 stdin two-envs.json
 exec handrail hook codex PreToolUse
-stdout -count=1 'handrail warn: env-edit'
+stdout -count=1 'handrail warn: env-edit \(project-shared\)\\n'
 stdout 'Matched files:\\n  config/.env\\n  deploy/.env'
 
 # A rename is one edit whose path holds both files, so a not_ term on path
@@ -53,11 +53,10 @@ exec handrail hook codex PreToolUse
 # A Delete File: section carries deletes, and only the file it removes does:
 # the edit beside it in the same patch is let through.
 stdin delete.json
-exec sh -c 'handrail hook codex PreToolUse; echo code=$?'
-stdout '^code=2$'
-stderr 'handrail block: no-deletes'
-! stderr 'Matched files'
-! stderr 'writes-empty'
+exec handrail hook codex PreToolUse
+stdout '"permissionDecisionReason": "handrail block: no-deletes'
+! stdout 'Matched files'
+! stdout 'writes-empty'
 
 # A call that writes no text carries writes_empty, and its empty content stays
 # absent, so a not_contains rule does not fire on text nobody wrote.

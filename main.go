@@ -88,8 +88,8 @@ func loadValidRules(stderr io.Writer) (*rule.Ruleset, int) {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return nil, 1
 	}
-	if len(rs.Problems) > 0 {
-		for _, p := range rs.Problems {
+	if problems := rs.Invalid(); len(problems) > 0 {
+		for _, p := range problems {
 			fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
 		}
 		return nil, 1

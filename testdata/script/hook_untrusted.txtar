@@ -1,13 +1,19 @@
 # A clone's committed rules are inert until the repo is trusted, and the hook
-# path says so rather than enforcing nothing in silence.
+# path says so rather than enforcing nothing in silence. That is a standing
+# condition, so every SessionStart says it on both channels, ahead of any
+# rule's message, once per channel rather than once per skipped rule.
+stdin start.json
+exec handrail hook claude SessionStart
+stdout '"systemMessage": "handrail: skipping the untrusted Project-shared rules in .*; run handrail trust to enable them\\nhandrail warn: hello \(project-personal\)"'
+stdout '"additionalContext": "handrail: skipping the untrusted Project-shared rules in .*; run handrail trust to enable them\\n\\nhandrail warn: hello \(project-personal\)\\n'
+stdout -count=2 'run handrail trust'
+
+# A tool call does not repeat it, and the shared rules stay inert.
 stdin rm.json
 exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
 stdout '^code=0$'
-stdout 'handrail: skipping the untrusted Project-shared rules in .*; run handrail trust to enable them'
+! stdout 'run handrail trust'
 ! stdout 'handrail block'
-
-# The notice rides along once, not once per skipped rule.
-stdout -count=1 'run handrail trust'
 
 # The user's own tiers are never gated, so a personal rule still fires.
 stdout 'handrail warn: personal \(project-personal\)'
@@ -15,13 +21,21 @@ stdout 'handrail warn: personal \(project-personal\)'
 # Once trusted, the shared tier blocks and the notice is gone.
 exec handrail trust
 stdin rm.json
-exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
-stdout '^code=2$'
-stderr 'handrail block: blocker \(project-shared\)'
-! stderr 'run handrail trust'
+exec handrail hook claude PreToolUse
+stdout '"permissionDecisionReason": ".*handrail block: blocker \(project-shared\)'
+stdin start.json
+exec handrail hook claude SessionStart
+! stdout 'run handrail trust'
 
 -- .git/HEAD --
 ref: refs/heads/main
+-- start.json --
+{"hook_event_name": "SessionStart", "source": "startup"}
+-- .handrail/local/hello.md --
+---
+event: SessionStart
+---
+Good morning.
 -- rm.json --
 {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}
 -- .handrail/blocker.md --

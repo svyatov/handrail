@@ -67,8 +67,8 @@ exec handrail test PreToolUse --field 'command=echo rm -rf /'
 
 # The hook path reads the same way.
 stdin bash.json
-! exec handrail hook claude PreToolUse
-stderr '^handrail block: rm-root-hook \(global\)$'
+exec handrail hook claude PreToolUse
+stdout '"permissionDecisionReason": ".*handrail block: rm-root-hook \(global\)'
 
 -- bash.json --
 {"tool_name":"Bash","tool_input":{"command":"cd /tmp && rm -rf /"}}

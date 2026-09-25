@@ -16,6 +16,8 @@ exec git add -f .handrail/local/mine.md
 stdin stop.json
 exec handrail hook claude Stop
 ! stdout 'meant to stay local'
+stdin start.json
+exec handrail hook claude SessionStart
 stdout 'run handrail trust'
 
 exec handrail trust
@@ -96,6 +98,8 @@ stderr 'read as Project-shared: cannot read the git index: not a git index'
 -- bin/git --
 #!/bin/sh
 touch "$WORK/spawned"
+-- start.json --
+{"hook_event_name": "SessionStart"}
 -- stop.json --
 {"hook_event_name": "Stop"}
 -- zz.md --

@@ -34,9 +34,9 @@ stdout '^code=0$'
 
 # A rule that blocks on the gap is the user's choice, and it holds.
 stdin garbage
-exec sh -c 'handrail hook claude UserPromptSubmit; echo code=$?'
-stderr 'handrail block: block-payload \(project-shared\)'
-stdout '^code=2$'
+exec handrail hook claude UserPromptSubmit
+stdout '"decision": "block"'
+stdout '"reason": ".*handrail block: block-payload \(project-shared\)'
 
 # A payload read cleanly carries no such value.
 stdin bash.json
@@ -53,13 +53,13 @@ cp global-gap.md $WORK/home/.config/handrail/global-gap.md
 cp global-rules.md $WORK/home/.config/handrail/global-rules.md
 cp global-shell.md $WORK/home/.config/handrail/global-shell.md
 stdin gone-cwd.json
-exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
-stderr 'handrail block: global-shell \(global\)'
-stderr 'handrail warn: global-gap \(global\)'
-stderr 'handrail warn: global-rules \(global\)'
-stderr 'no working directory'
-! stderr 'any-shell'
-stdout '^code=2$'
+exec handrail hook claude PreToolUse
+stdout '"permissionDecision": "deny"'
+stdout 'handrail block: global-shell \(global\)'
+stdout 'handrail warn: global-gap \(global\)'
+stdout 'handrail warn: global-rules \(global\)'
+stdout 'no working directory'
+! stdout 'any-shell'
 
 # A file is no directory to work in either.
 rm $WORK/home/.config/handrail/global-shell.md

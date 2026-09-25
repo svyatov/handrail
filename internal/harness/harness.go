@@ -56,8 +56,10 @@ type eventCaps struct {
 type denial int
 
 const (
-	noDenial denial = iota
-	exitTwo         // exit 2, with the reason on stderr
+	noDenial       denial = iota
+	exitTwo               // exit 2, with the reason on stderr
+	permissionDeny        // exit 0 with permissionDecision: "deny" and the reason
+	decisionBlock         // exit 0 with decision: "block" and the reason
 )
 
 // Both harnesses read the same Claude-shaped hook config and speak the same
@@ -74,9 +76,9 @@ var adapters = []Adapter{
 		Name: "claude", title: "Claude Code", dir: ".claude", homeEnv: "CLAUDE_CONFIG_DIR", file: "settings.json",
 		aliases: [][]string{{"Agent", "Task"}}, agentTypeKey: "subagent_type", agentPromptKey: "prompt",
 		events: []eventCaps{
-			{name: "PreToolUse", deny: exitTwo, inject: true, ask: true},
+			{name: "PreToolUse", deny: permissionDeny, inject: true, ask: true},
 			{name: "PostToolUse", inject: true},
-			{name: "UserPromptSubmit", deny: exitTwo, inject: true},
+			{name: "UserPromptSubmit", deny: decisionBlock, inject: true},
 			{name: "SessionStart", inject: true},
 			{name: "SessionEnd"},
 			{name: "Stop", deny: exitTwo, inject: true},
@@ -91,7 +93,7 @@ var adapters = []Adapter{
 		aliases:      [][]string{{"apply_patch", "Edit", "Write"}, {"spawn_agent", "Agent"}},
 		agentTypeKey: "agent_type", agentPromptKey: "message",
 		events: []eventCaps{
-			{name: "PreToolUse", deny: exitTwo, inject: true},
+			{name: "PreToolUse", deny: permissionDeny, inject: true},
 			{name: "PostToolUse", inject: true},
 			{name: "UserPromptSubmit", inject: true},
 			{name: "SessionStart", inject: true},
@@ -490,33 +492,36 @@ func (a Adapter) reason(event string, to rule.Outcome) string {
 }
 
 type hookOutput struct {
-	SystemMessage      string       `json:"systemMessage,omitempty"`
-	HookSpecificOutput hookSpecific `json:"hookSpecificOutput"`
+	Decision           string        `json:"decision,omitempty"`
+	Reason             string        `json:"reason,omitempty"`
+	SystemMessage      string        `json:"systemMessage,omitempty"`
+	HookSpecificOutput *hookSpecific `json:"hookSpecificOutput,omitempty"`
 }
 
 type hookSpecific struct {
 	HookEventName string `json:"hookEventName"`
-	// An ask hands the call to the human, who reads the reason in the
-	// approval prompt; the agent reads the same text as context.
+	// A deny's reason reaches the agent; an ask's is the approval prompt the
+	// human reads, and the agent reads the rule as context.
 	PermissionDecision       string `json:"permissionDecision,omitempty"`
 	PermissionDecisionReason string `json:"permissionDecisionReason,omitempty"`
-	AdditionalContext        string `json:"additionalContext"`
+	AdditionalContext        string `json:"additionalContext,omitempty"`
 }
 
 // toStderr reports whether Deliver sends an event's message on exit 2, the
-// harness's own channel. On an event that can block it is the denial; on
-// SessionEnd, which has no decision control and whose JSON output the harness
-// discards, it is the only way left to reach the user, which is what a warning
-// degrades to where context injection does not exist.
+// harness's own channel. On an event whose denial is exit 2 it is the denial;
+// on SessionEnd, which has no decision control and whose JSON output the
+// harness discards, it is the only way left to reach the user, which is what a
+// warning degrades to where context injection does not exist.
 func (a Adapter) toStderr(event string, outcome rule.Outcome) bool {
-	return a.degrade(event, outcome) == rule.Block || !a.caps(event).inject
+	c := a.caps(event)
+	return (a.degrade(event, outcome) == rule.Block && c.deny == exitTwo) || !c.inject
 }
 
 // Human is the text the user is shown when Deliver sends message and human
-// for event, and "" when nothing reaches them. human is part of message, so
-// no message means no human line either.
+// for event, and "" when nothing reaches them: the whole message on stderr,
+// else human, in the approval prompt or beside the call.
 func (a Adapter) Human(event, message, human string, outcome rule.Outcome) string {
-	if a.toStderr(event, outcome) || a.degrade(event, outcome) == rule.Ask {
+	if a.toStderr(event, outcome) {
 		return message
 	}
 	return human
@@ -541,19 +546,31 @@ func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, std
 		return 2
 	}
 
-	out := hookOutput{human, hookSpecific{HookEventName: event, AdditionalContext: message}}
-	if a.degrade(event, outcome) == rule.Ask {
-		// The approval prompt shows the whole message, human included.
+	out := hookOutput{SystemMessage: human, HookSpecificOutput: &hookSpecific{HookEventName: event, AdditionalContext: message}}
+	switch o := a.degrade(event, outcome); {
+	case o == rule.Ask:
+		// The human's message rides in the approval prompt, not beside it.
 		out.SystemMessage = ""
 		out.HookSpecificOutput.PermissionDecision = "ask"
-		out.HookSpecificOutput.PermissionDecisionReason = message
+		out.HookSpecificOutput.PermissionDecisionReason = human
+	case o == rule.Block && a.caps(event).deny == decisionBlock:
+		// The harness shows the reason to the human and erases the prompt, so
+		// no agent is left to hear the rest.
+		out.Decision, out.Reason, out.HookSpecificOutput = "block", human, nil
+	case o == rule.Block:
+		out.HookSpecificOutput = &hookSpecific{HookEventName: event, PermissionDecision: "deny", PermissionDecisionReason: message}
 	}
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
 	// Rule messages are prose, so HTML escaping would only mangle them.
 	enc.SetEscapeHTML(false)
 	// A write that fails has nobody left to tell, and failing open is the
-	// promise: never turn handrail's own trouble into the harness's.
-	_ = enc.Encode(out)
+	// promise: never turn handrail's own trouble into the harness's. A block
+	// is the exception, since it is the rule's outcome rather than handrail's
+	// trouble: exit 2 still denies on both harnesses.
+	if err := enc.Encode(out); err != nil && a.degrade(event, outcome) == rule.Block {
+		_, _ = io.WriteString(stderr, message+"\n")
+		return 2
+	}
 	return 0
 }

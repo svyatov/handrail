@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/svyatov/handrail/internal/harness"
@@ -68,9 +69,9 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	rs := rule.Load(cwd)
 	matched, outcome := rs.Evaluate(payloads)
-	failures = append(failures, loadNotices(rs, event)...)
-	human := strings.Join(failures, "\n")
-	return a.Deliver(event, agentMessage(a, rs, matched, failures), human, outcome, stdout, stderr)
+	failures = append(failures, loadNotices(rs)...)
+	agent, human := messages(a, rs, event, matched, failures)
+	return a.Deliver(event, agent, human, outcome, stdout, stderr)
 }
 
 // readCall reads the harness's payload from stdin and normalizes it. A
@@ -94,11 +95,11 @@ func readCall(a harness.Adapter, event string, stdin io.Reader) (payloads []rule
 	return payloads, cwd, failures
 }
 
-// loadNotices is what the load itself tells both audiences on event. Loud
+// loadNotices is what the load itself tells both audiences on every event. Loud
 // fail-open: a rule that cannot be parsed is skipped, and the skipping is
 // named. A guardrail that guards nothing must never look like one that did. A
 // tier trust skipped loses nothing, so its broken files stay quiet.
-func loadNotices(rs *rule.Ruleset, event string) []string {
+func loadNotices(rs *rule.Ruleset) []string {
 	var notices []string
 	for _, t := range rs.Tiers {
 		if t.Name == rule.TierGlobal && t.Dir == "" {
@@ -110,15 +111,44 @@ func loadNotices(rs *rule.Ruleset, event string) []string {
 			notices = append(notices, fmt.Sprintf("handrail: skipped the broken rule %s: %s", p.Path, p.Message))
 		}
 	}
-	if event == "SessionStart" {
-		if notice := droppedNotice(rs.Rules); notice != "" {
-			notices = append(notices, notice)
-		}
-		if notice := examplesNotice(rs.Rules); notice != "" {
+	return notices
+}
+
+// standingNotices are the conditions that hold for the whole session rather
+// than fail at one event, so they go out at every SessionStart and nowhere
+// else, ahead of any rule's message.
+func standingNotices(rs *rule.Ruleset, event string) []string {
+	if event != "SessionStart" {
+		return nil
+	}
+	var notices []string
+	for _, notice := range []string{droppedNotice(rs.Rules), rs.TrustNotice(), agentOnlyNotice(rs.Rules), examplesNotice(rs.Rules)} {
+		if notice != "" {
 			notices = append(notices, notice)
 		}
 	}
 	return notices
+}
+
+// agentOnlyNotice names the Project-shared rules that lost agent_only, and ""
+// when none did. A shadowed or dropped one is named too, so the notice says
+// what was dropped rather than who hears it.
+func agentOnlyNotice(rules []*rule.Rule) string {
+	var lost []string
+	for _, r := range rules {
+		if r.LostAgentOnly {
+			lost = append(lost, r.Name)
+		}
+	}
+	if len(lost) == 0 {
+		return ""
+	}
+	count := fmt.Sprintf("%d rules", len(lost))
+	if len(lost) == 1 {
+		count = "1 rule"
+	}
+	return fmt.Sprintf("handrail: %s, so it was dropped from %s: %s; run handrail check",
+		rule.RefusedAgentOnly, count, strings.Join(lost, ", "))
 }
 
 // droppedNotice counts the Project-shared files dropped for naming a Global
@@ -163,14 +193,17 @@ func examplesNotice(rules []*rule.Rule) string {
 // counts the rest (docs/spec.md section 2, Several edits in one call).
 const listedFiles = 10
 
-// agentMessage is the wire format the hook path delivers: everything the agent
-// should hear, which is the matched messages, then handrail's own failures,
-// then the trust notice. It stays in the CLI because it is the hook command's own
-// output format, with one caller and nothing to disagree with.
-func agentMessage(a harness.Adapter, rs *rule.Ruleset, matched []rule.Match, failures []string) string {
-	var sections []string
+// messages is the wire format the hook path delivers on event, one text per
+// audience. The agent hears the standing notices, the matched messages, then
+// handrail's own failures. The human hears the same
+// order, but a rule's body only on a block or an ask, where the interruption is
+// theirs. It stays in the CLI because it is the hook command's own output format.
+func messages(a harness.Adapter, rs *rule.Ruleset, event string, matched []rule.Match, failures []string) (agent, human string) {
+	sections := standingNotices(rs, event)
+	heard := slices.Clone(sections)
 	for _, m := range matched {
-		s := fmt.Sprintf("handrail %s: %s (%s)\n%s", m.Action, m.Name, m.Tier, m.Message)
+		label := fmt.Sprintf("handrail %s: %s (%s)", m.Action, m.Name, m.Tier)
+		s := label + "\n" + m.Message
 		if note := a.Note(m.Rule); note != "" {
 			s += "\n" + note
 		}
@@ -181,10 +214,15 @@ func agentMessage(a harness.Adapter, rs *rule.Ruleset, matched []rule.Match, fai
 			}
 		}
 		sections = append(sections, s)
+		switch {
+		case m.AgentOnly:
+			continue
+		case m.Action == rule.Warn:
+			s = label
+		}
+		heard = append(heard, s)
 	}
 	sections = append(sections, failures...)
-	if notice := rs.TrustNotice(); notice != "" {
-		sections = append(sections, notice)
-	}
-	return strings.Join(sections, "\n\n")
+	heard = append(heard, failures...)
+	return strings.Join(sections, "\n\n"), strings.Join(heard, "\n")
 }

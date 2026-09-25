@@ -69,11 +69,12 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	problems := rs.Invalid()
 	var examplesFailed bool
 	if *asJSON {
 		out := checkOutput{
 			Rules:  make([]checkRule, 0, len(rs.Rules)),
-			Errors: make([]checkError, 0, len(rs.Problems)),
+			Errors: make([]checkError, 0, len(problems)),
 		}
 		for _, r := range rs.Rules {
 			failing := harness.FailingExamples(r)
@@ -112,7 +113,7 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 				Examples:    examples,
 			})
 		}
-		for _, p := range rs.Problems {
+		for _, p := range problems {
 			out.Errors = append(out.Errors, checkError{Path: p.Path, Message: p.Message})
 		}
 		// An untrusted tier's rules are not in the effective ruleset, so a
@@ -131,14 +132,14 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "handrail: %v\n", err)
 			return 1
 		}
-		for _, p := range rs.Problems {
+		for _, p := range problems {
 			fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
 		}
 		reportTierMoves(rs, stderr)
 		examplesFailed = reportExamples(slices.Concat(rs.Rules, rs.Untrusted), stderr)
 	}
 
-	if examplesFailed || len(rs.Problems) > 0 {
+	if examplesFailed || len(problems) > 0 {
 		return 1
 	}
 	return 0

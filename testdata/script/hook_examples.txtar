@@ -4,23 +4,22 @@
 stdin start.json
 exec sh -c 'handrail hook claude SessionStart; echo code=$?'
 stdout '^code=0$'
-stdout '"systemMessage": "handrail: 2 rules fail their Examples: drifted \(global\), also-drifted \(project-personal\); run handrail check"'
-stdout '"additionalContext": "handrail: 2 rules fail their Examples: drifted \(global\), also-drifted \(project-personal\); run handrail check'
+stdout '"systemMessage": "handrail: skipping the untrusted .*\\nhandrail: 2 rules fail their Examples: drifted \(global\), also-drifted \(project-personal\); run handrail check"'
+stdout '"additionalContext": "handrail: skipping the untrusted .*\\n\\nhandrail: 2 rules fail their Examples: drifted \(global\), also-drifted \(project-personal\); run handrail check'
 ! stdout 'sudo'
 ! stdout 'shared-drifted'
 
 # A failing Example never changes enforcement: the rule enforces as written.
 stdin rm.json
-exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
-stdout '^code=2$'
-stderr 'handrail block: drifted'
-! stderr 'Examples'
+exec handrail hook claude PreToolUse
+stdout '"permissionDecisionReason": "handrail block: drifted'
+! stdout 'Examples'
 
 # One failing rule reads as one.
 rm .handrail/local/also-drifted.md
 stdin start.json
 exec handrail hook claude SessionStart
-stdout '"systemMessage": "handrail: 1 rule fails its Examples: drifted \(global\); run handrail check"'
+stdout '"systemMessage": "handrail: skipping the untrusted .*\\nhandrail: 1 rule fails its Examples: drifted \(global\); run handrail check"'
 
 -- .git/HEAD --
 ref: refs/heads/main
