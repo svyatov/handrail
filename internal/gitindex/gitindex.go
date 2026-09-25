@@ -59,8 +59,8 @@ func Dirs(root string) (own, common string, err error) {
 }
 
 // Under reports whether the index of the working tree at root tracks dir, a
-// slash-separated path relative to root, or any path below it. A tree with no
-// index tracks nothing.
+// slash-separated path relative to root: dir itself, a path below it, or one
+// above it whose checkout supplies it. A tree with no index tracks nothing.
 //
 // Entries are sorted by path, so the read stops at the first one past dir.
 // A split index is the exception: .git/index holds only the changes since the
@@ -80,8 +80,11 @@ func Under(root, dir string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	s := scan{hashLen: hashLen, dir: dir, below: dir + "/"}
+	s := scan{hashLen: hashLen, below: dir + "/"}
 
+	// ponytail: a shared index left behind by --no-split-index makes this read
+	// a plain index whole until git expires it (two weeks by default); the
+	// answer stays right, only the cost grows.
 	shared, err := filepath.Glob(filepath.Join(own, "sharedindex.*"))
 	if err != nil || len(shared) == 0 {
 		return s.file(index, nil)
@@ -115,23 +118,22 @@ func Under(root, dir string) (bool, error) {
 
 // scan is one Under question, asked of one index file at a time.
 type scan struct {
-	hashLen    int
-	dir, below string
+	hashLen int
+	below   string // dir with a trailing slash
 }
 
-// under reports whether an entry's path is dir or below it, in any case, since
-// a case-insensitive filesystem checks every spelling out to the same place.
+// under reports whether an entry tracks dir: a path below it, dir itself, or
+// a path above it, such as a submodule whose checkout supplies dir or a sparse
+// index's directory entry, which ends in a slash. Any case counts, since a
+// case-insensitive filesystem checks every spelling out to the same place.
 // That keeps the early stop sound for a lowercase dir: an uppercase letter
-// sorts before its lowercase one, so every other spelling comes earlier. A
-// sparse index stores a directory outside the cone as one entry ending in a
-// slash, which tracks everything below it; it checks nothing out, so only its
-// exact spelling counts.
+// sorts before its lowercase one, so every other spelling comes earlier, and
+// so does every path above dir.
 func (s scan) under(name string) bool {
 	hasPrefix := func(str, prefix string) bool {
 		return len(str) >= len(prefix) && strings.EqualFold(str[:len(prefix)], prefix)
 	}
-	return strings.EqualFold(name, s.dir) || hasPrefix(name, s.below) ||
-		strings.HasSuffix(name, "/") && strings.HasPrefix(s.below, name)
+	return hasPrefix(name, s.below) || hasPrefix(s.below, strings.TrimSuffix(name, "/")+"/")
 }
 
 // file reads the index at path up to the first entry past dir, passing over

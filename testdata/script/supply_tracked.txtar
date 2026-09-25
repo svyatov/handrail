@@ -65,6 +65,13 @@ exec handrail check --json
 stdout '"demoted_from": "project-personal"'
 exec git update-index --force-remove .handrail/Local
 
+# So is a submodule at .handrail itself, whose checkout supplies local/.
+exec git rm -q --cached .handrail/shared.md
+exec git update-index --add --cacheinfo 160000,1111111111111111111111111111111111111111,.Handrail
+exec handrail check --json
+stdout '"demoted_from": "project-personal"'
+exec git update-index --force-remove .Handrail
+
 # The read stops at the first entry past .handrail/local/, so what comes after
 # is never read: an index cut short after .handrail/shared.md, 12 bytes of
 # header and an 88-byte entry, still answers.

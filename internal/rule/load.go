@@ -239,11 +239,14 @@ func demotion(root string) string {
 // back sorted by name; every file that cannot be used comes back as a Problem
 // instead. A missing dir is not a problem: a repo without rules is a valid
 // repo. skip is a directory no walk enters, since the Project-personal tier
-// sits inside the shared one; it is still walked when it is one of dirs. A dir
-// that is a symlink is followed, one inside a dir is not.
+// sits inside the shared one; it is still walked when it is one of dirs. It is
+// matched by identity, not spelling, because a case-insensitive filesystem
+// gives it more than one. A dir that is a symlink is followed, one inside a
+// dir is not.
 func load(skip string, dirs ...string) ([]*Rule, []Problem) {
 	var rules []*Rule
 	var problems []Problem
+	skipped, _ := os.Stat(skip) // nil where there is nothing to skip
 
 	for _, dir := range dirs {
 		err := fs.WalkDir(os.DirFS(dir), ".", func(rel string, d fs.DirEntry, err error) error {
@@ -256,7 +259,7 @@ func load(skip string, dirs ...string) ([]*Rule, []Problem) {
 				return nil
 			}
 			if d.IsDir() {
-				if rel != "." && p == skip {
+				if info, err := d.Info(); err == nil && rel != "." && os.SameFile(info, skipped) {
 					return fs.SkipDir
 				}
 				return nil
