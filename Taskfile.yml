@@ -55,6 +55,20 @@ tasks:
       - scripts/check-flag-sources.sh
       - scripts/check-dashes.sh
 
+  fuzz:
+    desc: Fuzz each parser that reads input handrail did not write, for FUZZTIME each
+    vars:
+      FUZZTIME: 30s
+    cmds:
+      # go test fuzzes one target per run. A crashing input lands in the
+      # package's testdata/fuzz/, where every later `task test` replays it.
+      - go test -run='^$' -fuzz='^FuzzParse$' -fuzztime={{.FUZZTIME}} ./internal/rule
+      - go test -run='^$' -fuzz='^FuzzNormalize$' -fuzztime={{.FUZZTIME}} ./internal/harness
+      - go test -run='^$' -fuzz='^FuzzRead$' -fuzztime={{.FUZZTIME}} ./internal/shell
+      - go test -run='^$' -fuzz='^FuzzPatch$' -fuzztime={{.FUZZTIME}} ./internal/shell
+      - go test -run='^$' -fuzz='^FuzzDecoder$' -fuzztime={{.FUZZTIME}} ./internal/gitindex
+      - go test -run='^$' -fuzz='^FuzzLink$' -fuzztime={{.FUZZTIME}} ./internal/gitindex
+
   vuln:
     desc: Known vulnerabilities in the code paths handrail actually calls, in its modules and the standard library
     cmds:

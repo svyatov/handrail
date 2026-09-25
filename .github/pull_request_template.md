@@ -1,6 +1,6 @@
 <!--
 CI already reports the build, the race and shuffle test run, the 95% coverage
-gate, go.mod tidiness, govulncheck, golangci-lint, the formatter, the doc-path check, the dash check, the
+gate, go.mod tidiness, govulncheck, the parser fuzzing, golangci-lint, the formatter, the doc-path check, the dash check, the
 GoReleaser config, and the version pin. Nothing below asks about any of that.
 
 Delete any heading you have nothing to put under. An empty section reads as an
