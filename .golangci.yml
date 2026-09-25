@@ -7,22 +7,16 @@ version: "2"
 linters:
   default: all
   disable:
-    - cyclop # the complexity six are enabled once the functions over them are split
     - err113 # parser errors carry a line number; a sentinel per message adds nothing
     - exhaustruct # zero values are valid by design, see rule.Payload
     - exhaustruct_v5 # the same linter under its new name
     - funcorder # a helper method sits beside the exported method it serves
-    - funlen
     - gochecknoglobals # the globals are lookup tables and the ldflags version
-    - gocognit
     - goconst # the repeated strings are shell command names, which are data
-    - gocyclo
     - gomodguard # deprecated; gomodguard_v2 replaces it, and depguard owns the import budget
     - ireturn # syntax.Node is the shell library's own interface
     - lll # gofumpt owns layout
-    - maintidx
     - mnd # the numbers are exit codes and byte offsets the code names in place
-    - nestif
     - nlreturn # blank-line style
     - noinlineerr # `if err := f(); err != nil` is the Go idiom
     - nonamedreturns # named results document two-value returns, see gocritic
