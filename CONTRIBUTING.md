@@ -44,7 +44,11 @@ task test    # go test -race -shuffle=on ./...
 task cover   # the same run with coverage, fails under 95%
 task lint    # go.mod tidy and verified, golangci-lint run, then the formatter, doc-path, flag-source and dash checks
 task vuln    # govulncheck, fetched by go run at a pinned version
+task fuzz    # 30s on each parser fuzz target
 ```
+
+A fuzz target that finds a crash writes the input under the package's
+`testdata/fuzz/`. Commit it with the fix: every `task test` replays it.
 
 CI runs these same tasks, so a local pass means what a green check means.
 

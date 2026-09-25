@@ -12,6 +12,7 @@ task test    # go test -race -shuffle=on ./...
 task cover   # the same run with coverage, fails under 95%
 task lint    # go mod tidy -diff and verify, golangci-lint run, then fmt --diff; with task test, past 2 minutes: raise the Bash timeout
 task vuln    # govulncheck through go run, so it stays out of go.mod
+task fuzz    # 30s per parser fuzz target; a crash input lands in testdata/fuzz/, commit it
 task build   # the release build
 ```
 

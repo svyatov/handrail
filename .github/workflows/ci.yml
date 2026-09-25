@@ -69,6 +69,27 @@ jobs:
       - name: Lint and formatting
         run: task lint
 
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+
+      - name: Fuzz the parsers
+        run: task fuzz
+
+      # The log names a failing input but does not print it. Commit the file
+      # under the same path, and every test run replays it from then on.
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-failures
+          path: internal/*/testdata/fuzz/
+
   vuln:
     runs-on: ubuntu-latest
     timeout-minutes: 10
