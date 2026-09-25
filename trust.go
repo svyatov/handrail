@@ -9,14 +9,10 @@ import (
 	"github.com/svyatov/handrail/internal/rule"
 )
 
-func cmdTrust(args []string, stdout, stderr io.Writer) int {
+func cmdTrust(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("trust", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	if err := fs.Parse(args); err != nil {
-		return 1
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "handrail trust: unexpected argument %q\n", fs.Arg(0))
+	if !parseFlags(fs, args, stderr) {
 		return 1
 	}
 	cwd, err := os.Getwd()

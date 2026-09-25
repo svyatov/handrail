@@ -15,23 +15,10 @@ import (
 // cmdSync installs handrail into the machine's harnesses. It is per-machine,
 // not per-project: the hook entries are user-level, so every repo holding rules
 // is enforced once this has run, and no harness config is written into any repo.
-func cmdSync(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("sync", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	only := fs.String("harness", "", "sync only this harness")
-	if err := fs.Parse(args); err != nil {
+func cmdSync(args []string, _ io.Reader, stdout, stderr io.Writer) int {
+	only, ok := parseSyncFlags(args, stderr)
+	if !ok {
 		return 1
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "handrail sync: unexpected argument %q\n", fs.Arg(0))
-		return 1
-	}
-	if *only != "" {
-		if _, ok := harness.Lookup(*only); !ok {
-			fmt.Fprintf(stderr, "handrail sync: unknown harness %q; known: %s\n",
-				*only, strings.Join(harness.Names(), ", "))
-			return 1
-		}
 	}
 
 	// The hook entries depend on no rule, so an invalid one is reported and
@@ -42,22 +29,10 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	problems := rs.Invalid()
-	for _, p := range problems {
-		fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
-	}
+	reportProblems(problems, stderr)
 
-	var targets []harness.Adapter
-	for _, a := range harness.Adapters() {
-		if (*only == "" || a.Name == *only) && a.Installed() {
-			targets = append(targets, a)
-		}
-	}
-	if len(targets) == 0 {
-		found := "no harness found; install Claude Code or Codex CLI and run it once"
-		if *only != "" {
-			found = *only + " not found; install it and run it once"
-		}
-		fmt.Fprintf(stderr, "handrail sync: %s\n", found)
+	targets := syncTargets(only, stderr)
+	if targets == nil {
 		return 1
 	}
 	// The hook entry names the binary absolutely, so a harness with its own PATH
@@ -69,7 +44,68 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "handrail: %v\n", err)
 		return 1
 	}
+	failed := installHooks(targets, bin, rs.Effective(), stdout, stderr)
 
+	if err := excludeLocal(rs.Root, stdout); err != nil {
+		fmt.Fprintf(stderr, "handrail: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintln(stdout)
+	if err := printRuleset(stdout, rs.Rules); err != nil {
+		fmt.Fprintf(stderr, "handrail: %v\n", err)
+		return 1
+	}
+	reportTierMoves(rs, stderr)
+	// A failing Example changes nothing sync writes, so it is reported after.
+	if reportExamples(slices.Concat(rs.Rules, rs.Untrusted), stderr) || failed || len(problems) > 0 {
+		return 1
+	}
+	return 0
+}
+
+// parseSyncFlags reads sync's arguments into the one harness it is limited
+// to, "" for all of them, and reports whether sync may go on.
+func parseSyncFlags(args []string, stderr io.Writer) (only string, ok bool) {
+	fs := flag.NewFlagSet("sync", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.StringVar(&only, "harness", "", "sync only this harness")
+	if !parseFlags(fs, args, stderr) {
+		return "", false
+	}
+	if only != "" {
+		if _, ok := harness.Lookup(only); !ok {
+			fmt.Fprintf(stderr, "handrail sync: unknown harness %q; known: %s\n",
+				only, strings.Join(harness.Names(), ", "))
+			return "", false
+		}
+	}
+	return only, true
+}
+
+// syncTargets is every installed harness sync writes to, or only the one
+// named. It names the missing harness and returns nil when there is none.
+func syncTargets(only string, stderr io.Writer) []harness.Adapter {
+	var targets []harness.Adapter
+	for _, a := range harness.Adapters() {
+		if (only == "" || a.Name == only) && a.Installed() {
+			targets = append(targets, a)
+		}
+	}
+	if len(targets) == 0 {
+		found := "no harness found; install Claude Code or Codex CLI and run it once"
+		if only != "" {
+			found = only + " not found; install it and run it once"
+		}
+		fmt.Fprintf(stderr, "handrail sync: %s\n", found)
+	}
+	return targets
+}
+
+// installHooks writes the hook entries naming bin into each target, then
+// reports what the harness does with the effective ruleset, and whether any
+// target failed.
+func installHooks(targets []harness.Adapter, bin string, effective []*rule.Rule, stdout, stderr io.Writer) bool {
 	// One harness's broken config must not leave the others unsynced, so the
 	// loop reports the failure, names the harness, and carries on.
 	failed := false
@@ -85,29 +121,22 @@ func cmdSync(args []string, stdout, stderr io.Writer) int {
 		} else {
 			fmt.Fprintf(stdout, "%s: %d hook entries already current in %s\n", a.Name, entries, a.ConfigPath())
 		}
-		for _, line := range a.Report(rs.Effective()) {
+		for _, line := range a.Report(effective) {
 			fmt.Fprintf(stdout, "%s: %s\n", a.Name, line)
 		}
 	}
+	return failed
+}
 
-	added, err := rule.ExcludeLocal(rs.Root)
+// excludeLocal keeps the Project-personal tier out of git, and says so when
+// it adds the line.
+func excludeLocal(root string, stdout io.Writer) error {
+	added, err := rule.ExcludeLocal(root)
 	if err != nil {
-		fmt.Fprintf(stderr, "handrail: %v\n", err)
-		return 1
+		return err
 	}
 	if added {
 		fmt.Fprintln(stdout, "handrail: added .handrail/local/ to .git/info/exclude")
 	}
-
-	fmt.Fprintln(stdout)
-	if err := printRuleset(stdout, rs.Rules); err != nil {
-		fmt.Fprintf(stderr, "handrail: %v\n", err)
-		return 1
-	}
-	reportTierMoves(rs, stderr)
-	// A failing Example changes nothing sync writes, so it is reported after.
-	if reportExamples(slices.Concat(rs.Rules, rs.Untrusted), stderr) || failed || len(problems) > 0 {
-		return 1
-	}
-	return 0
+	return nil
 }

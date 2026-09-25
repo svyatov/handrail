@@ -21,7 +21,7 @@ format cannot express is skipped and reported, never written.
 // the Project-personal tier, which is where somebody else's guardrails belong
 // until their new owner has read them: nothing lands in a committed tier, and
 // nothing that cannot be expressed lands at all.
-func cmdImport(args []string, stdout, stderr io.Writer) int {
+func cmdImport(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	// The format leads, so a flag in its place is a request for the usage rather
 	// than the name of something to convert.
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
@@ -61,19 +61,24 @@ func cmdImport(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "handrail import: %v\n", err)
 		return 1
 	}
+	reportImport(stdout, root, results)
+	return 0
+}
 
+// reportImport names each converted rule's source and target, and each skipped
+// one's reason, then counts both.
+func reportImport(w io.Writer, root string, results []rule.Imported) {
 	imported, skipped := 0, 0
 	for _, r := range results {
 		if r.Reason != "" {
 			skipped++
-			fmt.Fprintf(stdout, "skipped  %s: %s\n", relTo(root, r.Source), r.Reason)
+			fmt.Fprintf(w, "skipped  %s: %s\n", relTo(root, r.Source), r.Reason)
 			continue
 		}
 		imported++
-		fmt.Fprintf(stdout, "imported %s -> %s\n", relTo(root, r.Source), relTo(root, r.Target))
+		fmt.Fprintf(w, "imported %s -> %s\n", relTo(root, r.Source), relTo(root, r.Target))
 	}
-	fmt.Fprintf(stdout, "%d imported, %d skipped\n", imported, skipped)
-	return 0
+	fmt.Fprintf(w, "%d imported, %d skipped\n", imported, skipped)
 }
 
 // relTo shortens a path for the report, and leaves it alone when it lies

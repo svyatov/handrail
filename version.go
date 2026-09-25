@@ -6,7 +6,7 @@ import (
 	"io"
 )
 
-func cmdVersion(args []string, stdout, stderr io.Writer) int {
+func cmdVersion(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("version", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	if err := fs.Parse(args); err != nil {

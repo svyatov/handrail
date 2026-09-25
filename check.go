@@ -51,15 +51,11 @@ type checkOutput struct {
 	Errors []checkError `json:"errors"`
 }
 
-func cmdCheck(args []string, stdout, stderr io.Writer) int {
+func cmdCheck(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	asJSON := fs.Bool("json", false, "print the effective ruleset as JSON")
-	if err := fs.Parse(args); err != nil {
-		return 1
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "handrail check: unexpected argument %q\n", fs.Arg(0))
+	if !parseFlags(fs, args, stderr) {
 		return 1
 	}
 
@@ -72,58 +68,8 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 	problems := rs.Invalid()
 	var examplesFailed bool
 	if *asJSON {
-		out := checkOutput{
-			Rules:  make([]checkRule, 0, len(rs.Rules)),
-			Errors: make([]checkError, 0, len(problems)),
-		}
-		for _, r := range rs.Rules {
-			failing := harness.FailingExamples(r)
-			examplesFailed = examplesFailed || len(failing) > 0
-			examples := checkExamples{Passed: len(r.Examples), Failed: []checkExample{}}
-			for _, e := range failing {
-				// A drifted Example belongs to the rule this one replaces, so
-				// it fails here and counts nothing toward this rule's passes.
-				var from *string
-				if e.From == r {
-					examples.Passed--
-				} else {
-					from = &e.From.Path
-				}
-				fields := make(map[string]any, len(e.Fields))
-				for _, f := range e.Fields {
-					fields[f.Name] = f.Value()
-				}
-				examples.Failed = append(examples.Failed, checkExample{Expect: e.Expect, Fields: fields, Line: e.Line, From: from})
-			}
-			var demoted *string
-			if r.DemotedFrom != "" {
-				demoted = &r.DemotedFrom
-			}
-			out.Rules = append(out.Rules, checkRule{
-				Rule:        r.Name,
-				Tier:        r.Tier,
-				Event:       r.Event,
-				Kind:        r.Kind,
-				Action:      r.Action.String(),
-				Enabled:     r.Enabled,
-				ShadowedBy:  pathOf(r.ShadowedBy),
-				DroppedBy:   pathOf(r.DroppedBy),
-				DemotedFrom: demoted,
-				Path:        r.Path,
-				Examples:    examples,
-			})
-		}
-		for _, p := range problems {
-			out.Errors = append(out.Errors, checkError{Path: p.Path, Message: p.Message})
-		}
-		// An untrusted tier's rules are not in the effective ruleset, so a
-		// failing Example there has no rule entry to sit on.
-		for _, r := range rs.Untrusted {
-			for _, e := range harness.FailingExamples(r) {
-				examplesFailed = true
-				out.Errors = append(out.Errors, checkError{Path: r.Path, Message: exampleFailure(r, e)})
-			}
-		}
+		var out checkOutput
+		out, examplesFailed = checkReport(rs, problems)
 		if code := writeJSON(stdout, stderr, out); code != 0 {
 			return code
 		}
@@ -132,9 +78,7 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "handrail: %v\n", err)
 			return 1
 		}
-		for _, p := range problems {
-			fmt.Fprintf(stderr, "handrail: %s: %s\n", p.Path, p.Message)
-		}
+		reportProblems(problems, stderr)
 		reportTierMoves(rs, stderr)
 		examplesFailed = reportExamples(slices.Concat(rs.Rules, rs.Untrusted), stderr)
 	}
@@ -143,6 +87,71 @@ func cmdCheck(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// checkReport is check --json's shape of the ruleset and its problems, and
+// whether any Example failed.
+func checkReport(rs *rule.Ruleset, problems []rule.Problem) (checkOutput, bool) {
+	var examplesFailed bool
+	out := checkOutput{
+		Rules:  make([]checkRule, 0, len(rs.Rules)),
+		Errors: make([]checkError, 0, len(problems)),
+	}
+	for _, r := range rs.Rules {
+		cr := checkRuleOf(r)
+		examplesFailed = examplesFailed || len(cr.Examples.Failed) > 0
+		out.Rules = append(out.Rules, cr)
+	}
+	for _, p := range problems {
+		out.Errors = append(out.Errors, checkError{Path: p.Path, Message: p.Message})
+	}
+	// An untrusted tier's rules are not in the effective ruleset, so a
+	// failing Example there has no rule entry to sit on.
+	for _, r := range rs.Untrusted {
+		for _, e := range harness.FailingExamples(r) {
+			examplesFailed = true
+			out.Errors = append(out.Errors, checkError{Path: r.Path, Message: exampleFailure(r, e)})
+		}
+	}
+	return out, examplesFailed
+}
+
+// checkRuleOf is one rule of the effective ruleset in check --json's shape,
+// with its Examples run.
+func checkRuleOf(r *rule.Rule) checkRule {
+	examples := checkExamples{Passed: len(r.Examples), Failed: []checkExample{}}
+	for _, e := range harness.FailingExamples(r) {
+		// A drifted Example belongs to the rule this one replaces, so
+		// it fails here and counts nothing toward this rule's passes.
+		var from *string
+		if e.From == r {
+			examples.Passed--
+		} else {
+			from = &e.From.Path
+		}
+		fields := make(map[string]any, len(e.Fields))
+		for _, f := range e.Fields {
+			fields[f.Name] = f.Value()
+		}
+		examples.Failed = append(examples.Failed, checkExample{Expect: e.Expect, Fields: fields, Line: e.Line, From: from})
+	}
+	var demoted *string
+	if r.DemotedFrom != "" {
+		demoted = &r.DemotedFrom
+	}
+	return checkRule{
+		Rule:        r.Name,
+		Tier:        r.Tier,
+		Event:       r.Event,
+		Kind:        r.Kind,
+		Action:      r.Action.String(),
+		Enabled:     r.Enabled,
+		ShadowedBy:  pathOf(r.ShadowedBy),
+		DroppedBy:   pathOf(r.DroppedBy),
+		DemotedFrom: demoted,
+		Path:        r.Path,
+		Examples:    examples,
+	}
 }
 
 // pathOf is the file a rule reference names in check --json, null for none.
