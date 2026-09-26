@@ -5,7 +5,7 @@ Declare an agent guardrail once, in one neutral format, and enforce it through e
 - **Both harnesses.** One rule file is enforced in Claude Code and in Codex CLI, through each one's own hook mechanism.
 - **One binary, nothing else.** One third-party runtime dependency, the `mvdan.cc/sh/v3/syntax` shell parser. A lint allow-list keeps it that way.
 - **hookify rules come with you.** hookify runs on Claude Code alone; `handrail import hookify` converts what you already wrote.
-- **Single-digit milliseconds.** An event matching no rule costs a few ms end to end. A test fails CI if the median ever crosses 50ms.
+- **Single-digit milliseconds.** An event costs a few ms end to end, whether it matches no rule, matches one and logs it, or starts a session and runs every rule's Examples. A test fails CI if any of those medians crosses 20ms.
 
 Install the plugin in Claude Code. It downloads the binary on the next session start, verifies its checksum, and syncs once:
 

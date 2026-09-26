@@ -21,7 +21,7 @@ description = "The release build, so a broken one fails here rather than on a ta
 env = { CGO_ENABLED = "0" }
 run = 'go build -ldflags "-s -w" -o handrail .'
 
-# CI sets SHORT=-short on the macOS runner, where the cold-start test's 50ms
+# CI sets SHORT=-short on the macOS runner, where the cold-start test's 20ms
 # median cannot hold on a shared machine. The test honours the flag, and it
 # execs a separate binary, so skipping it costs no coverage.
 [tasks.test]
