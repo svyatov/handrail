@@ -2,7 +2,7 @@
 exec sh -c 'handrail import hookify; echo code=$?'
 stdout '^code=0$'
 ! stderr .
-stdout '^8 imported, 0 skipped$'
+stdout '^9 imported, 0 skipped$'
 
 # Every event maps: bash, file, prompt, and all inferred from the fields.
 cmp .handrail/local/block-dangerous-rm.md want/block-dangerous-rm.md
@@ -16,8 +16,13 @@ cmp .handrail/local/disabled-lockfile.md want/disabled-lockfile.md
 stdout 'imported \.claude/hookify\.block-dangerous-rm\.local\.md -> \.handrail/local/block-dangerous-rm\.md'
 
 # Upstream's shorthand names content on a stop rule, which no stop carries, so
-# the pattern goes to response, the agent's last message.
+# the pattern goes to response, the agent's last message. Upstream never fired
+# the rule, so the report says it is live now.
 cmp .handrail/local/stop-todo.md want/stop-todo.md
+stdout '^imported \.claude/hookify\.stop-todo\.local\.md -> \.handrail/local/stop-todo\.md \(inert upstream, now matches response\)$'
+stdout '^imported \.claude/hookify\.block-dangerous-rm\.local\.md -> \.handrail/local/block-dangerous-rm\.md$'
+# The same goes for a content condition written out in full.
+cmp .handrail/local/stop-fixme.md want/stop-fixme.md
 
 # The converted tier is a valid ruleset, so the import needs no hand-fixing.
 exec sh -c 'handrail check; echo code=$?'
@@ -155,6 +160,26 @@ conditions:
     matches: '(?i)TODO'
 ---
 Finish the TODOs before stopping.
+-- .claude/hookify.stop-fixme.local.md --
+---
+name: stop-fixme
+event: stop
+conditions:
+  - field: new_text
+    operator: contains
+    pattern: FIXME
+---
+
+Say which FIXMEs are left.
+-- want/stop-fixme.md --
+---
+event: Stop
+action: warn
+conditions:
+  - field: response
+    contains: 'FIXME'
+---
+Say which FIXMEs are left.
 -- stop.json --
 {"hook_event_name": "Stop", "last_assistant_message": "Left a todo in main.go."}
 -- stop-again.json --
