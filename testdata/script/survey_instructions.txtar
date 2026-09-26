@@ -1,0 +1,230 @@
+[!exec:git] skip
+
+# survey lists every instruction file either harness loads, at the Project root
+# and in the user's harness directories, each classed by where it lives: in the
+# repository it is repo prose, outside it the user's own. CONTRIBUTING.md is
+# repo prose too.
+cd repo
+exec git init -q
+exec handrail survey
+stdout '"path": "CLAUDE.md",\n +"class": "repo"'
+stdout '"path": ".claude/CLAUDE.md",\n +"class": "repo"'
+stdout '"path": ".claude/rules/go/style.md",\n +"class": "repo"'
+stdout '"path": "AGENTS.override.md",\n +"class": "repo"'
+stdout '"path": "AGENTS.md",\n +"class": "repo"'
+stdout '"path": "CONTRIBUTING.md",\n +"class": "repo"'
+stdout '"path": ".*/home/.claude/CLAUDE.md",\n +"class": "user"'
+stdout '"path": ".*/home/.claude/rules/mine.md",\n +"class": "user"'
+! stdout 'rules/deeper'
+stdout '"path": ".*/home/.codex/AGENTS.md",\n +"class": "user"'
+
+# An untracked CLAUDE.local.md is the user's; once git tracks it, the repo's.
+stdout '"path": "CLAUDE.local.md",\n +"class": "user"'
+exec git add -f CLAUDE.local.md
+exec handrail survey
+stdout '"path": "CLAUDE.local.md",\n +"class": "repo"'
+
+# Claude Code's @ imports are followed four hops, and an imported file is
+# classed by where it lives, not by the file that imports it.
+stdout '"path": "docs/one.md",\n +"class": "repo"'
+stdout '"path": "docs/four.md",\n +"class": "repo"'
+! stdout 'five.md'
+stdout '"path": ".*/home/.claude/team.md",\n +"class": "user"'
+stdout '"path": "docs/from-user.md",\n +"class": "repo"'
+
+# A repository's file is not followed out of the repository, so a stranger's
+# words cannot put the user's own files on the list as the user's.
+! stdout 'notes.md'
+! stdout 'credentials'
+! stdout 'outside.md'
+
+# The hops count along the shortest path: x.md is reached at the fourth hop
+# through a.md first, and at the first directly, so its import is read.
+stdout '"path": "docs/y.md",\n +"class": "repo"'
+
+# A file reached through a symlinked directory lives where the link points.
+symlink ../home/work -> $WORK/repo
+exec sh -c 'echo "@~/work/docs/via-link.md" >> ../home/.claude/CLAUDE.md'
+exec handrail survey
+stdout '"path": "docs/via-link.md",\n +"class": "repo"'
+
+# Not inside a code span or a code block, not in an address, and not from a
+# file only Codex reads: Codex has no imports.
+! stdout 'span.md'
+! stdout 'double.md'
+! stdout 'inner.md'
+stdout '"path": "docs/lone.md",\n +"class": "repo"'
+! stdout 'tick.md'
+stdout '"path": "docs/between.md",\n +"class": "repo"'
+! stdout 'fenced.md'
+! stdout 'tilde.md'
+stdout '"path": "docs/after.md",\n +"class": "repo"'
+stdout '"path": "docs/local-import.md",\n +"class": "repo"'
+! stdout 'example.com'
+! stdout 'codex-import.md'
+
+# Each file is listed once, however many files import it.
+exec handrail survey
+! stdout '"docs/one.md",[\s\S]*"docs/one.md"'
+
+# A rules directory holds instruction files only where they end in .md.
+! stdout 'notes.txt'
+
+# A rules directory shared through a symlink is read, and its files live where
+# the link points. Each directory is read once, so links back up end the walk.
+symlink .claude/rules/shared -> $WORK/shared-rules
+symlink ../shared-rules/up -> $WORK/repo/.claude/rules
+symlink ../shared-rules/up2 -> $WORK/repo/.claude/rules
+exec handrail survey
+stdout '"path": ".*/repo/.claude/rules/shared/one.md",\n +"class": "user"'
+
+# A directory link the repository commits is a stranger's pointer, so it is
+# not followed: it could reach the user's files, or the whole disk.
+symlink .claude/rules/theirs -> $WORK/theirs
+exec git add .claude/rules/theirs
+exec handrail survey
+! stdout 'theirs'
+
+# A submodule is a directory the index tracks too, but no link: it is read.
+exec git update-index --add --cacheinfo 160000,1111111111111111111111111111111111111111,.claude/rules/sub
+exec handrail survey
+stdout '"path": ".claude/rules/sub/module.md",\n +"class": "repo"'
+
+# Nor is a file link the repository commits followed out of it by an import.
+symlink docs/linked.md -> $WORK/home/secret.md
+exec git add docs/linked.md
+exec sh -c 'echo "@docs/linked.md" >> CLAUDE.md'
+exec handrail survey
+! stdout 'linked.md'
+
+# The managed policy file is an administrator's words: never listed, even
+# where a file imports it.
+exec sh -c 'echo "@~/managed/CLAUDE.md" >> ../home/.claude/CLAUDE.md'
+exec handrail survey
+! stdout 'managed'
+
+# An absolute import is read where it points.
+exec sh -c 'echo "@$WORK/abs.md" >> ../home/.claude/CLAUDE.md'
+exec handrail survey
+stdout '"path": ".*/abs.md",\n +"class": "user"'
+
+# With no home directory, ~ names nothing: not a path relative to the file.
+cp ../home/notes.md notes.md
+env HOME=
+env CLAUDE_CONFIG_DIR=$WORK/nohome
+exec handrail survey
+stdout '"path": ".*/nohome/CLAUDE.md",\n +"class": "user"'
+! stdout 'notes.md'
+env HOME=$WORK/home
+env CLAUDE_CONFIG_DIR=
+
+# Codex reads its global AGENTS.override.md in place of AGENTS.md once it is
+# not empty.
+cp ../override.md ../home/.codex/AGENTS.override.md
+exec handrail survey
+stdout '"path": ".*/home/.codex/AGENTS.override.md",\n +"class": "user"'
+! stdout 'home/.codex/AGENTS.md'
+
+# Each harness is followed where a variable relocates its directory.
+env CLAUDE_CONFIG_DIR=$WORK/claude
+env CODEX_HOME=$WORK/codex
+exec handrail survey
+stdout '"path": ".*/claude/CLAUDE.md",\n +"class": "user"'
+stdout '"path": ".*/codex/AGENTS.md",\n +"class": "user"'
+! stdout 'home/.claude'
+! stdout 'home/.codex'
+
+-- override.md --
+Codex override.
+-- shared-rules/one.md --
+Shared.
+-- theirs/planted.md --
+-- home/secret.md --
+secret
+-- home/managed/CLAUDE.md --
+Policy.
+-- repo/CLAUDE.md --
+Project rules. See @docs/one.md and @~/notes.md for more.
+Setup: @~/.aws/credentials and @../outside.md
+Order: @docs/a.md @docs/x.md
+Double: ``@docs/double.md`` and ``a ` @docs/inner.md``.
+A lone ` is literal, so @docs/lone.md is read.
+A lone `@docs/tick.md is literal too, and no import.
+Spans `a` around @docs/between.md and `c`.
+Mail me at someone@example.com, not @docs/missing.md.
+Not an import: `@docs/span.md`.
+```
+@docs/fenced.md
+```
+~~~
+@docs/tilde.md
+~~~
+After the blocks: @docs/after.md
+-- repo/CLAUDE.local.md --
+Mine. @docs/local-import.md
+-- repo/docs/tilde.md --
+-- repo/docs/after.md --
+-- repo/docs/local-import.md --
+-- repo/.claude/CLAUDE.md --
+More rules, and @../docs/one.md again.
+-- repo/.claude/rules/go/style.md --
+Go style.
+-- repo/.claude/rules/sub/module.md --
+-- repo/.claude/rules/go/notes.txt --
+-- home/.claude/rules/notes.txt --
+-- abs.md --
+-- repo/AGENTS.override.md --
+Override.
+-- repo/AGENTS.md --
+Codex rules. @docs/codex-import.md
+-- repo/CONTRIBUTING.md --
+Contributing.
+-- repo/docs/one.md --
+@two.md
+-- repo/docs/two.md --
+@three.md
+-- repo/docs/three.md --
+@four.md
+-- repo/docs/four.md --
+@five.md
+-- repo/docs/double.md --
+-- repo/docs/inner.md --
+-- repo/docs/lone.md --
+-- repo/docs/tick.md --
+-- repo/docs/between.md --
+-- repo/docs/a.md --
+@b.md
+-- repo/docs/b.md --
+@c.md
+-- repo/docs/c.md --
+@x.md
+-- repo/docs/x.md --
+@y.md
+-- repo/docs/y.md --
+-- repo/docs/five.md --
+Too deep.
+-- repo/docs/span.md --
+-- repo/docs/fenced.md --
+-- repo/docs/codex-import.md --
+-- repo/docs/from-user.md --
+-- repo/docs/via-link.md --
+-- home/notes.md --
+My notes.
+-- home/.aws/credentials --
+secret
+-- outside.md --
+-- nohome/CLAUDE.md --
+@~/notes.md
+-- home/.claude/CLAUDE.md --
+Mine. @team.md
+-- home/.claude/team.md --
+@../../repo/docs/from-user.md
+-- home/.claude/rules/mine.md --
+-- home/.claude/rules/deeper/not.md --
+-- home/.codex/AGENTS.md --
+Codex global.
+-- home/.codex/AGENTS.override.md --
+-- claude/CLAUDE.md --
+Relocated.
+-- codex/AGENTS.md --
+Relocated.

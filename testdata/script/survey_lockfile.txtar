@@ -1,0 +1,54 @@
+# lockfile: a stat of each lockfile name at the Project root, and nothing below.
+cd repo
+exec handrail survey
+stdout '"id": "lockfile",\n +"paths": \[\n +"package-lock.json",\n +"yarn.lock"\n +\]'
+! stdout 'Cargo.lock'
+
+# The lockfile's content is never read.
+[!root] chmod 0000 yarn.lock
+[!root] exec handrail survey
+[!root] stdout '"yarn.lock"'
+
+# The rule it proposes, replayed: the match and the near-miss payloads.
+exec handrail test PreToolUse --kind file_edit --field path=package-lock.json
+stdout '^warn  lockfile  global$'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/package-lock.json
+stdout '^warn  lockfile  global$'
+exec handrail test PreToolUse --kind file_edit --field path=package.json
+stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/package.json
+stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind shell --field 'command=cd web && yarn add x'
+stdout '^warn  js-manager  global$'
+exec handrail test PreToolUse --kind shell --field 'command=npm install'
+stdout '^outcome: allow$'
+
+-- repo/.git/HEAD --
+ref: refs/heads/main
+-- repo/package-lock.json --
+{}
+-- repo/yarn.lock --
+-- repo/sub/Cargo.lock --
+-- home/.config/handrail/lockfile.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    glob: '**/package-lock.json'
+---
+Let npm write its lockfile.
+-- home/.config/handrail/js-manager.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - any:
+      - field: command
+        starts_with: 'yarn '
+      - field: command
+        starts_with: 'pnpm '
+      - field: command
+        starts_with: 'bun '
+---
+This repo uses npm.

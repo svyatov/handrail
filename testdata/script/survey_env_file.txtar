@@ -1,0 +1,43 @@
+[!exec:git] skip
+
+# env-file: a stat of .env, which is usually ignored and so absent from the
+# index, and globs over the index for the rest. A path two probes find is
+# listed once.
+cd repo
+exec git init -q
+exec git add config
+exec git add -f .env
+exec handrail survey
+stdout '"id": "env-file",\n +"paths": \[\n +".env",\n +"config/.env.example"\n +\]'
+
+exec handrail test PreToolUse --kind file_read --field path=.env
+stdout '^warn  env-file  global$'
+exec handrail test PreToolUse --kind file_read --field path=$WORK/repo/.env
+stdout '^warn  env-file  global$'
+exec handrail test PreToolUse --kind shell --field 'command=cat .env'
+stdout '^warn  env-file  global$'
+exec handrail test PreToolUse --kind file_read --field path=.env.example
+stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind file_read --field path=$WORK/repo/.env.example
+stdout '^outcome: allow$'
+
+-- repo/.env --
+SECRET=1
+-- repo/config/.env.example --
+-- home/.config/handrail/env-file.md --
+---
+event: PreToolUse
+conditions:
+  - any:
+      - field: path
+        glob: '**/.env'
+      - field: path
+        glob: '**/.env.*'
+  - field: path
+    not_glob: '**/.env.example'
+  - field: path
+    not_glob: '**/.env.sample'
+  - field: path
+    not_glob: '**/.env.template'
+---
+.env holds secrets.

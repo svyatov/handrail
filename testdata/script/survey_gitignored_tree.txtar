@@ -1,0 +1,29 @@
+# gitignored-tree: a stat of .gitignore, whose content the Surveyor reads, not
+# survey.
+cd repo
+[!root] chmod 0000 .gitignore
+exec handrail survey
+stdout '"id": "gitignored-tree",\n +"paths": \[\n +".gitignore"\n +\]'
+
+exec handrail test PreToolUse --kind file_edit --field path=node_modules/x/index.js
+stdout '^warn  gitignored-tree  global$'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/node_modules/x/index.js
+stdout '^warn  gitignored-tree  global$'
+exec handrail test PreToolUse --kind file_edit --field path=src/node_modules.ts
+stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/src/node_modules.ts
+stdout '^outcome: allow$'
+
+-- repo/.git/HEAD --
+ref: refs/heads/main
+-- repo/.gitignore --
+node_modules/
+-- home/.config/handrail/gitignored-tree.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    glob: '**/node_modules/**'
+---
+node_modules/ is installed, not edited.

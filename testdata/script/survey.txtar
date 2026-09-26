@@ -1,0 +1,97 @@
+[!exec:git] skip
+
+# A repository with no signal is a valid answer, not an error.
+cd empty
+exec handrail survey
+stdout '"signals": \[\]'
+cd ..
+
+# Outside a git repository no file sits in one, so each is the user's own, as
+# where survey runs in the home directory itself.
+cd home
+exec handrail survey
+stdout '"path": ".*/home/.claude/CLAUDE.md",\n +"class": "user"'
+! stdout '"repo"'
+cd ..
+
+# A CLAUDE.md the repository commits as a link is the repository's file, even
+# where it points out of it. A .claude directory it commits as a link is not
+# followed.
+cd linked
+exec git init -q
+symlink CLAUDE.md -> $WORK/outside.md
+symlink .claude -> $WORK/home/.claude
+exec git add CLAUDE.md .claude
+exec handrail survey
+stdout '"path": "CLAUDE.md",\n +"class": "repo"'
+! stdout 'linked/.claude'
+cd ..
+
+# survey reads the index in process: a git that would leave a mark is never
+# run.
+cd repo
+exec git init -q
+exec git add certs
+chmod 0755 ../bin/git
+env REALPATH=$PATH
+env PATH=$WORK/bin:$PATH
+exec handrail survey
+stdout '"certs/a.pem"'
+! exists ../spawned
+env PATH=$REALPATH
+
+# From a directory below the Project root, the probes still run at the root.
+cd certs
+exec handrail survey
+stdout '"certs/a.pem"'
+cd ..
+
+# An unmerged path has an entry per stage, and is listed once.
+exec git hash-object -w certs/b.pem
+exec sh -c 'for s in 1 2 3; do printf "100644 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 $s\tcerts/0.pem\n"; done | git update-index --index-info'
+exec handrail survey
+stdout '"certs/0.pem",\n +"certs/a.pem",\n +"certs/b.pem"\n'
+exec git update-index --force-remove certs/0.pem
+
+# A split index keeps some entries in a shared index and the changes since in
+# .git/index: a deleted entry is gone, an added one is there.
+exec git config splitIndex.maxPercentChange 100
+exec git update-index --split-index
+exec sh -c 'ls .git/sharedindex.*'
+exec git rm -q --cached certs/a.pem
+exec git add keys
+exec handrail survey
+! stdout 'certs/a.pem'
+stdout '"certs/b.pem",\n +"certs/c.pem",\n +"keys/d.pem"'
+
+# An index that cannot be read cannot answer a glob.
+cp ../bin/git .git/index
+! exec handrail survey
+stderr 'handrail: cannot read the git index: not a git index'
+cd ..
+
+# Nor can one cut short after its entries: 12 bytes of header and a 72-byte
+# entry, then less than the checksum.
+cd one
+exec git init -q
+exec git add a.pem
+exec sh -c 'head -c 100 .git/index > cut && mv cut .git/index'
+! exec handrail survey
+stderr 'handrail: cannot read the git index: truncated git index'
+cd ..
+
+-- home/.claude/CLAUDE.md --
+Mine.
+-- outside.md --
+-- linked/README.md --
+-- home/.claude/rules/mine.md --
+-- empty/.git/HEAD --
+ref: refs/heads/main
+-- bin/git --
+#!/bin/sh
+touch "$WORK/spawned"
+-- one/a.pem --
+-- repo/certs/a.pem --
+-- repo/certs/b.pem --
+-- repo/certs/c.pem --
+-- repo/keys/d.pem --

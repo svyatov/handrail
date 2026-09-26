@@ -35,6 +35,10 @@ exec sh -c 'handrail trust /some/repo; echo code=$?'
 stdout '^code=1$'
 stderr 'handrail trust: unexpected argument "/some/repo"'
 
+exec sh -c 'handrail survey extra; echo code=$?'
+stdout '^code=1$'
+stderr 'handrail survey: unexpected argument "extra"'
+
 exec sh -c 'handrail check extra; echo code=$?'
 stdout '^code=1$'
 stderr 'handrail check: unexpected argument "extra"'

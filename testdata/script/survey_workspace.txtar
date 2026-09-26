@@ -1,0 +1,24 @@
+# workspace: a stat of pnpm-workspace.yaml.
+cd repo
+exec handrail survey
+stdout '"id": "workspace",\n +"paths": \[\n +"pnpm-workspace.yaml"\n +\]'
+
+exec handrail test PreToolUse --kind shell --field 'command=pnpm add left-pad'
+stdout '^warn  workspace  global$'
+exec handrail test PreToolUse --kind shell --field 'command=pnpm add --filter web left-pad'
+stdout '^outcome: allow$'
+
+-- repo/.git/HEAD --
+ref: refs/heads/main
+-- repo/pnpm-workspace.yaml --
+-- home/.config/handrail/workspace.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: 'pnpm add '
+  - field: command
+    not_contains: --filter
+---
+Name the workspace package with --filter.

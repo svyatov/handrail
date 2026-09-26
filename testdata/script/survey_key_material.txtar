@@ -1,0 +1,37 @@
+[!exec:git] skip
+
+# key-material: key files the git index tracks.
+cd repo
+exec git init -q
+exec git add certs deploy
+exec handrail survey
+stdout '"id": "key-material",\n +"paths": \[\n +"certs/server.pem",\n +"deploy/id_ed25519"\n +\]'
+! stdout 'README'
+
+exec handrail test PreToolUse --kind file_read --field path=certs/server.pem
+stdout '^warn  key-material  global$'
+exec handrail test PreToolUse --kind file_read --field path=$WORK/repo/certs/server.pem
+stdout '^warn  key-material  global$'
+exec handrail test PreToolUse --kind file_read --field path=certs/README.md
+stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind file_read --field path=$WORK/repo/certs/README.md
+stdout '^outcome: allow$'
+
+-- repo/certs/server.pem --
+-- repo/certs/README.md --
+-- repo/deploy/id_ed25519 --
+-- home/.config/handrail/key-material.md --
+---
+event: PreToolUse
+conditions:
+  - any:
+      - field: path
+        glob: '**/*.pem'
+      - field: path
+        glob: '**/*.key'
+      - field: path
+        glob: '**/id_rsa'
+      - field: path
+        glob: '**/id_ed25519'
+---
+Key material stays out of the agent's hands.

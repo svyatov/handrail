@@ -91,34 +91,128 @@ func Dirs(root string) (GitDirs, error) {
 // after its entries. Where a shared index exists, .git/index is read whole,
 // then the shared index with the early stop.
 func Under(root, dir string) (bool, error) {
-	dirs, err := Dirs(root)
-	if err != nil || dirs.Own == "" {
+	index, err := locate(root)
+	if err != nil || index.path == "" {
 		return false, err
 	}
 
-	index := filepath.Join(dirs.Own, "index")
-
-	_, err = os.Stat(index)
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	}
-
-	hashLen, err := hashLen(dirs.Common)
-	if err != nil {
-		return false, err
-	}
-
-	search := scan{below: dir + "/", hashLen: hashLen}
+	search := scan{below: dir + "/", hashLen: index.hashLen}
+	own := filepath.Dir(index.path)
 
 	// ponytail: a shared index left behind by --no-split-index makes this read
 	// a plain index whole until git expires it (two weeks by default); the
 	// answer stays right, only the cost grows.
-	shared, err := filepath.Glob(filepath.Join(dirs.Own, "sharedindex.*"))
+	shared, err := filepath.Glob(filepath.Join(own, "sharedindex.*"))
 	if err != nil || len(shared) == 0 {
-		return search.file(index, nil)
+		return search.file(index.path, nil)
 	}
 
-	return search.split(dirs.Own, index)
+	return search.split(own, index.path)
+}
+
+// Paths returns, sorted, every path the index of the working tree at root
+// tracks that keep accepts. Unlike Under it reads the whole index, a split
+// index's shared one included: a pattern has no place in the sort order to
+// stop at.
+func Paths(root string, keep func(string) bool) ([]string, error) {
+	index, err := locate(root)
+	if err != nil || index.path == "" {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(index.path)
+	if err != nil {
+		return nil, err
+	}
+
+	dec, err := newDecoder(bytes.NewReader(data), index.hashLen)
+	if err != nil {
+		return nil, err
+	}
+
+	paths, err := dec.collect(nil, keep)
+	if err != nil {
+		return nil, err
+	}
+
+	shared, err := sharedPaths(filepath.Dir(index.path), data, dec.off, index.hashLen, keep)
+	if err != nil {
+		return nil, err
+	}
+
+	paths = append(paths, shared...)
+	slices.Sort(paths)
+
+	// An unmerged path has an entry per stage.
+	return slices.Compact(paths), nil
+}
+
+// located is a working tree's index, and the length of an object name in its
+// repository.
+type located struct {
+	path    string
+	hashLen int
+}
+
+// locate returns the index of the working tree at root. Its path is "" where
+// there is no working tree, or no index yet, which tracks nothing.
+func locate(root string) (located, error) {
+	var none located
+
+	dirs, err := Dirs(root)
+	if err != nil || dirs.Own == "" {
+		return none, err
+	}
+
+	path := filepath.Join(dirs.Own, "index")
+
+	_, err = os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return none, nil
+	}
+
+	hashLen, err := hashLen(dirs.Common)
+
+	return located{path: path, hashLen: hashLen}, err
+}
+
+// sharedIndex reads the link extension of the index in data, whose entries
+// end at off: the path of the shared index it links to, which sits beside it
+// in own, and the positions of the shared entries it deletes. The path is ""
+// when there is no link.
+func sharedIndex(own string, data []byte, off, hashLen int) (string, bitmap, error) {
+	if len(data)-hashLen < off {
+		return "", nil, errTruncated
+	}
+
+	base, deleted, err := link(data[off:len(data)-hashLen], hashLen)
+	if err != nil || base == "" {
+		return "", nil, err
+	}
+
+	return filepath.Join(own, "sharedindex."+base), deleted, nil
+}
+
+// sharedPaths returns the paths keep accepts from the shared index the index
+// in data links to, less the entries it deletes, and none without a link.
+func sharedPaths(own string, data []byte, off, hashLen int, keep func(string) bool) ([]string, error) {
+	shared, deleted, err := sharedIndex(own, data, off, hashLen)
+	if err != nil || shared == "" {
+		return nil, err
+	}
+
+	indexFile, err := os.Open(shared)
+	if err != nil {
+		return nil, err
+	}
+	defer indexFile.Close()
+
+	dec, err := newDecoder(indexFile, hashLen)
+	if err != nil {
+		return nil, err
+	}
+
+	return dec.collect(deleted, keep)
 }
 
 // scan is one Under question, asked of one index file at a time.
@@ -156,22 +250,14 @@ func (s scan) file(path string, deleted bitmap) (bool, error) {
 		return false, err
 	}
 
-	for pos := range uint64(dec.count) {
-		name, err := dec.next()
-		if err != nil {
-			return false, err
-		}
+	found := false
+	err = dec.each(deleted, func(name string) bool {
+		found = s.under(name)
 
-		if !deleted.has(pos) && s.under(name) {
-			return true, nil
-		}
+		return !found && name <= s.below
+	})
 
-		if name > s.below {
-			return false, nil
-		}
-	}
-
-	return false, nil
+	return found, err
 }
 
 // split reads the split index at index whole, then the shared index it links
@@ -187,27 +273,23 @@ func (s scan) split(own, index string) (bool, error) {
 		return false, err
 	}
 
-	for range dec.count {
-		name, nextErr := dec.next()
-		if nextErr != nil {
-			return false, nextErr
-		}
+	found := false
 
-		if s.under(name) {
-			return true, nil
-		}
+	err = dec.each(nil, func(name string) bool {
+		found = s.under(name)
+
+		return !found
+	})
+	if err != nil || found {
+		return found, err
 	}
 
-	if len(data)-s.hashLen < dec.off {
-		return false, errTruncated
-	}
-
-	base, deleted, err := link(data[dec.off:len(data)-s.hashLen], s.hashLen)
-	if err != nil || base == "" {
+	shared, deleted, err := sharedIndex(own, data, dec.off, s.hashLen)
+	if err != nil || shared == "" {
 		return false, err
 	}
 
-	return s.file(filepath.Join(own, "sharedindex."+base), deleted)
+	return s.file(shared, deleted)
 }
 
 // link reads a split index's link extension out of the extensions that follow
@@ -393,6 +475,39 @@ func newDecoder(r io.Reader, hashLen int) (*decoder, error) {
 	dec.count = binary.BigEndian.Uint32(header[8:])
 
 	return dec, nil
+}
+
+// collect reads every entry, passing over the positions deleted holds, and
+// returns the paths keep accepts.
+func (d *decoder) collect(deleted bitmap, keep func(string) bool) ([]string, error) {
+	var paths []string
+
+	err := d.each(deleted, func(name string) bool {
+		if keep(name) {
+			paths = append(paths, name)
+		}
+
+		return true
+	})
+
+	return paths, err
+}
+
+// each reads the entries in order, passing each path to yield but those at
+// the positions deleted holds, until yield returns false or the entries end.
+func (d *decoder) each(deleted bitmap, yield func(name string) bool) error {
+	for pos := range uint64(d.count) {
+		name, err := d.next()
+		if err != nil {
+			return err
+		}
+
+		if !deleted.has(pos) && !yield(name) {
+			return nil
+		}
+	}
+
+	return nil
 }
 
 // read returns the next size bytes.

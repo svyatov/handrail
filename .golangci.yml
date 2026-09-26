@@ -51,12 +51,13 @@ linters:
 
     exhaustruct_v5:
       # testscript.Params has fields that are meant to stay zero. A flag table
-      # entry sets only the few fields its program uses, and a capability row
-      # only what its harness can do.
+      # entry sets only the few fields its program uses, a capability row only
+      # what its harness can do, and a Repo signal row only the probes it has.
       ignore-patterns:
         - github\.com/rogpeppe/go-internal/.*
         - github\.com/svyatov/handrail/internal/shell\.grammar
         - github\.com/svyatov/handrail/internal/harness\.eventCaps
+        - github\.com/svyatov/handrail\.repoSignal
 
     forbidigo:
       # The CLI seam: run() returns an exit code so every command is callable
@@ -69,6 +70,7 @@ linters:
           msg: write to the stdout/stderr the CLI seam passes in
 
     gocritic:
+      # unnamedResult: nonamedreturns bans naming, so return a small struct.
       enabled-tags:
         - diagnostic
         - style

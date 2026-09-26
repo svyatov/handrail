@@ -31,6 +31,7 @@ Commands:
   on, off   mode enforce and mode off
   import    Convert upstream hookify rules into Project-personal rules
   doctor    Diagnose this machine's install, offline
+  survey    Print this repo's Repo signals and instruction files, as JSON
   version   Print version, commit, and build date
 `
 
@@ -56,6 +57,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		"off":     modeAlias("off"),
 		"import":  cmdImport,
 		"doctor":  cmdDoctor,
+		"survey":  cmdSurvey,
 		"version": cmdVersion,
 	}
 

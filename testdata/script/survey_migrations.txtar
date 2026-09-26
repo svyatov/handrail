@@ -1,0 +1,30 @@
+[!exec:git] skip
+
+# migrations: migration directories the git index tracks.
+cd repo
+exec git init -q
+exec git add db
+exec handrail survey
+stdout '"id": "migrations",\n +"paths": \[\n +"db/migrate/001_init.rb"\n +\]'
+! stdout 'seeds'
+
+exec handrail test PreToolUse --kind file_edit --field path=db/migrate/001_init.rb
+stdout '^warn  migrations  global$'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/db/migrate/001_init.rb
+stdout '^warn  migrations  global$'
+exec handrail test PreToolUse --kind file_edit --field path=db/seeds.rb
+stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/db/seeds.rb
+stdout '^outcome: allow$'
+
+-- repo/db/migrate/001_init.rb --
+-- repo/db/seeds.rb --
+-- home/.config/handrail/migrations.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    glob: '**/db/migrate/**'
+---
+An applied migration is history; write a new one.

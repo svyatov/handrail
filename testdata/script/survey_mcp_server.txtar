@@ -1,0 +1,26 @@
+# mcp-server: a stat of .mcp.json, whose servers the Surveyor reads.
+cd repo
+[!root] chmod 0000 .mcp.json
+exec handrail survey
+stdout '"id": "mcp-server",\n +"paths": \[\n +".mcp.json"\n +\]'
+
+exec handrail test PreToolUse --kind mcp --field server=prod-db --field tool=execute_sql
+stdout '^warn  mcp-server  global$'
+exec handrail test PreToolUse --kind mcp --field server=prod-db --field tool=read_query
+stdout '^outcome: allow$'
+
+-- repo/.git/HEAD --
+ref: refs/heads/main
+-- repo/.mcp.json --
+{"mcpServers": {"prod-db": {"command": "db-mcp", "args": ["--env", "production"]}}}
+-- home/.config/handrail/mcp-server.md --
+---
+event: PreToolUse
+kind: mcp
+conditions:
+  - field: server
+    equals: prod-db
+  - field: tool
+    not_starts_with: read_
+---
+prod-db is production.
