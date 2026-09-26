@@ -1,0 +1,72 @@
+# A handrail entry that fires on only some calls lets the rest through unseen,
+# so doctor fails on one narrowed by an if condition or by its group's matcher.
+exec sh -c 'handrail doctor; echo code=$?'
+stdout '^code=1$'
+stdout '^problem +claude: the PreToolUse entry is narrowed by its if or its group''s matcher, so it misses calls; run handrail sync$'
+stdout '^problem +claude: the PostToolUse entry is narrowed by its if or its group''s matcher, so it misses calls; run handrail sync$'
+
+# A matcher of * or "" matches every call, so it narrows nothing.
+! stdout 'the Stop entry is narrowed'
+! stdout 'the SubagentStop entry is narrowed'
+
+# sync writes every entry whole again, and keeps the user's own hook.
+exec handrail sync
+exec handrail doctor
+! stdout 'entry is narrowed'
+stdout '^ok +claude: 8 hook entries current$'
+exec cat home/.claude/settings.json
+stdout 'my-own\.sh'
+
+-- home/.claude/settings.json --
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/nowhere/handrail hook claude PreToolUse",
+            "if": "Bash(git *)"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/nowhere/handrail hook claude PostToolUse"
+          },
+          {
+            "type": "command",
+            "command": "my-own.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/nowhere/handrail hook claude Stop"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/nowhere/handrail hook claude SubagentStop"
+          }
+        ]
+      }
+    ]
+  }
+}

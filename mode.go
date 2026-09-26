@@ -43,16 +43,23 @@ func cmdMode(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	switch state, scope := rule.StateOf(root); scope {
-	case rule.ScopeDefault:
-		fmt.Fprintf(stdout, "%s (default)\n", state)
-	case rule.ScopeMachine:
-		fmt.Fprintf(stdout, "%s (machine-wide)\n", state)
-	case rule.ScopeProject:
-		fmt.Fprintf(stdout, "%s (this project: %s)\n", state, root)
-	}
+	state, scope := rule.StateOf(root)
+	fmt.Fprintln(stdout, stateOf(state, scope, root))
 
 	return 0
+}
+
+// stateOf is the Enforcement state as mode and doctor print it, with where it
+// was set.
+func stateOf(state rule.State, scope rule.Scope, root string) string {
+	switch scope {
+	case rule.ScopeMachine:
+		return fmt.Sprintf("%s (machine-wide)", state)
+	case rule.ScopeProject:
+		return fmt.Sprintf("%s (this project: %s)", state, root)
+	default:
+		return fmt.Sprintf("%s (default)", state)
+	}
 }
 
 // setMode records the state name for root, "" being machine-wide, and reports

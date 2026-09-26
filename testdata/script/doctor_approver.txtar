@@ -1,0 +1,57 @@
+# Any PermissionRequest hook can approve a handrail ask without the human.
+# handrail cannot stop one, so doctor names it and still passes.
+cd repo
+exec handrail sync
+exec handrail doctor
+stdout '^note +claude: a PermissionRequest hook in .*/repo/\.claude/settings\.json can answer a handrail ask without the human$'
+! stdout 'problem'
+
+# A group with no hooks in it runs nothing.
+! stdout 'hook in .*/home/\.claude/settings\.json can answer'
+
+# Under allowManagedHooksOnly only a managed one runs.
+mkdir $HOME/managed
+cp $WORK/policy.json $HOME/managed/managed-settings.json
+! exec handrail doctor
+! stdout 'repo/\.claude/settings\.json can answer'
+stdout '^note +claude: a PermissionRequest hook in .*/managed/managed-settings\.json can answer a handrail ask without the human$'
+
+# With hooks switched off from outside managed settings, only a managed one
+# still runs; switched off there, none does.
+rm $HOME/managed/managed-settings.json
+cp $WORK/managed-hook.json $HOME/managed/managed-settings.json
+cp $WORK/off.json .claude/settings.local.json
+! exec handrail doctor
+! stdout 'repo/\.claude/settings\.json can answer'
+stdout 'managed-settings\.json can answer'
+cp $WORK/off-managed.json $HOME/managed/managed-settings.json
+! exec handrail doctor
+! stdout 'can answer a handrail ask'
+
+# Managed files merge into one policy, so switched off in one of them, a hook
+# in a drop-in does not run either.
+mkdir $HOME/managed/managed-settings.d
+cp $WORK/managed-hook.json $HOME/managed/managed-settings.d/10-approve.json
+! exec handrail doctor
+! stdout 'can answer a handrail ask'
+
+-- policy.json --
+{
+  "allowManagedHooksOnly": true,
+  "hooks": {"PermissionRequest": [{"hooks": [{"type": "command", "command": "approve.sh"}]}]}
+}
+-- managed-hook.json --
+{"hooks": {"PermissionRequest": [{"hooks": [{"type": "command", "command": "approve.sh"}]}]}}
+-- off-managed.json --
+{
+  "disableAllHooks": true,
+  "hooks": {"PermissionRequest": [{"hooks": [{"type": "command", "command": "approve.sh"}]}]}
+}
+-- off.json --
+{"disableAllHooks": true}
+-- home/.claude/settings.json --
+{"hooks": {"PermissionRequest": [{"matcher": "Bash", "hooks": []}]}}
+-- repo/.git/HEAD --
+ref: refs/heads/main
+-- repo/.claude/settings.json --
+{"hooks": {"PermissionRequest": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "approve.sh"}]}]}}

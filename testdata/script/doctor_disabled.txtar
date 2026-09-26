@@ -1,0 +1,105 @@
+# Current entries run nothing when a setting switches hooks off, so doctor
+# fails on the value left after each harness's settings precedence. The
+# sandbox puts Claude Code's managed settings directory at $HOME/managed.
+cd repo
+exec handrail sync
+exec handrail doctor
+! stdout 'hooks are disabled'
+
+# A user-level disableAllHooks switches every hook off.
+cp $WORK/true.json $HOME/.claude/settings.json
+exec handrail sync
+exec sh -c 'handrail doctor; echo code=$?'
+stdout '^code=1$'
+stdout '^problem +claude: hooks are disabled: disableAllHooks is true in .*/home/\.claude/settings\.json$'
+
+# A project's committed false beats the user's true.
+mkdir .claude
+cp $WORK/false.json .claude/settings.json
+exec handrail doctor
+! stdout 'hooks are disabled'
+
+# The local file beats the project's.
+cp $WORK/true.json .claude/settings.local.json
+! exec handrail doctor
+stdout '^problem +claude: hooks are disabled: disableAllHooks is true in .*/repo/\.claude/settings\.local\.json$'
+
+# Managed settings beat every file below them.
+mkdir $HOME/managed/managed-settings.d
+cp $WORK/false.json $HOME/managed/managed-settings.json
+exec handrail doctor
+! stdout 'hooks are disabled'
+
+# A drop-in beats the managed file, and a later drop-in beats an earlier one.
+cp $WORK/true.json $HOME/managed/managed-settings.d/20-hooks.json
+cp $WORK/false.json $HOME/managed/managed-settings.d/10-hooks.json
+! exec handrail doctor
+stdout '^problem +claude: hooks are disabled: disableAllHooks is true in .*/managed/managed-settings\.d/20-hooks\.json$'
+
+# Claude Code ignores a hidden drop-in and one that is not .json.
+mv $HOME/managed/managed-settings.d/20-hooks.json $HOME/managed/managed-settings.d/.20-hooks.json
+rm $HOME/managed/managed-settings.d/10-hooks.json
+cp $WORK/true.json $HOME/managed/managed-settings.d/30-hooks.txt
+exec handrail doctor
+! stdout 'hooks are disabled'
+
+# allowManagedHooksOnly counts from managed settings alone, and there it skips
+# every user-level hook, handrail's included.
+cp $WORK/managed-only.json .claude/settings.json
+exec handrail doctor
+! stdout 'only managed hooks run'
+cp $WORK/managed-only.json $HOME/managed/managed-settings.d/40-hooks.json
+! exec handrail doctor
+stdout '^problem +claude: only managed hooks run: allowManagedHooksOnly is true in .*/managed/managed-settings\.d/40-hooks\.json$'
+
+# Codex CLI's switch is its hooks feature, in config.toml. A hooks key under
+# any other table is not it.
+cp $WORK/codex-off.toml $HOME/.codex/config.toml
+exec sh -c 'handrail doctor; echo code=$?'
+stdout '^code=1$'
+stdout '^problem +codex: hooks are disabled: \[features\] hooks is false in .*/home/\.codex/config\.toml$'
+
+# The project's config.toml beats the user's.
+mkdir .codex
+cp $WORK/codex-on.toml .codex/config.toml
+! exec handrail doctor
+! stdout 'codex: hooks are disabled'
+
+# The deprecated codex_hooks key still counts, dotted or not.
+cp $WORK/codex-dotted.toml .codex/config.toml
+! exec handrail doctor
+stdout '^problem +codex: hooks are disabled: \[features\] codex_hooks is false in .*/repo/\.codex/config\.toml$'
+
+# A settings file doctor cannot read hides whatever it sets, so it is named.
+rm .codex/config.toml
+mkdir .codex/config.toml
+exec sh -c 'echo not json > .claude/settings.json'
+! exec handrail doctor
+stdout '^problem +claude: .*/repo/\.claude/settings\.json: '
+stdout '^problem +codex: read .*/repo/\.codex/config\.toml: '
+
+-- codex-off.toml --
+model = "gpt-5" # hooks = true
+
+[ features ] # the switch
+hooks = false # off
+
+[other]
+hooks = true
+-- codex-on.toml --
+[features]
+"hooks" = true
+-- codex-dotted.toml --
+features.codex_hooks = false
+-- managed-only.json --
+{"allowManagedHooksOnly": true}
+-- true.json --
+{"disableAllHooks": true}
+-- false.json --
+{"disableAllHooks": false}
+-- home/.claude/settings.json --
+{}
+-- home/.codex/hooks.json --
+{}
+-- repo/.git/HEAD --
+ref: refs/heads/main

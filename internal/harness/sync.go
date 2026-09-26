@@ -135,12 +135,17 @@ type config struct {
 // read parses the harness's config. A file that is not there yet is an empty
 // config, not a failure.
 func (a Adapter) read() (config, error) {
-	cfg := config{settings: map[string]any{}, raw: nil}
-
 	path := a.ConfigPath()
 	if path == "" {
-		return cfg, errNoHome
+		return config{settings: map[string]any{}, raw: nil}, errNoHome
 	}
+
+	return readSettings(path)
+}
+
+// readSettings parses a JSON settings file, a missing one as empty.
+func readSettings(path string) (config, error) {
+	cfg := config{settings: map[string]any{}, raw: nil}
 
 	var err error
 
@@ -198,7 +203,7 @@ func (a Adapter) Entries() ([]Entry, error) {
 	out := make([]Entry, 0, len(a.events))
 	for _, c := range a.events {
 		event := c.name
-		entry := Entry{Event: event, Binary: ""}
+		entry := Entry{Event: event, Binary: "", Narrowed: false}
 
 		groups, _ := hooks[event].([]any)
 		for _, g := range groups {
@@ -210,7 +215,8 @@ func (a Adapter) Entries() ([]Entry, error) {
 
 				cmd, _ := hook[commandKey].(string)
 				if bin, ok := a.entryBinary(cmd, event); ok {
-					entry.Binary = bin
+					_, conditional := hook["if"]
+					entry.Binary, entry.Narrowed = bin, conditional || narrows(group["matcher"])
 				}
 			}
 		}
@@ -225,6 +231,15 @@ func (a Adapter) Entries() ([]Entry, error) {
 type Entry struct {
 	Event  string
 	Binary string // the binary the entry invokes, empty when there is no entry
+	// Narrowed is an entry an if condition or its group's matcher lets fire
+	// on only some calls.
+	Narrowed bool
+}
+
+// narrows reports whether a group's matcher lets it fire on only some calls.
+// Absent, "" and "*" all match every call.
+func narrows(matcher any) bool {
+	return matcher != nil && matcher != "" && matcher != "*"
 }
 
 // prune drops the entries a previous sync wrote for event. An entry pointing at

@@ -28,11 +28,32 @@ stdout '^note +codex: non-managed hooks need a one-time trust review'
 stdout '^ok +project root .*/repo$'
 stdout '^ok +global: 1 rule in .*/home/\.config/handrail$'
 stdout '^ok +project-shared: 2 rules in .*/repo/\.handrail, trusted$'
-stdout '^ok +project-personal: 1 rule in .*/repo/\.handrail/local$'
+stdout '^ok +project-personal: 2 rules in .*/repo/\.handrail/local$'
 
-# The exclusion line sync writes, and the ruleset's validity.
+# The supply check and the exclusion line sync writes.
+stdout '^ok +\.handrail/local/ is not supplied by the repository$'
 stdout '^ok +\.handrail/local/ is excluded in \.git/info/exclude$'
-stdout '^ok +4 rules valid$'
+
+# The Decision log's grant, with where it writes and how much it holds.
+stdout '^note +the Decision log is off for this project, so only trial matches are recorded: .*/home/\.local/state/handrail/log\.jsonl, not written yet$'
+
+# The Enforcement state and where it was set.
+stdout '^ok +enforcement state: enforce \(default\)$'
+
+# The ruleset's validity with the count on trial, and every Example.
+stdout '^ok +5 rules valid, 1 on trial$'
+stdout '^ok +2 Examples pass$'
+
+# A granted log that holds lines, and a state that is not enforce.
+exec handrail log on
+stdin rm.json
+exec handrail hook claude PreToolUse
+exec handrail mode trial
+exec handrail doctor
+! stdout 'problem'
+stdout '^ok +the Decision log is on for this project: .*/log\.jsonl, [1-9][0-9]* bytes$'
+stdout '^note +enforcement state: trial \(this project: .*/repo\)$'
+exec handrail mode enforce
 
 # A harness that has never run on this machine is a fact, not a fault.
 mv $WORK/home/.codex $WORK/home/.codex-gone
@@ -46,6 +67,27 @@ cd $WORK
 exec handrail doctor
 ! stdout 'problem'
 stdout 'is not a git working tree, so nothing needs excluding'
+
+# A Project-shared tier this machine never trusted says so, even empty.
+stdout '^ok +project-shared: 0 rules in .*/\.handrail, not trusted$'
+
+-- repo/rm.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "rm -rf build"}}
+-- repo/.handrail/local/watched.md --
+---
+event: PreToolUse
+kind: shell
+trial: true
+conditions:
+  - field: command
+    starts_with: rm
+examples:
+  match:
+    - command: rm -rf build
+  no_match:
+    - command: ls
+---
+Watched before it is enforced.
 
 -- home/.claude/settings.json --
 {}

@@ -7,6 +7,13 @@ stdout '"rule": "linked",\n +"tier": "project-shared"'
 stdout '"demoted_from": "project-personal"'
 stdout '"rule": "shared",\n +"tier": "project-shared"'
 
+# doctor reports the supply check with its reason. It exits 1 here only for
+# the exclusion line no sync has written.
+! exec handrail doctor
+stdout '^problem +\.handrail/local/ is not excluded'
+stdout '^note +\.handrail/local/ is read as Project-shared: .*/\.handrail/local is a symlink$'
+! stdout 'is not supplied by the repository'
+
 # So is one under a .handrail that is itself a symlink, and the shared tier is
 # read through the link.
 rm .handrail/local
