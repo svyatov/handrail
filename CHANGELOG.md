@@ -38,11 +38,7 @@ Run `handrail check` and `handrail sync` after upgrading.
 - `tool` holds every name the harness answers to for a call. `kind: agent` and
   `kind: network` come with `agent_type`, `agent_prompt`, `model`, `url`,
   `domain`, `network_grant` and `unsandboxed`.
-- A shell call yields a `file_read` or `file_edit` payload for each file it
-  redirects to or a listed program names, so a `path` rule on `.env` covers
-  `cat .env` and `> .env`.
-- Every file of a multi-file Codex `apply_patch` is its own payload, with
-  `removed_content`, `writes_empty` and `deletes`.
+- `removed_content`, `writes_empty` and `deletes` on file edits.
 - Each event tells the human which rules fired. `agent_only: true` keeps a
   coaching `warn` out of the human's channel.
 - `handrail survey` prints the repository's signals and instruction files as
@@ -51,7 +47,7 @@ Run `handrail check` and `handrail sync` after upgrading.
 - `handrail doctor` fails when handrail's hooks would not run, and reports the
   enforcement state, the log grant and the Examples.
 - `handrail test` shows per payload the Candidates, what was unreadable and the
-  human line, and takes `--stdin` and `--harness codex`.
+  human line.
 
 ### Changed
 
@@ -62,6 +58,11 @@ Run `handrail check` and `handrail sync` after upgrading.
   field bind to one Candidate, and a `not_` term fires when some Candidate fails
   it, so `not_starts_with: git` fires on `git status; rm -rf /`. A rule written
   as an allowlist over `command` now fires on calls it used to pass.
+- **Breaking**: a shell call yields a `file_read` or `file_edit` payload for
+  each file it redirects to or a listed program names, so a `path` rule on
+  `.env` now fires on `cat .env` and `> .env` as well as on the file tools.
+- **Breaking**: every file of a multi-file Codex `apply_patch` is its own
+  payload, so a `path` or `content` rule now reaches the files after the first.
 - **Breaking**: the Project-shared tier is add-only against Global. A committed
   rule named like one of your Global rules is dropped and your Global rule
   stands. `check` and `sync` name both files.
@@ -72,11 +73,8 @@ Run `handrail check` and `handrail sync` after upgrading.
   `check` and `sync`, and be skipped at event time, for a condition on a field
   its event never carries; `kind:` on an event other than `PreToolUse` and
   `PostToolUse`; a `path` glob or `equals` value that lexical cleaning would
-  change; `ask` on any event but `PreToolUse`; `block` on `PostToolUse`,
-  `SessionStart`, `SessionEnd` or `SubagentStart`; `agent_only: true` on a
-  `block` or `ask`, on a `warn` on `Stop`, `SubagentStop` or `SessionEnd`, or in
-  the Project-shared tier; `trial: true` on a disabled rule; or an invalid
-  Example.
+  change; or `block` on `PostToolUse`, `SessionStart` or `SessionEnd`, which
+  0.2.0 degraded to `warn`.
 - **Breaking**: `handrail test` exits 3 when the outcome is `ask`, and still 2
   on `block`.
 - **Breaking**: one hook entry per event, for all eight events, each with no
