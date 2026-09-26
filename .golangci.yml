@@ -70,6 +70,7 @@ linters:
           msg: write to the stdout/stderr the CLI seam passes in
 
     gocritic:
+      # unnamedResult: nonamedreturns bans naming, so return a small struct.
       enabled-tags:
         - diagnostic
         - style
