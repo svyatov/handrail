@@ -33,7 +33,7 @@ jobs:
         include:
           - os: ubuntu-latest
             short: ""
-          # The cold-start test asserts a 50ms median over 21 process spawns,
+          # The cold-start test asserts a 20ms median over 21 process spawns,
           # which a shared macOS runner cannot hold.
           - os: macos-latest
             short: -short
