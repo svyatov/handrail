@@ -88,7 +88,13 @@ cp "$tmp/handrail" "$staged"
 chmod +x "$staged"
 mv "$staged" "$bin"
 
-echo "handrail $PIN installed at $bin"
-# Sync is the last step and reports its own errors. Failing it would fail the
-# hook, which reads as a broken session start over a binary that installed fine.
-"$bin" sync || echo "handrail: sync failed; run \"$bin\" sync once the cause is fixed" >&2
+# Both harnesses put a SessionStart hook's plain stdout into the agent's
+# context, so the install report and sync's output go to stderr, and stdout
+# carries only the JSON below.
+echo "handrail $PIN installed at $bin" >&2
+# Sync reports its own errors. Failing it would fail the hook, which reads as a
+# broken session start over a binary that installed fine.
+"$bin" sync >&2 || echo "handrail: sync failed; run \"$bin\" sync once the cause is fixed" >&2
+# The survey hint, on systemMessage, which the human reads and the agent does
+# not. Only a fresh install reaches this line, so it is said once per install.
+printf '{"systemMessage": "handrail %s is installed. Run /handrail:survey to have it propose rules for this repository, and, when you ask, from your own instruction files."}\n' "$PIN"

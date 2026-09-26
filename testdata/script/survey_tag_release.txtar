@@ -16,6 +16,38 @@ stdout '^warn  tag-release  global$'
 exec handrail test PreToolUse --kind shell --field 'command=git tag'
 stdout '^outcome: allow$'
 
+# A tag after a quoted message, a tag pushed by name, and a push that follows
+# tags all publish; a branch push and a flag of a later command do not.
+exec handrail test PreToolUse --kind shell --field 'command=git tag -a -m "release" v1.0.0'
+stdout '^warn  tag-release  global$'
+exec handrail test PreToolUse --kind shell --field 'command=git push origin v1.0.0'
+stdout '^warn  tag-release  global$'
+exec handrail test PreToolUse --kind shell --field 'command=git push origin refs/tags/v1.0.0'
+stdout '^warn  tag-release  global$'
+exec handrail test PreToolUse --kind shell --field 'command=git push origin main --follow-tags'
+stdout '^warn  tag-release  global$'
+exec handrail test PreToolUse --kind shell --field 'command=git push origin main'
+stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind shell --field 'command=git tag && head -1 CHANGELOG.md'
+stdout '^outcome: allow$'
+
+# A branch named for an issue, a redirect after a branch push, and a tag
+# listing or lookup publish nothing.
+exec handrail test PreToolUse --kind shell --field 'command=git push origin main 2>&1'
+stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind shell --field 'command=git push -u origin 42-fix-login'
+stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind shell --field 'command=git tag -l v1.*'
+stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind shell --field 'command=git tag -n 5'
+stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind shell --field 'command=git tag --contains 3fa2b1c'
+stdout '^outcome: allow$'
+
+# The listing exception reads the command the tag was found in, not the line.
+exec handrail test PreToolUse --kind shell --field 'command=git tag -a v1.0.0 -m r && git log -n 3'
+stdout '^warn  tag-release  global$'
+
 -- repo/package.json --
 {}
 -- repo/.github/workflows/release.yml --
@@ -29,10 +61,12 @@ kind: shell
 conditions:
   - any:
       - field: command
-        contains: git push --tags
+        matches: git[ \t]+push[ \t]+([^\s;&|]+[ \t]+)*(--tags|--follow-tags|(refs/tags/)?v?\d+(\.\d+)+(\s|$))
       - field: command
-        matches: git\s+tag\s+(-\w+\s+)*v?\d
+        matches: git[ \t]+tag[ \t]+([^\s;&|]+[ \t]+)*v?\d
       - field: command
         starts_with: npm publish
+  - field: command
+    not_matches: '[ \t](-l|--list|-n|--contains)([ \t]|$)'
 ---
 A tag push publishes a release.

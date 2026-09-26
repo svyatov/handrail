@@ -35,6 +35,35 @@ findings below.
 | 6 | Plugin installed from a marketplace | `scripts/bootstrap.sh` survives the copy into the plugin cache and the SessionStart hook fires |
 | 7 | `/handrail:add` from a plain-language description | A rule file that `check` accepts and `test` matches against its own incident |
 | 8 | `/handrail:analyze` in a session containing one explicit correction | The transcript resolves, the correction is proposed with its quote, nothing is written until that rule is approved, and the approved rule passes `check` and matches its own incident under `test` |
+| 9 | `/handrail:survey` in a sandbox repository with a lockfile, a `.gitignore` and a `CLAUDE.md` prohibition, and no rule-directory guards | The two guards are proposed first, then one proposal per signal and per prohibition, each needing its own approval; every approved rule passes `check` and matches its positive payload under `test` |
+| 10 | Case 1, then a second session | The first session's stdout is only `{"systemMessage": ...}` naming `/handrail:survey`; the second prints nothing |
+
+## 2026-09-26, the v2 skills and the survey hint, darwin/arm64
+
+Run against a build of `main` at the version the bootstrap pins, with an
+isolated `HOME`, and not through an installed plugin.
+
+- Case 10: the bootstrap was run twice with a stub `curl` serving a local
+  release. The first run's stdout was exactly the `systemMessage` JSON, with the
+  install line and sync's output on stderr. The second run printed nothing.
+- Every draft in `skills/survey/signals.md` and every rule in
+  `skills/add/guards.md`, 21 files, passed `check` with their Examples.
+- Case 9: an agent followed the survey skill in a sandbox repository. It
+  proposed both guards first, a `CLAUDE.md` prohibition, and one proposal per
+  signal, and it skipped the requirement sentence. Nine rules landed, the final
+  `check` was clean, and each replay matched as expected.
+- An agent followed the analyze skill against a granted Decision log. It
+  proposed a new rule, narrowed a rule the user overrode, and promoted a trial.
+  The last two went through the heavier bar with their log lines quoted.
+  The final `check` was clean.
+
+Both runs were done by a subagent with scripted answers, not with a human at an
+approval prompt. The live gap from case 8 still stands.
+
+Still owed for this change, which alters what the bootstrap prints: cases 1 to
+6 and 10 through an installed plugin on each harness. On Codex nothing here
+confirms that it reads `systemMessage` from a SessionStart hook's stdout, or
+that it keeps that JSON out of the agent's context.
 
 ## 2026-08-18, v0.1.0-rc.1 on Claude Code, darwin/arm64
 
