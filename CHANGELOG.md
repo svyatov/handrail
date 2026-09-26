@@ -12,7 +12,7 @@ all of which [`docs/spec.md`](docs/spec.md) states.
 
 ## [0.3.0] - 2026-09-26
 
-handrail v2. A rule now reads the input an agent actually produces, and what
+The v2 specification. A rule now reads the input an agent actually produces, and what
 handrail cannot read is a value a rule can match. Rule files and scripts written
 for 0.2.0 can behave differently: every such change is marked **Breaking**.
 Run `handrail check` and `handrail sync` after upgrading.
@@ -77,15 +77,21 @@ Run `handrail check` and `handrail sync` after upgrading.
   0.2.0 degraded to `warn`.
 - **Breaking**: `handrail test` exits 3 when the outcome is `ask`, and still 2
   on `block`.
-- **Breaking**: one hook entry per event, for all eight events, each with no
-  matcher and no `if`. `sync` writes them even when a rule is invalid, then
-  exits 1, and `doctor` fails on a handrail entry narrowed by a matcher or an
-  `if`, so an entry you narrowed by hand now reports as broken.
+- **Breaking**: `doctor` fails on a handrail hook entry narrowed by a matcher or
+  an `if`, so an entry you narrowed by hand now reports as broken. `sync` still
+  writes one entry per event with neither, now for eight events, and writes
+  them even when a rule is invalid, then exits 1.
+- **Breaking**: `tool` is on every call, where 0.2.0 carried it on MCP calls
+  alone, so a `tool` condition with no `kind: mcp` now reaches every tool. The
+  spawn tools, `WebFetch`, `WebSearch` and `Monitor` left `kind: other` for
+  `agent`, `network` and `shell`, so a `kind: other` rule no longer fires on
+  them.
 - `block` on `Stop` and `SubagentStop` continues the agent once, with the rule's
   message as its next instruction, and never loops.
-- handrail never blocks a call for its own failure. A missing Global tier, a
-  non-string JSON value and a broken rule file set `unreadable` and are
-  reported to the human and the agent.
+- A failure of handrail's own now sets `unreadable`, so a rule can fail closed
+  on it: a missing Global tier, a non-string JSON value and a broken rule file
+  are reported to the human and the agent. handrail itself still never blocks
+  a call for its own failure.
 - `handrail import hookify` imports a stop rule as a `Stop` rule on `response`.
 - A command is parsed with `mvdan.cc/sh/v3/syntax`, handrail's one third-party
   runtime dependency.
