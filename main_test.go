@@ -68,7 +68,7 @@ func TestHookColdStart(t *testing.T) {
 
 	dir := t.TempDir()
 	home, repo := filepath.Join(dir, "home"), filepath.Join(dir, "repo")
-	run := hookRunner(t, buildBinary(t, dir), home, repo)
+	run := hookFixture(t, buildBinary(t, dir), home, repo)
 
 	// Trust first, so the shared tier is read rather than skipped. It also puts
 	// the binary and the rules in the page cache, which is the state a session's
@@ -77,34 +77,30 @@ func TestHookColdStart(t *testing.T) {
 	run("", "trust")
 	run("", "log", "on")
 
-	payload := func(event, rest string) string {
-		return `{"hook_event_name":"` + event + `","session_id":"s1","cwd":"` + repo + `",` + rest + `}`
-	}
-
 	for _, invocation := range []struct {
-		name, event, stdin string
-		heard              func(out string) bool
+		name, event, fields string
+		heard               func(out string) bool
 	}{
 		{
-			"no-match hook", "PreToolUse",
-			payload("PreToolUse", `"tool_name":"Bash","tool_input":{"command":"echo hi"}`),
+			"no-match hook", "PreToolUse", `"tool_name":"Bash","tool_input":{"command":"echo hi"}`,
 			func(out string) bool { return out == "" },
 		},
 		{
-			"matching hook", "PreToolUse",
-			payload("PreToolUse", `"tool_name":"Bash","tool_input":{"command":"echo matched"}`),
+			"matching hook", "PreToolUse", `"tool_name":"Bash","tool_input":{"command":"echo matched"}`,
 			func(out string) bool { return strings.Contains(out, "handrail warn: matched") },
 		},
 		{
-			// Silent, because every Example passes: a failing one is a notice.
-			"SessionStart", "SessionStart",
-			payload("SessionStart", `"source":"startup"`),
-			func(out string) bool { return out == "" },
+			// The one failing Example's notice shows every Example ran.
+			"SessionStart", "SessionStart", `"source":"startup"`,
+			func(out string) bool { return strings.Contains(out, "1 rule fails its Examples: drifted (global)") },
 		},
 	} {
+		stdin := `{"hook_event_name":"` + invocation.event + `","session_id":"s1","cwd":"` + repo + `",` +
+			invocation.fields + `}`
 		times := make([]time.Duration, 0, hookRuns)
+
 		for range hookRuns {
-			elapsed, out := run(invocation.stdin, "hook", "claude", invocation.event)
+			elapsed, out := run(stdin, "hook", "claude", invocation.event)
 			if !invocation.heard(out) {
 				t.Fatalf("%s said the unexpected: %q", invocation.name, out)
 			}
@@ -116,8 +112,8 @@ func TestHookColdStart(t *testing.T) {
 	}
 
 	// The matching hook appended one line per run, and nothing else did. Each
-	// names the Project-personal tier, so the supply check read the index and
-	// kept .handrail/local/ as the user's own.
+	// names the Project-personal tier: an index tracking nothing under
+	// .handrail/local/ leaves it the user's own.
 	logged, err := os.ReadFile(filepath.Join(home, ".local", "state", "handrail", "log.jsonl"))
 	if err != nil {
 		t.Fatal(err)
@@ -129,15 +125,18 @@ func TestHookColdStart(t *testing.T) {
 	}
 }
 
-// hookRunner populates the fixture and returns a function that runs bin in
-// repo with stdin, reporting how long the process took and what it printed.
-func hookRunner(t *testing.T, bin, home, repo string) func(stdin string, args ...string) (time.Duration, string) {
+// hookFixture builds the rule tiers and the git repository under home and repo,
+// and returns a function that runs bin in repo with stdin, reporting how long
+// the process took and what it printed.
+func hookFixture(t *testing.T, bin, home, repo string) func(stdin string, args ...string) (time.Duration, string) {
 	t.Helper()
 
 	// The same redirection sandbox gives the scripts, for the same reason: this
 	// execs a real binary, so a missing variable would land in the real user's
-	// directories.
-	env := append(os.Environ(),
+	// directories. An inherited GIT_DIR or GIT_INDEX_FILE would send git's
+	// index elsewhere and leave the fixture's untracked.
+	env := slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "GIT_") })
+	env = append(env,
 		"HOME="+home,
 		"XDG_CONFIG_HOME="+filepath.Join(home, ".config"),
 		"XDG_DATA_HOME="+filepath.Join(home, ".local", "share"),
@@ -198,7 +197,8 @@ func buildBinary(t *testing.T, dir string) string {
 // populateTiers is a realistic worst case for a no-match call: every tier
 // populated, so the run walks three directories and parses every rule before
 // deciding nothing applies, and every rule carries Examples for SessionStart to
-// run. One Project-personal warn rule matches "echo matched".
+// run. One Project-personal warn rule matches "echo matched", and one Global
+// rule's Example fails, so SessionStart shows it ran them.
 func populateTiers(t *testing.T, home, repo string) {
 	t.Helper()
 
@@ -226,6 +226,9 @@ func populateTiers(t *testing.T, home, repo string) {
 		"---\nevent: PreToolUse\nkind: shell\nconditions:\n  - field: command\n    starts_with: echo matched\n"+
 			"examples:\n  match:\n    - command: cd /tmp && echo matched\n  no_match:\n    - command: echo hi\n"+
 			"---\nA rule that matches.\n")
+	writeFile(t, filepath.Join(home, ".config", "handrail", "drifted.md"),
+		"---\nevent: PreToolUse\nkind: shell\nconditions:\n  - field: command\n    starts_with: never-drifted\n"+
+			"examples:\n  match:\n    - command: echo drifted\n---\nA rule whose Example fails.\n")
 }
 
 // gitIndex makes repo a git repository whose index git itself wrote, holding
@@ -246,6 +249,11 @@ func gitIndex(t *testing.T, repo string, env []string) {
 		if err != nil {
 			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
 		}
+	}
+
+	_, err := os.Stat(filepath.Join(repo, ".git", "index"))
+	if err != nil {
+		t.Fatalf("git wrote no index into the fixture: %v", err)
 	}
 }
 
