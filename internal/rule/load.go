@@ -57,6 +57,9 @@ type Ruleset struct {
 	Untrusted []*Rule
 	Tiers     []Tier
 	Problems  []Problem
+	// State is the Enforcement state for Root, and StateScope where it was set.
+	State      State
+	StateScope Scope
 }
 
 // Effective returns the Effective ruleset: the rules that can fire, in
@@ -110,7 +113,11 @@ func Load(cwd string) *Ruleset {
 		root = RepoRoot(cwd)
 	}
 
-	ruleset := &Ruleset{Root: root, Demoted: "", Rules: nil, Untrusted: nil, Tiers: nil, Problems: nil}
+	ruleset := &Ruleset{
+		Root: root, Demoted: "", Rules: nil, Untrusted: nil, Tiers: nil, Problems: nil,
+		State: StateEnforce, StateScope: ScopeDefault,
+	}
+	ruleset.State, ruleset.StateScope = StateOf(root)
 	inRoot := func(dir func(string) string) string {
 		if root == "" {
 			return ""
@@ -131,7 +138,7 @@ func Load(cwd string) *Ruleset {
 			byName[name] = &Rule{
 				Name: name, Path: p.Path, Tier: TierGlobal, ShadowedBy: nil, Replaces: nil, DroppedBy: nil,
 				DemotedFrom: "", Event: "", Kind: "", Message: "", Conditions: nil, Examples: nil, fields: nil,
-				Action: Allow, agentOnlyLine: 0, Enabled: false, AgentOnly: false, LostAgentOnly: false,
+				Action: Allow, agentOnlyLine: 0, Enabled: false, AgentOnly: false, LostAgentOnly: false, Trial: false, trialLine: 0,
 			}
 		}
 	}

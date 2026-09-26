@@ -25,6 +25,7 @@ stdout 'the shared message'
 
 # Trusting an already-trusted path is a no-op, not an error.
 exec handrail trust
+stdout '^already trusted '
 exec handrail check
 stdout '^project-shared +shared-rule +Stop'
 

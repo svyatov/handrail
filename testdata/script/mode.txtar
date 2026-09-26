@@ -1,0 +1,66 @@
+# A project enforces until someone says otherwise.
+exec handrail mode
+stdout '^enforce \(default\)$'
+
+# A state set in a project is that project's, and mode reads it back.
+exec handrail mode trial
+exec handrail mode
+stdout '^trial \(this project: .*\)$'
+
+# The state sits in the same registry as Trust, in files only the user can read.
+exec handrail trust
+exec find home/.local/state/handrail -type f -perm 600
+stdout -count=2 '^.+$'
+stdout '/enforcement$'
+stdout '/trusted$'
+
+# --global sets the machine-wide state, which applies wherever no project sets
+# one, and a project state overrides it.
+exec handrail mode off --global
+stdout '^off \(machine-wide\)$'
+exec handrail mode
+stdout '^trial \(this project: .*\)$'
+exec sh -c 'cd other && handrail mode'
+stdout '^off \(machine-wide\)$'
+exec sh -c 'cd other && handrail mode enforce'
+stdout '^enforce \(this project: .*/other\)$'
+exec handrail mode --global
+stdout '^off \(machine-wide\)$'
+
+# on and off are mode enforce and mode off, --global included.
+exec handrail on --global
+stdout '^enforce \(machine-wide\)$'
+exec handrail off
+stdout '^off \(this project: .*\)$'
+exec handrail on
+stdout '^enforce \(this project: .*\)$'
+
+# Inside a harness session setting a state is refused, a speed bump against an
+# agent switching handrail off, and reading it is not.
+env CLAUDE_CODE_SESSION_ID=abc
+! exec handrail off
+stderr 'handrail mode: refusing to set the enforcement state inside a harness session \(CLAUDE_CODE_SESSION_ID is set\); run it in your own terminal'
+! stdout .
+! exec handrail mode trial --global
+exec handrail mode
+stdout '^enforce \(this project: .*\)$'
+exec handrail mode --global
+stdout '^enforce \(machine-wide\)$'
+env CLAUDE_CODE_SESSION_ID=
+env CODEX_THREAD_ID=abc
+! exec handrail off
+stderr '\(CODEX_THREAD_ID is set\)'
+env CODEX_THREAD_ID=
+exec handrail mode
+stdout '^enforce \(this project: .*\)$'
+
+# An unknown state is a usage error that sets nothing.
+! exec handrail mode paused
+stderr 'handrail mode: unknown state "paused"; known: enforce, trial, off'
+exec handrail mode
+stdout '^enforce \(this project: .*\)$'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- other/.git/HEAD --
+ref: refs/heads/main

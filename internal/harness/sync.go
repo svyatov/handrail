@@ -346,14 +346,17 @@ func shellUnquote(s string) string {
 func (a Adapter) Action(r *rule.Rule) rule.Outcome { return a.degrade(r.Event, r.Action) }
 
 // Delivered is the Outcome the harness delivers for the matched rules: the
-// strongest action it delivers among them.
+// strongest action it delivers among them. A trial match delivers none.
 func (a Adapter) Delivered(matched []rule.Match) rule.Outcome {
-	var o rule.Outcome
+	var outcome rule.Outcome
+
 	for _, m := range matched {
-		o = max(o, a.Action(m.Rule))
+		if !m.Trial {
+			outcome = max(outcome, a.Action(m.Rule))
+		}
 	}
 
-	return o
+	return outcome
 }
 
 // Report is what the harness cannot do, for sync to print and doctor to
@@ -364,8 +367,10 @@ func (a Adapter) Report(rules []*rule.Rule) []string {
 	var out []string
 
 	for _, effective := range rules {
+		// A trial rule asks for neither blocking nor injection, so it has no
+		// capability to lose.
 		delivered := a.Action(effective)
-		if delivered == effective.Action {
+		if delivered == effective.Action || effective.Trial {
 			continue
 		}
 		// A skipped rule delivers nothing, which a report says as skip.

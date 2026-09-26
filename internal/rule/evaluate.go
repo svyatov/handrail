@@ -332,11 +332,11 @@ func (rs *Ruleset) Yield(payloads []Payload) []Payload {
 // Evaluate runs an event's payloads against the Effective ruleset and answers
 // with both halves of what the event produces: the rules that matched any of
 // its payloads, once each and in delivery order (tier order, then alphabetical
-// within a tier), and the Outcome, the strongest Action among them, or allow
-// when nothing matched. A caller deriving the Outcome for itself would be a
-// second answer to the same question, free to disagree with this one, and test
-// exists to say what hook will do. What a harness delivers of it is the
-// Adapter's answer, not a second one to this.
+// within a tier), and the Outcome, the strongest Action among those not on
+// trial, or allow when none matched. A caller deriving the Outcome for itself
+// would be a second answer to the same question, free to disagree with this
+// one, and test exists to say what hook will do. What a harness delivers of it
+// is the Adapter's answer, not a second one to this.
 //
 // Liveness is checked inline rather than over rs.Effective(), because this is
 // the hot path and the selector would allocate a second slice per event.
@@ -354,30 +354,41 @@ func (rs *Ruleset) Evaluate(payloads []Payload) ([]Match, Outcome) {
 			continue
 		}
 
-		match, hit := Match{Rule: live, Files: nil}, false
-		for _, payload := range payloads {
-			if !live.matches(payload) {
-				continue
-			}
-
-			hit = true
-
-			match.addFiles(payload)
-		}
-
+		match, hit := live.matchAll(payloads)
 		if !hit {
 			continue
 		}
-		// One file is the one the message is about, with nothing to list.
-		if len(match.Files) == 1 {
-			match.Files = nil
-		}
+		// The weaker of the rule's own state and the Enforcement state applies.
+		match.Trial = live.Trial || rs.State == StateTrial
 
 		matched = append(matched, match)
-		outcome = max(outcome, live.Action)
+		if !match.Trial {
+			outcome = max(outcome, live.Action)
+		}
 	}
 
 	return matched, outcome
+}
+
+// matchAll is this rule's Match over an event's payloads, and whether it
+// matched any of them.
+func (r *Rule) matchAll(payloads []Payload) (Match, bool) {
+	match, hit := Match{Rule: r, Files: nil, Trial: false}, false
+	for _, payload := range payloads {
+		if !r.matches(payload) {
+			continue
+		}
+
+		hit = true
+
+		match.addFiles(payload)
+	}
+	// One file is the one the message is about, with nothing to list.
+	if len(match.Files) == 1 {
+		match.Files = nil
+	}
+
+	return match, hit
 }
 
 // Match is a rule that matched an event. A rule is delivered once however
@@ -387,6 +398,9 @@ type Match struct {
 	*Rule
 
 	Files []string
+	// Trial marks a match that delivers nothing: no Outcome, no message, no
+	// ordering slot.
+	Trial bool
 }
 
 // addFiles adds every path a matched payload names that Files lacks.

@@ -38,6 +38,10 @@ stdout 'codex: hook errors and timeouts fail open'
 # nothing to nothing.
 ! stdout 'for switched-off'
 
+# A rule on trial asks for neither blocking nor injection, so it has no
+# capability to lose and is never reported degraded.
+! stdout 'for on-trial'
+
 # An audience is not an action: an event whose output the user never sees is
 # reported per harness, whether or not a rule is on it. Claude Code shows
 # SessionEnd's stderr, so it has none.
@@ -119,3 +123,10 @@ action: block
 enabled: false
 ---
 A rule that enforces nothing degrades to nothing.
+-- .handrail/on-trial.md --
+---
+event: UserPromptSubmit
+action: block
+trial: true
+---
+Watched, not enforced.

@@ -26,6 +26,8 @@ Commands:
   check     Validate the rules and print the effective ruleset
   test      Dry-run a synthetic payload against the rules
   trust     Grant this repo's Project-shared rules
+  mode      Read or set whether handrail enforces: enforce, trial, or off
+  on, off   mode enforce and mode off
   import    Convert upstream hookify rules into Project-personal rules
   doctor    Diagnose this machine's install, offline
   version   Print version, commit, and build date
@@ -47,6 +49,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		"check":   cmdCheck,
 		"test":    cmdTest,
 		"trust":   cmdTrust,
+		"mode":    cmdMode,
+		"on":      modeAlias("enforce"),
+		"off":     modeAlias("off"),
 		"import":  cmdImport,
 		"doctor":  cmdDoctor,
 		"version": cmdVersion,
@@ -93,20 +98,23 @@ func reportProblems(problems []rule.Problem, stderr io.Writer) {
 	}
 }
 
-// loadRules reads the tiers that apply to the working directory and reports an
-// untrusted shared tier, which is skipped rather than silently missing.
+// loadRules reads the tiers that apply to the working directory and reports a
+// state that is not enforce and an untrusted shared tier, which is skipped
+// rather than silently missing.
 func loadRules(stderr io.Writer) (*rule.Ruleset, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
 
-	rs := rule.Load(cwd)
-	if notice := rs.TrustNotice(); notice != "" {
-		fmt.Fprintln(stderr, notice)
+	ruleset := rule.Load(cwd)
+	for _, notice := range []string{ruleset.StateNotice(), ruleset.TrustNotice()} {
+		if notice != "" {
+			fmt.Fprintln(stderr, notice)
+		}
 	}
 
-	return rs, nil
+	return ruleset, nil
 }
 
 // loadValidRules is test's authoring-time contract: every tier parses, or the

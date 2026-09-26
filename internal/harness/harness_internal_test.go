@@ -114,7 +114,7 @@ func TestAMissingEventDegradesToSkip(t *testing.T) {
 	notDone := &rule.Rule{
 		Name: "not-done", Path: "", Tier: "", ShadowedBy: nil, Replaces: nil, DroppedBy: nil, DemotedFrom: "",
 		Event: "Stop", Kind: "", Action: rule.Block, Enabled: false, AgentOnly: false, LostAgentOnly: false,
-		Conditions: nil, Examples: nil, Message: "",
+		Conditions: nil, Examples: nil, Message: "", Trial: false,
 	}
 
 	if got := adapter.Action(notDone); got != rule.Allow {
