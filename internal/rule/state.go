@@ -3,7 +3,6 @@ package rule
 import (
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -57,9 +56,7 @@ func registry(name string) ([]string, error) {
 	return strings.FieldsFunc(string(data), func(r rune) bool { return r == '\n' }), nil
 }
 
-// appendRegistry adds one line to a registry file. A write only ever appends,
-// in one write to a file opened for appending, so writers running at once never
-// lose each other's lines.
+// appendRegistry adds one line to a registry file. A write only ever appends.
 func appendRegistry(name, line string) error {
 	// One path per line, so a newline in a path would write a second line and
 	// record a path nobody asked for. A directory may legally hold one.
@@ -72,6 +69,13 @@ func appendRegistry(name, line string) error {
 		return errNoStateDir
 	}
 
+	return appendFile(file, []byte(line+"\n"))
+}
+
+// appendFile appends each chunk to a file in the state dir, creating both, in
+// one write per chunk to a file opened for appending, so writers running at
+// once never lose each other's lines.
+func appendFile(file string, chunks ...[]byte) error {
 	err := os.MkdirAll(filepath.Dir(file), registryDirMode)
 	if err != nil {
 		return err
@@ -82,7 +86,13 @@ func appendRegistry(name, line string) error {
 		return err
 	}
 
-	_, err = io.WriteString(out, line+"\n")
+	for _, chunk := range chunks {
+		_, err = out.Write(chunk)
+		if err != nil {
+			break
+		}
+	}
+
 	if closeErr := out.Close(); err == nil {
 		err = closeErr
 	}

@@ -81,11 +81,12 @@ Starting from nothing, the sequence is:
 
 | Command | Does |
 |---|---|
-| `check` | Validate every tier, run each rule's Examples, and print the effective ruleset, annotated with tier, shadowing, disabling, and trial. |
+| `check` | Validate every tier, run each rule's Examples, and print the effective ruleset, annotated with tier, shadowing, disabling, and trial. `--stats` adds each rule's history from the Decision log. |
 | `test <event>` | Dry-run one event against the rules. Exit 2 when the outcome is block. |
 | `sync` | Write handrail's hook entries into every detected harness. The plugin runs this for you after a fresh install. |
 | `trust` | Grant this repo's committed `.handrail/` rules permission to take effect. |
 | `mode [enforce\|trial\|off] [--global]` | Read or set whether handrail enforces in this project, or machine-wide with `--global`. `on` and `off` are short for `mode enforce` and `mode off`. Every session in a project that is not enforcing opens by saying so. |
+| `log [on\|off]` | Record which rules matched in this project, and read that record back: `--rule NAME`, `--all`, `-n N`, `--json`. Off until you turn it on, and a trial rule's matches are recorded either way. |
 | `import hookify` | Convert upstream hookify rule files into personal rules, reporting anything the format cannot express. |
 | `doctor` | Diagnose the install offline. The first thing to run when nothing fires. |
 | `version` | Version, commit, and build date. |

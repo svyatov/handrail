@@ -93,6 +93,10 @@ linters:
 
     govet:
       enable-all: true
+      # Its fix reorders struct fields, which reorders the keys of every
+      # --json shape the spec states, and that is what users see.
+      disable:
+        - fieldalignment
 
     ireturn:
       # The defaults, plus the node interface the shell parser hands back.
@@ -138,6 +142,8 @@ linters:
       rules:
         - name: blank-imports
         - name: bool-literal-in-expr
+        # nonamedreturns bans named results, so two results of one type
+        # become a small struct.
         - name: confusing-results
         - name: constant-logical-expr
         - name: context-as-argument
