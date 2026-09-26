@@ -3,11 +3,12 @@
 exec sh -c 'handrail import hookify; echo code=$?'
 stdout '^code=0$'
 ! stderr .
-stdout '^0 imported, 22 skipped$'
+stdout '^0 imported, 23 skipped$'
 
 stdout '^skipped +\.claude/hookify\.ambiguous\.local\.md: conditions span more than one event: "command" names PreToolUse shell and "file_path" names PreToolUse file_edit$'
 stdout 'hookify\.gizmo\.local\.md: unknown event "gizmo"'
 stdout 'hookify\.lookahead\.local\.md: pattern "\(\?!skip\)foo" is not an RE2 regexp'
+stdout 'hookify\.stop-lookahead\.local\.md: pattern "\(\?!done\)TODO" is not an RE2 regexp'
 stdout 'hookify\.no-conditions\.local\.md: rule has no conditions, which upstream never matches'
 stdout 'hookify\.odd-operator\.local\.md: condition operator "fuzzy_match" is not one handrail expresses'
 stdout 'hookify\.old-text\.local\.md: condition field "old_text" has no canonical equivalent'
@@ -16,7 +17,7 @@ stdout 'hookify\.stop-matcher\.local\.md: tool_matcher "Bash" cannot apply to ev
 stdout 'hookify\.matcher-clash\.local\.md: tool_matcher "Bash" names shell, and the rest of the rule names file_edit'
 stdout 'hookify\.stop-reason\.local\.md: condition field "reason" has no canonical equivalent'
 stdout 'hookify\.task-tool\.local\.md: tool_matcher "Task" names a tool with no canonical kind'
-stdout 'hookify\.transcript\.local\.md: condition field "transcript" has no canonical equivalent'
+stdout 'hookify\.transcript\.local\.md: condition field "transcript" has no canonical equivalent; the nearest is response, which holds the agent''s last message only$'
 stdout 'hookify\.unnamed\.local\.md: rule has no name'
 
 # The name is the converted file's basename, so a name that is not a basename is
@@ -90,6 +91,13 @@ event: bash
 pattern: (?!skip)foo
 ---
 RE2 has no lookarounds.
+-- .claude/hookify.stop-lookahead.local.md --
+---
+name: stop-lookahead
+event: stop
+pattern: (?!done)TODO
+---
+RE2 has no lookarounds on a stop either.
 -- .claude/hookify.task-tool.local.md --
 ---
 name: task-tool

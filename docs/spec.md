@@ -287,7 +287,7 @@ ADR: [0008](adr/0008-hookify-importer-mapping.md).
 | `user_prompt` | `prompt` |
 | `regex_match` | `matches`, with `(?i)` prepended (upstream compiles IGNORECASE), RE2-validated |
 | string operators | Verbatim (upstream is case-sensitive already) |
-| `pattern:` shorthand | Expanded using upstream's own field inference |
+| `pattern:` shorthand | Expanded using upstream's own field inference, except on `event: stop`: upstream names `content` there, which no stop carries, so the pattern becomes a `response` condition |
 
 Inexpressible constructs are skipped with a per-rule report naming the reason and the original path; nothing broken is ever written: `old_text`, `transcript`, `reason`, non-RE2 patterns, unmappable `tool_matcher` values, ambiguous `all` rules. A skipped `transcript` condition's report names `response` as the nearest field, which holds the agent's last message only. The converted filename comes from the upstream `name:` field; an existing target is never overwritten (re-runs are safe); originals are untouched; `enabled: false` survives. Upstream has no trial state and no Examples, so the importer writes neither.
 

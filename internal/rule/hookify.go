@@ -322,10 +322,10 @@ func hookifyPattern(event, pattern string) ([]term, error) {
 	if pattern == "" {
 		return nil, errNoConditions
 	}
-	// Upstream's own inference, verbatim, which docs/spec.md section 8 asks
-	// for. On a prompt or stop rule it names content, a field neither event
-	// carries: the shorthand is inert upstream too, and inventing a field
-	// the author never wrote would import a guardrail they never had.
+	// Upstream's own inference, which docs/spec.md section 8 asks for. On a
+	// prompt rule it names content, a field that event never carries: the
+	// shorthand is inert upstream too, and inventing a field the author never
+	// wrote would import a guardrail they never had.
 	field := fieldContent
 
 	switch event {
@@ -333,6 +333,18 @@ func hookifyPattern(event, pattern string) ([]term, error) {
 		field = fieldCommand
 	case "file":
 		field = "new_text"
+	case "stop":
+		// The one departure: a stop pattern is written against what the agent
+		// said, and response is the nearest thing a stop carries.
+		value, err := ignoreCase(pattern)
+		if err != nil {
+			return nil, err
+		}
+
+		return []term{{
+			upstream: field, field: fieldResponse, op: opMatches, value: value,
+			where: eventKind{eventStop, ""},
+		}}, nil
 	}
 
 	t, err := convertCondition(field, "regex_match", pattern)
@@ -375,7 +387,13 @@ func hookifyCondition(item *node) (term, error) {
 func convertCondition(field, operator, value string) (term, error) {
 	canonical, where, known := hookifyField(field)
 	if !known {
-		return term{}, fmt.Errorf("condition field %q %w", field, errNoCanonicalField)
+		err := fmt.Errorf("condition field %q %w", field, errNoCanonicalField)
+		if field == "transcript" {
+			// A hand-port starts here, and it has to know what it gives up.
+			err = fmt.Errorf("%w; the nearest is response, which holds the agent's last message only", err)
+		}
+
+		return term{}, err
 	}
 
 	converted, known := hookifyOperator(operator)
@@ -384,18 +402,27 @@ func convertCondition(field, operator, value string) (term, error) {
 	}
 
 	if converted == opMatches {
-		// Upstream compiles every pattern with IGNORECASE, so the case-sensitive
-		// default here would quietly narrow what the rule catches. The reported
-		// pattern stays the one the author wrote.
-		_, err := regexp.Compile("(?i)" + value)
-		if err != nil {
-			return term{}, fmt.Errorf("pattern %q is not an RE2 regexp: %w", value, err)
-		}
+		var err error
 
-		value = "(?i)" + value
+		value, err = ignoreCase(value)
+		if err != nil {
+			return term{}, err
+		}
 	}
 
 	return term{upstream: field, field: canonical, op: converted, value: value, where: where}, nil
+}
+
+// ignoreCase converts an upstream regexp. Upstream compiles every pattern with
+// IGNORECASE, so the case-sensitive default here would quietly narrow what the
+// rule catches. The reported pattern stays the one the author wrote.
+func ignoreCase(pattern string) (string, error) {
+	_, err := regexp.Compile("(?i)" + pattern)
+	if err != nil {
+		return "", fmt.Errorf("pattern %q is not an RE2 regexp: %w", pattern, err)
+	}
+
+	return "(?i)" + pattern, nil
 }
 
 // hookifyField maps an upstream condition field onto the canonical field, and

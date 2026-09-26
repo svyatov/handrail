@@ -2,7 +2,7 @@
 exec sh -c 'handrail import hookify; echo code=$?'
 stdout '^code=0$'
 ! stderr .
-stdout '^7 imported, 1 skipped$'
+stdout '^8 imported, 0 skipped$'
 
 # Every event maps: bash, file, prompt, and all inferred from the fields.
 cmp .handrail/local/block-dangerous-rm.md want/block-dangerous-rm.md
@@ -15,10 +15,9 @@ cmp .handrail/local/disabled-lockfile.md want/disabled-lockfile.md
 
 stdout 'imported \.claude/hookify\.block-dangerous-rm\.local\.md -> \.handrail/local/block-dangerous-rm\.md'
 
-# A stop pattern reads the agent's message, a field Stop does not carry yet,
-# so the converted rule could never fire and is not written.
-stdout 'skipped  \.claude/hookify\.stop-todo\.local\.md: converted rule is invalid: line 6: Stop never carries content'
-! exists .handrail/local/stop-todo.md
+# Upstream's shorthand names content on a stop rule, which no stop carries, so
+# the pattern goes to response, the agent's last message.
+cmp .handrail/local/stop-todo.md want/stop-todo.md
 
 # The converted tier is a valid ruleset, so the import needs no hand-fixing.
 exec sh -c 'handrail check; echo code=$?'
@@ -37,6 +36,18 @@ stdout '^block  block-dangerous-rm  project-personal$'
 exec sh -c 'handrail test PreToolUse --kind file_edit --field content="Console.LOG(x)"; echo code=$?'
 stdout '^code=0$'
 stdout '^warn  warn-console-log  project-personal$'
+
+# A converted stop block continues the agent once, and never under
+# stop_hook_active.
+stdin stop.json
+exec sh -c 'handrail hook claude Stop; echo code=$?'
+stdout '^code=0$'
+stdout '"decision": "block"'
+stdout '"reason": "handrail block: stop-todo \(project-personal\)\\nFinish the TODOs before stopping\."'
+stdin stop-again.json
+exec handrail hook claude Stop
+! stdout 'decision'
+! stdout 'stop-todo'
 
 -- .git/HEAD --
 ref: refs/heads/main
@@ -135,6 +146,19 @@ action: block
 ---
 
 Finish the TODOs before stopping.
+-- want/stop-todo.md --
+---
+event: Stop
+action: block
+conditions:
+  - field: response
+    matches: '(?i)TODO'
+---
+Finish the TODOs before stopping.
+-- stop.json --
+{"hook_event_name": "Stop", "last_assistant_message": "Left a todo in main.go."}
+-- stop-again.json --
+{"hook_event_name": "Stop", "stop_hook_active": true, "last_assistant_message": "Left a todo in main.go."}
 -- .claude/hookify.infer-shell.local.md --
 ---
 name: infer-shell
