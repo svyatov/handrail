@@ -44,14 +44,14 @@ func cmdMode(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	state, scope := rule.StateOf(root)
-	fmt.Fprintln(stdout, stateOf(state, scope, root))
+	fmt.Fprintln(stdout, describeState(state, scope, root))
 
 	return 0
 }
 
-// stateOf is the Enforcement state as mode and doctor print it, with where it
-// was set.
-func stateOf(state rule.State, scope rule.Scope, root string) string {
+// describeState is the Enforcement state as mode and doctor print it, with
+// where it was set.
+func describeState(state rule.State, scope rule.Scope, root string) string {
 	switch scope {
 	case rule.ScopeMachine:
 		return fmt.Sprintf("%s (machine-wide)", state)

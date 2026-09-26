@@ -111,7 +111,7 @@ func (r *report) checkProject(ruleset *rule.Ruleset) {
 	r.checkLog(ruleset.Root)
 
 	// A state that is not enforce is the user's to set, and loud everywhere.
-	state := stateOf(ruleset.State, ruleset.StateScope, ruleset.Root)
+	state := describeState(ruleset.State, ruleset.StateScope, ruleset.Root)
 	if ruleset.State == rule.StateEnforce {
 		r.okf("enforcement state: %s", state)
 	} else {
@@ -237,19 +237,17 @@ func (r *report) checkExclusion(rs *rule.Ruleset) {
 // checkExamples runs every rule file's Examples, as check does, and names each
 // one that fails.
 func (r *report) checkExamples(rules []*rule.Rule) {
-	total, failed := 0, 0
-
-	for _, entry := range rules {
-		total += len(entry.Examples)
-
-		for _, e := range harness.FailingExamples(entry) {
-			failed++
-
-			r.badf("%s: %s", entry.Path, exampleFailure(entry, e))
-		}
+	failures := exampleFailures(rules)
+	for _, f := range failures {
+		r.badf("%s", f)
 	}
 
-	if failed == 0 {
+	if len(failures) == 0 {
+		total := 0
+		for _, entry := range rules {
+			total += len(entry.Examples)
+		}
+
 		r.okf("%d Examples pass", total)
 	}
 }

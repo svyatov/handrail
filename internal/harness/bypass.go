@@ -54,7 +54,7 @@ func claudeBypass(a Adapter, root string) (Bypass, error) {
 	// into one policy, so switched off in one, it is off in all of them.
 	running := layers
 
-	if i, on := first(layers, "disableAllHooks"); on {
+	if i, on := winning(layers, "disableAllHooks"); on {
 		out.Disabled = append(out.Disabled, "hooks are disabled: disableAllHooks is true in "+layers[i].path)
 
 		running = layers[:managed]
@@ -63,7 +63,7 @@ func claudeBypass(a Adapter, root string) (Bypass, error) {
 		}
 	}
 
-	if i, on := first(layers[:managed], "allowManagedHooksOnly"); on {
+	if i, on := winning(layers[:managed], "allowManagedHooksOnly"); on {
 		out.Disabled = append(out.Disabled, "only managed hooks run: allowManagedHooksOnly is true in "+layers[i].path)
 		running = running[:min(len(running), managed)]
 	}
@@ -84,10 +84,8 @@ func claudeLayers(adapter Adapter, root string) ([]layer, int, error) {
 	paths := managedFiles()
 
 	managed := len(paths)
-	if root != "" {
-		paths = append(paths,
-			filepath.Join(root, ".claude", "settings.local.json"), filepath.Join(root, ".claude", "settings.json"))
-	}
+	paths = append(paths,
+		filepath.Join(root, ".claude", "settings.local.json"), filepath.Join(root, ".claude", "settings.json"))
 
 	layers := make([]layer, 0, len(paths)+1)
 
@@ -122,12 +120,7 @@ func approves(settings map[string]any) bool {
 func codexBypass(a Adapter, root string) (Bypass, error) {
 	var out Bypass
 
-	paths := []string{a.path("config.toml")}
-	if root != "" {
-		paths = slices.Insert(paths, 0, filepath.Join(root, ".codex", "config.toml"))
-	}
-
-	for _, path := range paths {
+	for _, path := range []string{filepath.Join(root, ".codex", "config.toml"), a.path("config.toml")} {
 		data, err := os.ReadFile(path)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
@@ -215,9 +208,10 @@ func managedFiles() []string {
 	return append(files, filepath.Join(ManagedDir, "managed-settings.json"))
 }
 
-// first is the boolean value key takes after precedence, with the layer it
-// came from: the first layer that sets it wins.
-func first(layers []layer, key string) (int, bool) {
+// winning is the index of the layer whose value for key holds after
+// precedence, the first that sets it, and that value. The index is -1 where no
+// layer sets it.
+func winning(layers []layer, key string) (int, bool) {
 	for i, l := range layers {
 		if v, ok := l.settings[key].(bool); ok {
 			return i, v
