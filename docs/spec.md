@@ -350,6 +350,7 @@ Named so their absence reads as decided, not forgotten.
 - `response` is written by the agent it judges. A rule on it nudges a careless agent and cannot gate a hostile one, which can choose its words. The harm is bounded: a block on `Stop` continues the agent once.
 - On Claude Code, a subagent that hands back through `SubagentHandback` leaves only its closing text in `response`. Its report is that tool call's `message`, which no canonical field reads.
 - On Codex, a subagent's own compaction fires no start hook, so context injected by `SubagentStart` may not survive it.
+- **Survey**: a sparse index stores a directory outside the sparse-checkout cone as one entry, so `survey`'s globs never see the files under it, and a signal found only there is not listed. Reading them would mean reading tree objects, which is more than the index.
 - **Harness decisions handrail does not see**: another hook's rewrite (section 4), another PermissionRequest hook's answer to an `ask` (section 4), a model chosen off the wire (section 1), and Codex's sandbox escalation (section 4).
 
 ## 12. Repo signals

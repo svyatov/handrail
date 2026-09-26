@@ -14,6 +14,8 @@ exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/src/a.ts 
 stdout '^warn  linter  global$'
 exec handrail test PreToolUse --kind file_edit --field path=src/a.ts --field 'content=const a = 1'
 stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/src/a.ts --field 'content=const a = 1'
+stdout '^outcome: allow$'
 
 -- repo/.git/HEAD --
 ref: refs/heads/main

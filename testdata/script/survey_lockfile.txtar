@@ -10,15 +10,17 @@ stdout '"id": "lockfile",\n +"paths": \[\n +"package-lock.json",\n +"yarn.lock"\
 [!root] stdout '"yarn.lock"'
 
 # The rule it proposes, replayed: the match and the near-miss payloads.
-exec sh -c 'handrail test PreToolUse --kind file_edit --field path=package-lock.json; echo code=$?'
+exec handrail test PreToolUse --kind file_edit --field path=package-lock.json
 stdout '^warn  lockfile  global$'
-exec sh -c 'handrail test PreToolUse --kind file_edit --field path=$WORK/repo/package-lock.json; echo code=$?'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/package-lock.json
 stdout '^warn  lockfile  global$'
-exec sh -c 'handrail test PreToolUse --kind file_edit --field path=package.json; echo code=$?'
+exec handrail test PreToolUse --kind file_edit --field path=package.json
 stdout '^outcome: allow$'
-exec sh -c 'handrail test PreToolUse --kind shell --field ''command=cd web && yarn add x''; echo code=$?'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/package.json
+stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind shell --field 'command=cd web && yarn add x'
 stdout '^warn  js-manager  global$'
-exec sh -c 'handrail test PreToolUse --kind shell --field ''command=npm install''; echo code=$?'
+exec handrail test PreToolUse --kind shell --field 'command=npm install'
 stdout '^outcome: allow$'
 
 -- repo/.git/HEAD --

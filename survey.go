@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -215,13 +214,9 @@ func instructionSeeds(root string) []instructionSeed {
 		{filepath.Join(root, ".claude", "CLAUDE.md"), true},
 	}
 
-	_ = filepath.WalkDir(filepath.Join(root, ".claude", "rules"), func(path string, _ fs.DirEntry, err error) error {
-		if err == nil && strings.HasSuffix(path, ".md") {
-			seeds = append(seeds, instructionSeed{path, true})
-		}
-
-		return nil
-	})
+	for _, path := range ruleFiles(filepath.Join(root, ".claude", "rules")) {
+		seeds = append(seeds, instructionSeed{path, true})
+	}
 
 	for _, name := range []string{"AGENTS.override.md", "AGENTS.md", "CONTRIBUTING.md"} {
 		seeds = append(seeds, instructionSeed{filepath.Join(root, name), false})
@@ -255,6 +250,43 @@ func instructionSeeds(root string) []instructionSeed {
 	return seeds
 }
 
+// ruleFiles returns every .md file below dir, in name order. A directory
+// reached through a symlink is read too, since that is how rules are shared,
+// and each directory once, so a link back up ends the walk.
+func ruleFiles(dir string) []string {
+	var (
+		files  []string
+		walked = map[string]bool{}
+		walk   func(dir string)
+	)
+
+	walk = func(dir string) {
+		resolved, err := filepath.EvalSymlinks(dir)
+		if err != nil || walked[resolved] {
+			return
+		}
+
+		walked[resolved] = true
+		entries, _ := os.ReadDir(dir)
+
+		for _, entry := range entries {
+			path := filepath.Join(dir, entry.Name())
+
+			info, err := os.Stat(path)
+			switch {
+			case err == nil && info.IsDir():
+				walk(path)
+			case strings.HasSuffix(path, ".md"):
+				files = append(files, path)
+			}
+		}
+	}
+
+	walk(dir)
+
+	return files
+}
+
 // instructionFiles lists the instruction files present among root's seeds,
 // following Claude Code's @ imports, each classed by where it lives: in the
 // repository it is repo prose, outside it the user's own, and CLAUDE.local.md
@@ -263,28 +295,33 @@ func instructionFiles(root string, localTracked bool) []instructionFile {
 	home, _ := os.UserHomeDir()
 	files := []instructionFile{}
 	seen := map[string]bool{}
+	// read holds the fewest hops at which a file's imports were read, since
+	// a shorter path to it leaves more hops for them.
+	read := map[string]int{}
+	// The managed policy file is an administrator's words, never listed.
+	policy, _ := resolveFile(filepath.Join(harness.ManagedDir, "CLAUDE.md"))
+	repo := repository(root)
 
 	var visit func(path string, hops int, imports bool)
 
 	visit = func(path string, hops int, imports bool) {
 		resolved, ok := resolveFile(path)
-		if !ok || seen[resolved] {
+		if !ok || resolved == policy {
 			return
 		}
 
-		seen[resolved] = true
-		files = append(files, classify(root, path, resolved, localTracked))
+		if !seen[resolved] {
+			seen[resolved] = true
+			files = append(files, classify(repo, path, resolved, localTracked))
+		}
 
-		if !imports || hops == maxImportHops {
+		if fewest, done := read[resolved]; !imports || hops == maxImportHops || done && fewest <= hops {
 			return
 		}
 
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return
-		}
+		read[resolved] = hops
 
-		for _, ref := range importRefs(string(data)) {
+		for _, ref := range importRefs(path) {
 			visit(importPath(ref, path, home), hops+1, true)
 		}
 	}
@@ -294,6 +331,17 @@ func instructionFiles(root string, localTracked bool) []instructionFile {
 	}
 
 	return files
+}
+
+// repository returns root where it is a git repository's, and "" where it is
+// not, since then no file sits in a repository.
+func repository(root string) string {
+	_, err := os.Lstat(filepath.Join(root, ".git"))
+	if err != nil {
+		return ""
+	}
+
+	return root
 }
 
 // importPath is the file an @ import in the file at from names: ~/ is the
@@ -331,10 +379,11 @@ func resolveFile(path string) (string, bool) {
 	return filepath.Join(dir, filepath.Base(path)), true
 }
 
-// classify names an instruction file relative to root where it lives in the
-// repository, and by its absolute path where it does not.
-func classify(root, path, resolved string, localTracked bool) instructionFile {
-	rel, err := filepath.Rel(root, resolved)
+// classify names an instruction file relative to repo, the repository's root,
+// where it lives there, and by its absolute path where it does not. With no
+// repository, repo is "", which no path is relative to.
+func classify(repo, path, resolved string, localTracked bool) instructionFile {
+	rel, err := filepath.Rel(repo, resolved)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return instructionFile{Path: path, Class: "user"}
 	}
@@ -347,15 +396,21 @@ func classify(root, path, resolved string, localTracked bool) instructionFile {
 	return instructionFile{Path: rel, Class: "repo"}
 }
 
-// importRefs returns the paths text imports with @, outside code spans and
-// fenced code blocks, where Claude Code does not read them.
-func importRefs(text string) []string {
+// importRefs returns the paths the file at path imports with @, outside code
+// spans and fenced code blocks, where Claude Code does not read them. A file
+// that cannot be read imports nothing.
+func importRefs(path string) []string {
 	var (
 		refs  []string
 		fence string
 	)
 
-	for line := range strings.Lines(text) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+
+	for line := range strings.Lines(string(data)) {
 		trimmed := strings.TrimLeft(line, " ")
 
 		if fence != "" {
@@ -381,22 +436,69 @@ func importRefs(text string) []string {
 }
 
 // lineRefs returns the paths one line outside a code block imports: each word
-// that opens with @, so an address is none, outside the code spans, which are
-// every other backtick-separated part.
+// of its prose that opens with @, so an address is none.
 func lineRefs(line string) []string {
 	var refs []string
 
-	for i, part := range strings.Split(line, "`") {
-		if i%2 == 1 {
-			continue
-		}
-
-		for word := range strings.FieldsSeq(part) {
-			if ref, ok := strings.CutPrefix(word, "@"); ok && ref != "" {
-				refs = append(refs, ref)
-			}
+	for word := range strings.FieldsSeq(prose(line)) {
+		if ref, ok := strings.CutPrefix(word, "@"); ok && ref != "" {
+			refs = append(refs, ref)
 		}
 	}
 
 	return refs
+}
+
+// prose returns line with each code span replaced by a space. As in
+// CommonMark, a run of backticks opens a span that the next run of the same
+// length closes, and a run nothing closes is literal text.
+func prose(line string) string {
+	var out strings.Builder
+
+	for {
+		start := strings.IndexByte(line, '`')
+		if start < 0 {
+			out.WriteString(line)
+
+			return out.String()
+		}
+
+		run := backticks(line[start:])
+
+		end := closingRun(line[start+run:], run)
+		if end < 0 {
+			out.WriteString(line[:start+run])
+			line = line[start+run:]
+
+			continue
+		}
+
+		out.WriteString(line[:start] + " ")
+		line = line[start+run+end+run:]
+	}
+}
+
+// closingRun returns where in text the first run of exactly length backticks
+// starts, or -1 where there is none.
+func closingRun(text string, length int) int {
+	for pos := 0; ; {
+		next := strings.IndexByte(text[pos:], '`')
+		if next < 0 {
+			return -1
+		}
+
+		pos += next
+
+		run := backticks(text[pos:])
+		if run == length {
+			return pos
+		}
+
+		pos += run
+	}
+}
+
+// backticks is the length of the run of backticks s opens with.
+func backticks(s string) int {
+	return len(s) - len(strings.TrimLeft(s, "`"))
 }

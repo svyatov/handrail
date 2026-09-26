@@ -33,6 +33,10 @@ stdout '"path": ".*/home/notes.md",\n +"class": "user"'
 stdout '"path": ".*/home/.claude/team.md",\n +"class": "user"'
 stdout '"path": "docs/from-user.md",\n +"class": "repo"'
 
+# The hops count along the shortest path: x.md is reached at the fourth hop
+# through a.md first, and at the first directly, so its import is read.
+stdout '"path": "docs/y.md",\n +"class": "repo"'
+
 # A file reached through a symlinked directory lives where the link points.
 symlink ../home/work -> $WORK/repo
 exec sh -c 'echo "@~/work/docs/via-link.md" >> ../home/.claude/CLAUDE.md'
@@ -42,6 +46,11 @@ stdout '"path": "docs/via-link.md",\n +"class": "repo"'
 # Not inside a code span or a code block, not in an address, and not from a
 # file only Codex reads: Codex has no imports.
 ! stdout 'span.md'
+! stdout 'double.md'
+! stdout 'inner.md'
+stdout '"path": "docs/lone.md",\n +"class": "repo"'
+! stdout 'tick.md'
+stdout '"path": "docs/between.md",\n +"class": "repo"'
 ! stdout 'fenced.md'
 ! stdout 'tilde.md'
 stdout '"path": "docs/after.md",\n +"class": "repo"'
@@ -55,6 +64,20 @@ exec handrail survey
 
 # A rules directory holds instruction files only where they end in .md.
 ! stdout 'notes.txt'
+
+# A rules directory shared through a symlink is read, and its files live where
+# the link points. Each directory is read once, so links back up end the walk.
+symlink .claude/rules/shared -> $WORK/shared-rules
+symlink ../shared-rules/up -> $WORK/repo/.claude/rules
+symlink ../shared-rules/up2 -> $WORK/repo/.claude/rules
+exec handrail survey
+stdout '"path": ".*/repo/.claude/rules/shared/one.md",\n +"class": "user"'
+
+# The managed policy file is an administrator's words: never listed, even
+# where a file imports it.
+exec sh -c 'echo "@~/managed/CLAUDE.md" >> ../home/.claude/CLAUDE.md'
+exec handrail survey
+! stdout 'managed'
 
 # An absolute import is read where it points.
 exec sh -c 'echo "@$WORK/abs.md" >> .claude/CLAUDE.md'
@@ -86,8 +109,17 @@ stdout '"path": ".*/codex/AGENTS.md",\n +"class": "user"'
 
 -- override.md --
 Codex override.
+-- shared-rules/one.md --
+Shared.
+-- home/managed/CLAUDE.md --
+Policy.
 -- repo/CLAUDE.md --
 Project rules. See @docs/one.md and @~/notes.md for more.
+Order: @docs/a.md @docs/x.md
+Double: ``@docs/double.md`` and ``a ` @docs/inner.md``.
+A lone ` is literal, so @docs/lone.md is read.
+A lone `@docs/tick.md is literal too, and no import.
+Spans `a` around @docs/between.md and `c`.
 Mail me at someone@example.com, not @docs/missing.md.
 Not an import: `@docs/span.md`.
 ```
@@ -123,6 +155,20 @@ Contributing.
 @four.md
 -- repo/docs/four.md --
 @five.md
+-- repo/docs/double.md --
+-- repo/docs/inner.md --
+-- repo/docs/lone.md --
+-- repo/docs/tick.md --
+-- repo/docs/between.md --
+-- repo/docs/a.md --
+@b.md
+-- repo/docs/b.md --
+@c.md
+-- repo/docs/c.md --
+@x.md
+-- repo/docs/x.md --
+@y.md
+-- repo/docs/y.md --
 -- repo/docs/five.md --
 Too deep.
 -- repo/docs/span.md --

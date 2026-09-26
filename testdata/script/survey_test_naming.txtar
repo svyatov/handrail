@@ -16,6 +16,8 @@ exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/src/a.tes
 stdout '^warn  test-naming  global$'
 exec handrail test PreToolUse --kind file_edit --field path=src/a.test.ts --field 'content=it('
 stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/src/a.test.ts --field 'content=it('
+stdout '^outcome: allow$'
 
 -- repo/package.json --
 {}

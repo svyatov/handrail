@@ -14,6 +14,8 @@ exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/db/migrat
 stdout '^warn  migrations  global$'
 exec handrail test PreToolUse --kind file_edit --field path=db/seeds.rb
 stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/db/seeds.rb
+stdout '^outcome: allow$'
 
 -- repo/db/migrate/001_init.rb --
 -- repo/db/seeds.rb --

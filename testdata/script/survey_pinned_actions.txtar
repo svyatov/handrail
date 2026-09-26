@@ -14,6 +14,8 @@ exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/.github/w
 stdout '^warn  pinned-actions  global$'
 exec handrail test PreToolUse --kind file_edit --field path=.github/workflows/ci.yml --field 'content=uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8'
 stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/.github/workflows/ci.yml --field 'content=uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8'
+stdout '^outcome: allow$'
 
 -- repo/.github/workflows/ci.yml --
 jobs:

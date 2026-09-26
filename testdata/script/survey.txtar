@@ -6,6 +6,14 @@ exec handrail survey
 stdout '"signals": \[\]'
 cd ..
 
+# Outside a git repository no file sits in one, so each is the user's own, as
+# where survey runs in the home directory itself.
+cd home
+exec handrail survey
+stdout '"path": ".*/home/.claude/CLAUDE.md",\n +"class": "user"'
+! stdout '"repo"'
+cd ..
+
 # survey reads the index in process: a git that would leave a mark is never
 # run.
 cd repo
@@ -59,6 +67,8 @@ exec sh -c 'head -c 100 .git/index > cut && mv cut .git/index'
 stderr 'handrail: cannot read the git index: truncated git index'
 cd ..
 
+-- home/.claude/CLAUDE.md --
+Mine.
 -- empty/.git/HEAD --
 ref: refs/heads/main
 -- bin/git --

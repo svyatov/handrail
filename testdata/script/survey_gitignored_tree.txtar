@@ -11,6 +11,8 @@ exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/node_modu
 stdout '^warn  gitignored-tree  global$'
 exec handrail test PreToolUse --kind file_edit --field path=src/node_modules.ts
 stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/src/node_modules.ts
+stdout '^outcome: allow$'
 
 -- repo/.git/HEAD --
 ref: refs/heads/main

@@ -14,6 +14,8 @@ exec handrail test PreToolUse --kind file_read --field path=$WORK/repo/certs/ser
 stdout '^warn  key-material  global$'
 exec handrail test PreToolUse --kind file_read --field path=certs/README.md
 stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind file_read --field path=$WORK/repo/certs/README.md
+stdout '^outcome: allow$'
 
 -- repo/certs/server.pem --
 -- repo/certs/README.md --
