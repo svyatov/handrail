@@ -1,0 +1,106 @@
+# A rule on trial matches as it always would and delivers nothing: test lists it
+# and marks it, and it adds nothing to the outcome, so a trial block exits 0.
+exec sh -c 'handrail test PreToolUse --kind shell --field command=''rm -rf /''; echo code=$?'
+stdout '^block  watched  project-personal  trial$'
+stdout '^outcome: allow$'
+stdout '^human: none$'
+stdout '^code=0$'
+
+# The hook delivers nothing for it: no decision, no message, no context.
+stdin rm.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=0$'
+! stdout 'handrail'
+
+# A trial block takes no ordering slot: beside a live warn, the call proceeds
+# with the warn's message and is not denied.
+exec sh -c 'cd beside && handrail hook claude PreToolUse < ../rm.json'
+stdout '"additionalContext": "handrail warn: note-shell'
+! stdout 'deny'
+
+# A trial warn never injects, and a live rule beside it still fires alone.
+stdin start.json
+exec handrail hook claude SessionStart
+stdout '"additionalContext": "handrail warn: greeting \(project-personal\)\\nGood morning\."$'
+! stdout 'quiet-greeting|Psst'
+
+# check annotates it, in the table and in the JSON.
+exec handrail check
+stdout '^project-personal +watched +PreToolUse +shell +block +trial$'
+stdout '^project-personal +greeting +SessionStart +\* +warn +enabled$'
+exec handrail check --json
+stdout '"rule": "watched",(\n.*){4}\n +"enabled": true,\n +"trial": true'
+stdout '"rule": "greeting",(\n.*){4}\n +"enabled": true,\n +"trial": false'
+
+# Degradation never applies to a trial rule: it asks the harness for nothing,
+# so test shows Codex's ask as the ask the rule file names.
+exec sh -c 'cd asking && handrail test PreToolUse --harness codex --kind shell --field command=ls'
+stdout '^ask  ask-first  project-personal  trial$'
+! stdout 'degraded'
+
+# A disabled rule on trial is meaningless, so check refuses it.
+exec sh -c 'cd disabled && handrail check; echo code=$?'
+stdout '^code=1$'
+stderr 'off\.md: line 3: trial applies only to an enabled rule'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- .handrail/local/watched.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+trial: true
+conditions:
+  - field: command
+    starts_with: rm -rf
+---
+Not from the filesystem root.
+-- rm.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}
+-- start.json --
+{"hook_event_name": "SessionStart", "source": "startup"}
+-- .handrail/local/greeting.md --
+---
+event: SessionStart
+---
+Good morning.
+-- .handrail/local/quiet-greeting.md --
+---
+event: SessionStart
+trial: true
+---
+Psst.
+-- beside/.git/HEAD --
+ref: refs/heads/main
+-- beside/.handrail/local/watched.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+trial: true
+---
+Not from the filesystem root.
+-- beside/.handrail/local/note-shell.md --
+---
+event: PreToolUse
+kind: shell
+---
+Prefer the dedicated tools.
+-- asking/.git/HEAD --
+ref: refs/heads/main
+-- asking/.handrail/local/ask-first.md --
+---
+event: PreToolUse
+kind: shell
+action: ask
+trial: true
+---
+Check with me first.
+-- disabled/.git/HEAD --
+ref: refs/heads/main
+-- disabled/.handrail/local/off.md --
+---
+enabled: false
+trial: true
+---

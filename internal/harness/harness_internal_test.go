@@ -19,7 +19,7 @@ func TestAdapterWithoutAHomeDirectory(t *testing.T) {
 	t.Setenv("HOME", "")
 
 	adapter := Adapter{
-		Name: "nowhere", quirks: nil, title: "", dir: ".nowhere", homeEnv: "", file: "settings.json",
+		Name: "nowhere", quirks: nil, title: "", dir: ".nowhere", homeEnv: "", file: "settings.json", sessionEnv: "",
 		aliases: nil, agentTypeKey: "", agentPromptKey: "", events: nil, patchInShell: false,
 	}
 
@@ -107,14 +107,14 @@ func TestAMissingEventDegradesToSkip(t *testing.T) {
 	t.Parallel()
 
 	adapter := Adapter{
-		Name: "partial", quirks: nil, title: "Partial", dir: "", homeEnv: "", file: "",
+		Name: "partial", quirks: nil, title: "Partial", dir: "", homeEnv: "", file: "", sessionEnv: "",
 		aliases: nil, agentTypeKey: "", agentPromptKey: "", patchInShell: false,
 		events: []eventCaps{{name: "PreToolUse", deny: permissionDeny, inject: true, ask: false, silent: false}},
 	}
 	notDone := &rule.Rule{
 		Name: "not-done", Path: "", Tier: "", ShadowedBy: nil, Replaces: nil, DroppedBy: nil, DemotedFrom: "",
 		Event: "Stop", Kind: "", Action: rule.Block, Enabled: false, AgentOnly: false, LostAgentOnly: false,
-		Conditions: nil, Examples: nil, Message: "",
+		Conditions: nil, Examples: nil, Message: "", Trial: false,
 	}
 
 	if got := adapter.Action(notDone); got != rule.Allow {

@@ -61,6 +61,8 @@ type testMatch struct {
 	// delivers another, else null.
 	DegradedFrom *string `json:"degraded_from"`
 	Message      string  `json:"message"`
+	// Trial marks a rule on trial, which contributes nothing to the outcome.
+	Trial bool `json:"trial"`
 }
 
 // testPayload is one payload the event yields, as handrail read it.
@@ -76,6 +78,9 @@ type testOutput struct {
 	Matched  []testMatch   `json:"matched"`
 	// Human is the text hook would show the user, verbatim, and "" for none.
 	Human string `json:"human"`
+	// Enforcement is the Enforcement state. The rest of the report is what
+	// hook does under enforce, since under another it delivers nothing.
+	Enforcement string `json:"enforcement"`
 }
 
 func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -89,7 +94,7 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	only := flags.String("harness", "claude", "read the payload as this harness sends it")
 	asJSON := flags.Bool("json", false, "print the result as JSON")
 
-	event := leadingEvent(args)
+	event := leadingArg(args)
 	if event != "" {
 		args = args[1:]
 	}
@@ -160,10 +165,10 @@ func testExit(outcome rule.Outcome) int {
 	}
 }
 
-// leadingEvent is the event, or "" when args opens with a flag. It is
-// positional and leads, so it is pulled before flag parsing: the stdlib flag
-// package stops at the first non-flag argument.
-func leadingEvent(args []string) string {
+// leadingArg is a command's leading positional argument, test's event or
+// mode's state, or "" when args opens with a flag. It is pulled before flag
+// parsing: the stdlib flag package stops at the first non-flag argument.
+func leadingArg(args []string) string {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		return args[0]
 	}
@@ -250,9 +255,14 @@ func captureCall(
 func testReport(
 	adapter harness.Adapter, ruleset *rule.Ruleset, event string, payloads []rule.Payload, failures []string,
 ) (testOutput, rule.Outcome) {
+	// An authoring surface that reported allow under every state but enforce
+	// would answer nothing, so test evaluates as enforce and names the state.
+	out := testOutput{
+		Outcome: "", Payloads: []testPayload{}, Matched: []testMatch{}, Human: "", Enforcement: ruleset.State.String(),
+	}
+	ruleset.State = rule.StateEnforce
 	// The same call the hook path makes, so what test reports is what hook does.
 	matched, _ := ruleset.Evaluate(payloads)
-	out := testOutput{Outcome: "", Payloads: []testPayload{}, Matched: []testMatch{}, Human: ""}
 
 	for _, p := range ruleset.Yield(payloads) {
 		view := testPayload{Kind: p.Kind, Fields: p.Fields(), Unreadable: []string{}}
@@ -264,12 +274,15 @@ func testReport(
 		out.Payloads = append(out.Payloads, view)
 	}
 
-	for _, r := range matched {
-		action := adapter.Action(r.Rule)
+	for _, found := range matched {
+		action := adapter.Action(found.Rule)
 
-		match := testMatch{Rule: r.Name, Tier: r.Tier, Action: action.String(), DegradedFrom: nil, Message: r.Message}
-		if action != r.Action {
-			match.DegradedFrom = new(r.Action.String())
+		match := testMatch{
+			Rule: found.Name, Tier: found.Tier, Action: action.String(), DegradedFrom: nil, Message: found.Message,
+			Trial: found.Trial,
+		}
+		if action != found.Action {
+			match.DegradedFrom = new(found.Action.String())
 		}
 
 		out.Matched = append(out.Matched, match)
@@ -299,12 +312,20 @@ func printTest(stdout io.Writer, out testOutput) {
 			fmt.Fprintf(stdout, "  degraded from %s", *match.DegradedFrom)
 		}
 
+		if match.Trial {
+			fmt.Fprint(stdout, "  trial")
+		}
+
 		fmt.Fprintln(stdout)
 		printIndented(stdout, match.Message)
 		fmt.Fprintln(stdout)
 	}
 
 	fmt.Fprintf(stdout, "outcome: %s\n", out.Outcome)
+
+	if out.Enforcement != rule.StateEnforce.String() {
+		fmt.Fprintf(stdout, "enforcement: %s, so hook delivers nothing\n", out.Enforcement)
+	}
 
 	if out.Human == "" {
 		fmt.Fprintln(stdout, "human: none")

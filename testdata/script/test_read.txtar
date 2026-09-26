@@ -113,7 +113,8 @@ Keep keys out of files.
     }
   ],
   "matched": [],
-  "human": ""
+  "human": "",
+  "enforcement": "enforce"
 }
 -- compound.txt --
 payload 1 of 3: shell

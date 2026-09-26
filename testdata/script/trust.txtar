@@ -25,6 +25,18 @@ stdout 'the shared message'
 
 # Trusting an already-trusted path is a no-op, not an error.
 exec handrail trust
+stdout '^already trusted '
+exec handrail check
+stdout '^project-shared +shared-rule +Stop'
+
+# A registry that cannot be read is not an empty one: granting another repo
+# fails rather than report a grant no hook could read, and every earlier grant
+# survives it.
+[!root] chmod 200 home/.local/state/handrail/trusted
+[!root] exec sh -c 'cd other && handrail trust; echo code=$?'
+[!root] stdout '^code=1$'
+[!root] stderr 'trusted: permission denied'
+[!root] chmod 600 home/.local/state/handrail/trusted
 exec handrail check
 stdout '^project-shared +shared-rule +Stop'
 

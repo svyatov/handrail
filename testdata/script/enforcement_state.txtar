@@ -1,0 +1,104 @@
+# Under off, nothing is evaluated: a block rule lets the call through, and
+# nothing is said about it.
+exec handrail off
+stdin rm.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=0$'
+! stdout 'handrail'
+
+# Its SessionStart carries the state notice alone, to both audiences, and no
+# rule's message.
+stdin start.json
+exec handrail hook claude SessionStart
+stdout '"systemMessage": "handrail: the enforcement state is off for this project \(.*\): no rule is evaluated; run handrail mode enforce in your own terminal to resume"'
+stdout '"additionalContext": "handrail: the enforcement state is off for this project'
+! stdout 'Good morning'
+
+# Under trial every rule is on trial: evaluated, and delivering nothing.
+exec handrail mode trial
+stdin rm.json
+exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
+stdout '^code=0$'
+! stdout 'handrail'
+
+# Its SessionStart says so, and the rules there deliver nothing either.
+stdin start.json
+exec handrail hook claude SessionStart
+stdout '"systemMessage": "handrail: the enforcement state is trial for this project \(.*\): every rule is on trial and delivers nothing; run handrail mode enforce in your own terminal to resume"'
+stdout '"additionalContext": "handrail: the enforcement state is trial'
+! stdout 'Good morning'
+
+# A machine-wide state reaches a project that sets none, and names its scope.
+exec sh -c 'cd other && handrail mode off --global'
+exec sh -c 'cd other && handrail hook claude SessionStart < ../start.json'
+stdout '"systemMessage": "handrail: the enforcement state is off machine-wide: no rule is evaluated; run handrail mode enforce --global in your own terminal to resume"'
+exec sh -c 'cd other && handrail hook claude PreToolUse < ../rm.json'
+! stdout .
+
+# A project state overrides it, enforce included: this project blocks again.
+exec handrail on
+stdin rm.json
+exec handrail hook claude PreToolUse
+stdout '"permissionDecision": "deny"'
+stdin start.json
+exec handrail hook claude SessionStart
+! stdout 'enforcement state'
+stdout 'Good morning'
+
+# test is the authoring surface, so under a state that is not enforce it reports
+# and exits with the outcome under enforce, and says hook delivers nothing.
+exec handrail mode trial
+exec sh -c 'handrail test PreToolUse --kind shell --field command=rm; echo code=$?'
+stdout '^block  blocker  project-personal$'
+stdout '^outcome: block$'
+stdout '^enforcement: trial, so hook delivers nothing$'
+stdout '^code=2$'
+exec sh -c 'handrail test PreToolUse --kind shell --field command=rm --json; echo code=$?'
+stdout '"outcome": "block"'
+stdout '"enforcement": "trial"'
+stdout '^code=2$'
+exec handrail on
+exec handrail test PreToolUse --json
+stdout '"enforcement": "enforce"'
+exec handrail test PreToolUse
+! stdout 'enforcement'
+
+# check and sync name a state that is not enforce, and do not fail on it.
+exec handrail off
+exec handrail check
+stderr '^handrail: the enforcement state is off for this project'
+exec handrail sync
+stderr '^handrail: the enforcement state is off for this project'
+exec handrail on
+exec handrail check
+! stderr .
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- rm.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}
+-- start.json --
+{"hook_event_name": "SessionStart", "source": "startup"}
+-- .handrail/local/greeting.md --
+---
+event: SessionStart
+---
+Good morning.
+-- .handrail/local/blocker.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+---
+Not from the filesystem root.
+-- other/.git/HEAD --
+ref: refs/heads/main
+-- other/.handrail/local/blocker.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+---
+Not from the filesystem root.
+-- home/.claude/settings.json --
+{}

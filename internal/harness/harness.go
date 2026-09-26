@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/url"
+	"os"
 	"path"
 	"slices"
 	"strings"
@@ -27,6 +28,9 @@ type Adapter struct {
 	dir     string // user-level directory, under the home directory
 	homeEnv string // the variable that relocates that directory, if the harness has one
 	file    string // the one config file sync writes inside it
+	// sessionEnv is the variable the harness sets in the shell of a session
+	// it runs.
+	sessionEnv string
 	// aliases lists, per tool name on the wire, every name the harness
 	// documents it also answers to, a former name included. The wire name leads.
 	aliases [][]string
@@ -96,7 +100,7 @@ var adapters = []Adapter{
 	{
 		Name: "claude", title: "Claude Code", dir: ".claude", homeEnv: "CLAUDE_CONFIG_DIR", file: "settings.json",
 		aliases: [][]string{{toolAgent, "Task"}}, agentTypeKey: "subagent_type", agentPromptKey: "prompt",
-		patchInShell: false,
+		patchInShell: false, sessionEnv: "CLAUDE_CODE_SESSION_ID",
 		events: []eventCaps{
 			{name: "PreToolUse", deny: permissionDeny, inject: true, ask: true},
 			{name: "PostToolUse", inject: true},
@@ -115,7 +119,7 @@ var adapters = []Adapter{
 	{
 		Name: "codex", title: "Codex CLI", dir: ".codex", homeEnv: "CODEX_HOME", file: "hooks.json", patchInShell: true,
 		aliases:      [][]string{{"apply_patch", "Edit", "Write"}, {"spawn_agent", toolAgent}},
-		agentTypeKey: "agent_type", agentPromptKey: "message",
+		agentTypeKey: "agent_type", agentPromptKey: "message", sessionEnv: "CODEX_THREAD_ID",
 		events: []eventCaps{
 			{name: "PreToolUse", deny: permissionDeny, inject: true},
 			{name: "PostToolUse", inject: true},
@@ -149,6 +153,18 @@ func Lookup(name string) (Adapter, bool) {
 	var none Adapter
 
 	return none, false
+}
+
+// Session names the variable that says this process runs inside a harness
+// session, and "" outside one.
+func Session() string {
+	for _, a := range adapters {
+		if os.Getenv(a.sessionEnv) != "" {
+			return a.sessionEnv
+		}
+	}
+
+	return ""
 }
 
 // Names lists the harness identifiers, for the message a wrong one earns.

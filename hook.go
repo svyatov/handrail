@@ -80,12 +80,27 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 
-	rs := rule.Load(cwd)
-	matched, outcome := rs.Evaluate(payloads)
-	failures = append(failures, loadNotices(rs)...)
-	text := messages(adapter, rs, event, matched, failures)
+	ruleset := rule.Load(cwd)
+	if ruleset.State == rule.StateOff {
+		return deliverOff(adapter, ruleset, event, stdout, stderr)
+	}
+
+	matched, outcome := ruleset.Evaluate(payloads)
+	failures = append(failures, loadNotices(ruleset)...)
+	text := messages(adapter, ruleset, event, matched, failures)
 
 	return adapter.Deliver(event, text.agent, text.human, outcome, stdout, stderr)
+}
+
+// deliverOff is what hook delivers under the off state: the state notice at
+// SessionStart, to both audiences, and nothing anywhere else.
+func deliverOff(adapter harness.Adapter, ruleset *rule.Ruleset, event string, stdout, stderr io.Writer) int {
+	notice := ""
+	if event == "SessionStart" {
+		notice = ruleset.StateNotice()
+	}
+
+	return adapter.Deliver(event, notice, notice, rule.Allow, stdout, stderr)
 }
 
 // eventDir is the directory the event happened in, and "" with the reason when
@@ -173,7 +188,8 @@ func standingNotices(ruleset *rule.Ruleset, event string) []string {
 	var notices []string
 
 	for _, notice := range []string{
-		droppedNotice(ruleset.Rules), ruleset.TrustNotice(), agentOnlyNotice(ruleset.Rules), examplesNotice(ruleset.Rules),
+		ruleset.StateNotice(), droppedNotice(ruleset.Rules), ruleset.TrustNotice(),
+		agentOnlyNotice(ruleset.Rules), examplesNotice(ruleset.Rules),
 	} {
 		if notice != "" {
 			notices = append(notices, notice)
@@ -271,7 +287,8 @@ func messages(
 	sections := standingNotices(ruleset, event)
 	heard := slices.Clone(sections)
 
-	for _, match := range matched {
+	// A match on trial delivers nothing, so it has no section.
+	for _, match := range slices.DeleteFunc(slices.Clone(matched), func(m rule.Match) bool { return !m.Delivers() }) {
 		label := fmt.Sprintf("handrail %s: %s (%s)", match.Action, match.Name, match.Tier)
 
 		section := label + "\n" + match.Message

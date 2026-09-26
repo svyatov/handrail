@@ -27,6 +27,7 @@ var (
 	errAgentOnlyNotWarn        = errors.New("agent_only applies only to warn")
 	errAgentOnlyRefused        = errors.New("agent_only is refused")
 	errAskNotPreToolUse        = errors.New("ask applies only to PreToolUse")
+	errTrialDisabled           = errors.New("trial applies only to an enabled rule")
 	errBlockRefused            = errors.New("block is refused")
 	errNoFrontmatter           = errors.New("missing YAML frontmatter")
 	errUnterminatedFrontmatter = errors.New("unterminated YAML frontmatter")
@@ -126,6 +127,10 @@ type Rule struct {
 	// LostAgentOnly marks a Project-shared rule that set agent_only, which
 	// that tier refuses: the rule stays, and the human hears it.
 	LostAgentOnly bool
+	// Trial evaluates the rule and delivers nothing (ADR 0016).
+	Trial bool
+	// trialLine is where trial was set, for the disabled rule it is refused on.
+	trialLine int
 }
 
 // Live reports whether this rule can fire: enabled, not shadowed by a higher
@@ -224,7 +229,7 @@ func Parse(name string, data []byte) (*Rule, error) {
 	parsed := &Rule{
 		Name: name, Path: "", Tier: "", ShadowedBy: nil, Replaces: nil, DroppedBy: nil, DemotedFrom: "",
 		Event: "", Kind: "", Message: strings.TrimSpace(body), Conditions: nil, Examples: nil, fields: nil,
-		Action: Warn, agentOnlyLine: 0, Enabled: true, AgentOnly: false, LostAgentOnly: false,
+		Action: Warn, agentOnlyLine: 0, Enabled: true, AgentOnly: false, LostAgentOnly: false, Trial: false, trialLine: 0,
 	}
 	seen := make(map[string]bool, len(doc.mapping))
 
@@ -279,6 +284,10 @@ func (r *Rule) setField(entry pair) error {
 		r.agentOnlyLine = entry.line
 
 		return boolInto(entry, &r.AgentOnly)
+	case "trial":
+		r.trialLine = entry.line
+
+		return boolInto(entry, &r.Trial)
 	case "conditions":
 		return r.setConditions(entry)
 	case "examples":
@@ -354,8 +363,12 @@ func (r *Rule) setConditions(entry pair) error {
 	return nil
 }
 
-// checkRequired holds an enabled rule to the two fields it cannot fire without.
+// checkRequired holds an enabled rule to the two fields it cannot fire without,
+// and refuses trial on a disabled one, which has nothing to watch.
 func (r *Rule) checkRequired() error {
+	if !r.Enabled && r.Trial {
+		return fmt.Errorf("line %d: %w", r.trialLine, errTrialDisabled)
+	}
 	// A disabled rule is exempt from matcher validation; whatever fields it
 	// does carry Parse has already validated.
 	if !r.Enabled {

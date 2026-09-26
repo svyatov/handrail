@@ -12,8 +12,7 @@ import (
 	"github.com/svyatov/handrail/internal/rule"
 )
 
-// checkRule is one rule in docs/spec.md section 6's check shape. Trial holds
-// its zero value until trial rules land.
+// checkRule is one rule in docs/spec.md section 6's check shape.
 type checkRule struct {
 	Rule        string        `json:"rule"`
 	Tier        string        `json:"tier"`
@@ -165,7 +164,7 @@ func checkRuleOf(entry *rule.Rule) checkRule {
 		Kind:        entry.Kind,
 		Action:      entry.Action.String(),
 		Enabled:     entry.Enabled,
-		Trial:       false,
+		Trial:       entry.Trial,
 		ShadowedBy:  pathOf(entry.ShadowedBy),
 		DroppedBy:   pathOf(entry.DroppedBy),
 		DemotedFrom: demoted,
@@ -232,7 +231,7 @@ func exampleFailure(r *rule.Rule, failure harness.Failure) string {
 const columnGap = 2
 
 // printRuleset renders the effective ruleset annotated with tier, shadowing,
-// and disabling: what check reports, and what sync repeats once it has written.
+// disabling and trial: what check reports, and what sync repeats once it has written.
 func printRuleset(w io.Writer, rules []*rule.Rule) error {
 	if len(rules) == 0 {
 		return nil
@@ -251,6 +250,8 @@ func printRuleset(w io.Writer, rules []*rule.Rule) error {
 			status = "dropped by " + entry.DroppedBy.Tier
 		case !entry.Enabled:
 			status = "disabled"
+		case entry.Trial:
+			status = "trial"
 		}
 
 		fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\n",
