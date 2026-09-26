@@ -26,6 +26,8 @@ type checkRule struct {
 	DemotedFrom *string       `json:"demoted_from"`
 	Path        string        `json:"path"`
 	Examples    checkExamples `json:"examples"`
+	// Stats is an effective rule's Decision log history, under --stats.
+	Stats *ruleStats `json:"stats,omitempty"`
 }
 
 type checkExamples struct {
@@ -47,15 +49,18 @@ type checkError struct {
 
 type checkOutput struct {
 	Rules  []checkRule  `json:"rules"`
+	Stats  *logStats    `json:"stats,omitempty"`
 	Errors []checkError `json:"errors"`
 }
 
 func cmdCheck(args []string, _ io.Reader, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("check", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	flags := flag.NewFlagSet("check", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 
-	asJSON := fs.Bool("json", false, "print the effective ruleset as JSON")
-	if !parseFlags(fs, args, stderr) {
+	asJSON := flags.Bool("json", false, "print the effective ruleset as JSON")
+	withStats := flags.Bool("stats", false, "add each effective rule's Decision log history")
+
+	if !parseFlags(flags, args, stderr) {
 		return 1
 	}
 
@@ -68,26 +73,28 @@ func cmdCheck(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 
 	problems := ruleset.Invalid()
 
+	// past is nil without --stats, which reads no history.
+	var past *history
+	if *withStats {
+		past = new(history(projectLines(ruleset.Root, false, stderr)))
+	}
+
 	var examplesFailed bool
 
 	if *asJSON {
 		var out checkOutput
 
-		out, examplesFailed = checkReport(ruleset, problems)
+		out, examplesFailed = checkReport(ruleset, problems, past)
 		if code := writeJSON(stdout, stderr, out); code != 0 {
 			return code
 		}
 	} else {
-		err = printRuleset(stdout, ruleset.Rules)
+		examplesFailed, err = printCheck(stdout, stderr, ruleset, past)
 		if err != nil {
 			fmt.Fprintf(stderr, "handrail: %v\n", err)
 
 			return 1
 		}
-
-		reportProblems(problems, stderr)
-		reportTierMoves(ruleset, stderr)
-		examplesFailed = reportExamples(slices.Concat(ruleset.Rules, ruleset.Untrusted), stderr)
 	}
 
 	if examplesFailed || len(problems) > 0 {
@@ -97,19 +104,47 @@ func cmdCheck(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// checkReport is check --json's shape of the ruleset and its problems, and
-// whether any Example failed.
-func checkReport(ruleset *rule.Ruleset, problems []rule.Problem) (checkOutput, bool) {
+// printCheck is check's human report: the annotated ruleset, its history when
+// past is not nil, and on stderr every problem, tier move and failing
+// Example. It reports whether any Example failed.
+func printCheck(stdout, stderr io.Writer, ruleset *rule.Ruleset, past *history) (bool, error) {
+	err := printRuleset(stdout, ruleset.Rules)
+	if err == nil && past != nil {
+		err = printStats(stdout, ruleset.Effective(), *past)
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	reportProblems(ruleset.Invalid(), stderr)
+	reportTierMoves(ruleset, stderr)
+
+	return reportExamples(slices.Concat(ruleset.Rules, ruleset.Untrusted), stderr), nil
+}
+
+// checkReport is check --json's shape of the ruleset and its problems, with
+// its history when past is not nil, and whether any Example failed.
+func checkReport(ruleset *rule.Ruleset, problems []rule.Problem, past *history) (checkOutput, bool) {
 	var examplesFailed bool
 
 	out := checkOutput{
 		Rules:  make([]checkRule, 0, len(ruleset.Rules)),
+		Stats:  nil,
 		Errors: make([]checkError, 0, len(problems)),
 	}
 	for _, r := range ruleset.Rules {
-		cr := checkRuleOf(r)
-		examplesFailed = examplesFailed || len(cr.Examples.Failed) > 0
-		out.Rules = append(out.Rules, cr)
+		entry := checkRuleOf(r)
+		if past != nil && r.Live() {
+			entry.Stats = new(past.of(r.Name))
+		}
+
+		examplesFailed = examplesFailed || len(entry.Examples.Failed) > 0
+		out.Rules = append(out.Rules, entry)
+	}
+
+	if past != nil {
+		out.Stats = new(past.stats())
 	}
 
 	for _, p := range problems {
@@ -170,6 +205,7 @@ func checkRuleOf(entry *rule.Rule) checkRule {
 		DemotedFrom: demoted,
 		Path:        entry.Path,
 		Examples:    examples,
+		Stats:       nil,
 	}
 }
 

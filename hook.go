@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -61,7 +62,9 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	// handrail's own failures never decide the event: each is declared as
 	// unreadable, where a rule may fail closed on it, and named on both channels.
-	payloads, cwd, err := readCall(adapter, event, stdin)
+	var envelope bytes.Buffer
+
+	payloads, cwd, err := readCall(adapter, event, io.TeeReader(stdin, &envelope))
 
 	var failures []string
 	if err != nil {
@@ -87,6 +90,11 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	matched, outcome := ruleset.Evaluate(payloads)
 	failures = append(failures, loadNotices(ruleset)...)
+	// A line the log could not write is reported like any failure of
+	// handrail's own, and the Outcome stands.
+	logged := logEvent{ruleset: ruleset, event: event, cwd: cwd, envelope: envelope.Bytes(), adapter: adapter}
+	failures = append(failures, logged.record(payloads, matched)...)
+
 	text := messages(adapter, ruleset, event, matched, failures)
 
 	return adapter.Deliver(event, text.agent, text.human, outcome, stdout, stderr)

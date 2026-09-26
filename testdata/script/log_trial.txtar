@@ -1,0 +1,70 @@
+# A trial match writes a line with no grant. matched then lists the trial
+# entries alone, and every other field is written as usual: the call was
+# blocked by a rule the line does not name.
+stdin rm.json
+exec handrail hook claude PreToolUse
+stdout 'deny'
+exec cat home/.local/state/handrail/log.jsonl
+stdout -count=1 '^\{'
+stdout '"outcome":"block","matched":\[\{"rule":"watched","tier":"project-personal","action":"warn","degraded_from":null,"trial":"rule"\}\],'
+! stdout '"blocker"'
+
+# A no-match writes nothing, and neither does a match on no trial rule.
+stdin ls.json
+exec handrail hook claude PreToolUse
+stdin cat.json
+exec handrail hook claude PreToolUse
+exec cat home/.local/state/handrail/log.jsonl
+stdout -count=1 '^\{'
+
+# With a grant, the line names every rule that matched.
+exec handrail log on
+stdin rm.json
+exec handrail hook claude PreToolUse
+exec cat home/.local/state/handrail/log.jsonl
+stdout -count=2 '^\{'
+stdout '"matched":\[\{"rule":"blocker",[^}]*"degraded_from":null\},\{"rule":"watched",.*"trial":"rule"\}\]'
+
+# Under the trial state every rule is on trial by that route, and nothing
+# delivers, so a revoked project still records it.
+exec handrail log off
+exec handrail mode trial
+stdin cat.json
+exec handrail hook claude PreToolUse
+! stdout .
+exec cat home/.local/state/handrail/log.jsonl
+stdout -count=3 '^\{'
+stdout '"outcome":"allow","matched":\[\{"rule":"blocker","tier":"project-personal","action":"block","degraded_from":null,"trial":"state"\}\]'
+
+# Under off nothing is evaluated, so nothing is written.
+exec handrail mode off
+stdin rm.json
+exec handrail hook claude PreToolUse
+exec cat home/.local/state/handrail/log.jsonl
+stdout -count=3 '^\{'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- rm.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}
+-- cat.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "cat /etc/hosts"}}
+-- ls.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Read", "tool_input": {"file_path": "a.txt"}}
+-- .handrail/local/blocker.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+---
+Not in this repo.
+-- .handrail/local/watched.md --
+---
+event: PreToolUse
+kind: shell
+trial: true
+conditions:
+  - field: command
+    starts_with: rm
+---
+Watching rm.

@@ -1,0 +1,22 @@
+# An entry whose action degradation replaced names the one the rule file
+# holds: Codex cannot ask, so the ask is delivered as a block.
+exec handrail log on
+stdin ls.json
+exec handrail hook codex PreToolUse
+stdout 'deny'
+exec cat home/.local/state/handrail/log.jsonl
+stdout '"harness":"codex",.*"outcome":"block","matched":\[\{"rule":"ask-first","tier":"project-personal","action":"block","degraded_from":"ask"\}\]'
+exec handrail log
+stdout '  ask-first \(project-personal, block, degraded from ask\)$'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- ls.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- .handrail/local/ask-first.md --
+---
+event: PreToolUse
+kind: shell
+action: ask
+---
+Check with me first.

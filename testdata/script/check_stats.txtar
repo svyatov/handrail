@@ -1,0 +1,82 @@
+# Two sessions match blocker, one call is unreadable, and another project's
+# match is not this project's history.
+exec handrail log on
+exec sh -c 'cd other && handrail log on && handrail hook claude PreToolUse < ../rm.json'
+stdin rm.json
+exec handrail hook claude PreToolUse
+stdin rm2.json
+exec handrail hook claude PreToolUse
+stdin rm2.json
+exec handrail hook claude PreToolUse
+stdin unread.json
+exec handrail hook claude PreToolUse
+
+# --stats summarises each effective rule's history, zeroes included, then the
+# unreadable counts per tool and field, then the oldest line's time.
+exec handrail check --stats
+stdout '^RULE +TIER +MATCHES +SESSIONS +FIRST SEEN +LAST SEEN$'
+stdout '^blocker +project-personal +3 +2 +\d{4}-\S+Z +\d{4}-\S+Z$'
+stdout '^idle +project-personal +0 +0 +- +-$'
+! stdout 'off-rule +project'
+stdout '^TOOL +FIELD +UNREADABLE$'
+stdout '^Bash +command +1$'
+stdout '^oldest line: \d{4}-\S+Z$'
+! stderr .
+
+# The same history in the JSON.
+exec handrail check --stats --json
+stdout '"rule": "blocker",(\n.*)+?\n +"stats": \{\n +"first_seen": "\d{4}-\S+Z",\n +"last_seen": "\d{4}-\S+Z",\n +"matches": 3,\n +"sessions": 2'
+stdout '"rule": "idle",(\n.*)+?\n +"stats": \{\n +"first_seen": null,\n +"last_seen": null,\n +"matches": 0,\n +"sessions": 0'
+stdout '"unreadable": \[\n +\{\n +"tool": "Bash",\n +"field": "command",\n +"count": 1'
+stdout '"oldest": "\d{4}-\S+Z"'
+stdout -count=3 '"stats": '
+
+# Without --stats, check reads no history.
+exec handrail check --json
+! stdout '"stats"'
+
+# Without a grant it says only trial matches are recorded.
+exec handrail log off
+exec handrail check --stats
+stderr '^handrail: the Decision log is off for this project, so only trial matches are recorded'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- rm.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}
+-- rm2.json --
+{"hook_event_name": "PreToolUse", "session_id": "s2", "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}
+-- unread.json --
+{"hook_event_name": "PreToolUse", "session_id": "s2", "tool_name": "Bash", "tool_input": {"command": "bash -c \"$X\""}}
+-- .handrail/local/blocker.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm
+---
+Not in this repo.
+-- .handrail/local/idle.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: never
+---
+Never fires.
+-- .handrail/local/off-rule.md --
+---
+enabled: false
+---
+-- other/.git/HEAD --
+ref: refs/heads/main
+-- other/.handrail/local/blocker.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+---
+Not in this repo.

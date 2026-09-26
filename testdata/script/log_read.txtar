@@ -1,0 +1,92 @@
+# Three decisions in this project and one in another, each granted.
+exec handrail log on
+exec sh -c 'cd other && handrail log on'
+stdin rm.json
+exec handrail hook claude PreToolUse
+stdin cat.json
+exec handrail hook claude PreToolUse
+stdin unread.json
+exec handrail hook claude PreToolUse
+exec sh -c 'cd other && handrail hook claude PreToolUse < ../rm.json'
+
+# log prints this project's lines, newest first.
+exec handrail log
+stdout -count=3 '^\d{4}-'
+stdout '^\d{4}-\d\d-\d\dT[0-9:.]+Z  allow  PreToolUse  Bash  unreadable: command\n.*  block  PreToolUse  Bash  blocker \(project-personal, block\)\n.*  block  PreToolUse  Bash  blocker \(project-personal, block\), rm-watch \(project-personal, warn, trial\)$'
+! stdout 'other'
+! stderr .
+
+# -n bounds the count, keeping the newest.
+exec handrail log -n 1
+stdout -count=1 '^\d{4}-'
+stdout 'unreadable: command'
+
+# --rule keeps the lines where that rule matched.
+exec handrail log --rule rm-watch
+stdout -count=1 '^\d{4}-'
+stdout 'rm-watch'
+
+# --all widens to every project in the log, naming each line's root.
+exec handrail log --all
+stdout -count=4 '^\d{4}-'
+stdout '^\d{4}-\S+  \S+/other  block  '
+! stderr .
+
+# --json emits the stored lines verbatim.
+exec handrail log --json -n 1
+stdout -count=1 '^\{"time":'
+stdout '"unreadable":\["command"\]'
+
+# off revokes without deleting: it says where the lines are and that trial
+# matches still write. log then says only trial matches are recorded.
+exec handrail log off
+stdout '^stopped logging decisions for .+; its lines stay in .+/home/.local/state/handrail/log.jsonl, and trial matches still write there$'
+stdin cat.json
+exec handrail hook claude PreToolUse
+exec handrail log
+stdout -count=3 '^\d{4}-'
+stderr '^handrail: the Decision log is off for this project, so only trial matches are recorded; run handrail log on to record every decision$'
+
+# An unknown verb and a count below one are usage errors.
+! exec handrail log maybe
+stderr 'handrail log: unknown argument "maybe"; known: on, off'
+! exec handrail log -n 0
+stderr 'handrail log: -n must be at least 1'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- rm.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}
+-- cat.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "cat /etc/hosts"}}
+-- unread.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "bash -c \"$X\""}}
+-- .handrail/local/blocker.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    matches: ^(rm|cat)
+---
+Not in this repo.
+-- .handrail/local/rm-watch.md --
+---
+event: PreToolUse
+kind: shell
+trial: true
+conditions:
+  - field: command
+    starts_with: rm
+---
+Watching rm.
+-- other/.git/HEAD --
+ref: refs/heads/main
+-- other/.handrail/local/blocker.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+---
+Not in this repo.

@@ -1,0 +1,87 @@
+# Off until granted: a match in a project that never asked writes nothing.
+stdin rm.json
+exec handrail hook claude PreToolUse
+stdout 'deny'
+! exists home/.local/state/handrail/log.jsonl
+
+# log on grants the Project root in the state registry, readable by the user alone.
+exec handrail log on
+stdout '^logging decisions for .+ to .+/home/.local/state/handrail/log.jsonl$'
+exec find home/.local/state/handrail -type f -perm 600
+stdout '/decision-log$'
+
+# A no-match writes nothing.
+stdin ls.json
+exec handrail hook claude PreToolUse
+! stdout .
+! exists home/.local/state/handrail/log.jsonl
+
+# A match writes one line naming the rule, its tier and its action, with the
+# payload as the engine derived it, and no message.
+stdin rm.json
+exec handrail hook claude PreToolUse
+exec cat home/.local/state/handrail/log.jsonl
+stdout -count=1 '^\{'
+stdout '^\{"time":"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z","version":"dev","harness":"claude","event":"PreToolUse","session_id":"s1","root":".*","cwd":".*","kind":"shell","tool":"Bash","outcome":"block","matched":\[\{"rule":"blocker","tier":"project-personal","action":"block","degraded_from":null\}\],"payload":\{.*"command":.*\},"unreadable":\[\]\}$'
+stdout '"rm -rf /"'
+! stdout 'Not from the filesystem root'
+
+# A call handrail could not read earns a line with no rule matched.
+stdin unparsed.json
+exec handrail hook claude PreToolUse
+exec cat home/.local/state/handrail/log.jsonl
+stdout -count=2 '^\{'
+stdout '"outcome":"allow","matched":\[\],"payload":\{.*\},"unreadable":\["command"\]\}$'
+
+# A line describes one payload: a rule on the file a shell call writes is
+# named on that file's line, and the shell payload earns none of its own.
+stdin redirect.json
+exec handrail hook claude PreToolUse
+exec cat home/.local/state/handrail/log.jsonl
+stdout -count=3 '^\{'
+stdout '"kind":"file_edit","tool":"Bash","outcome":"block","matched":\[\{"rule":"env-guard",'
+
+# The grant is this project's alone: a match in another writes nothing.
+exec sh -c 'cd other && handrail hook claude PreToolUse < ../rm.json'
+exec cat home/.local/state/handrail/log.jsonl
+stdout -count=3 '^\{'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- rm.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}
+-- redirect.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "echo x > .env"}}
+-- .handrail/local/env-guard.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: path
+    ends_with: .env
+---
+Not the env file.
+-- ls.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- unparsed.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "bash -c \"$X\""}}
+-- .handrail/local/blocker.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm -rf
+---
+Not from the filesystem root.
+-- other/.git/HEAD --
+ref: refs/heads/main
+-- other/.handrail/local/blocker.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+---
+Not from the filesystem root.

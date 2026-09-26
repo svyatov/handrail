@@ -1,0 +1,75 @@
+exec handrail log on
+
+# Each value is truncated at 512 bytes, and the truncation is marked.
+exec sh -c 'printf "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"rm %s\"}}" $(printf "a%.0s" $(seq 600)) > long.json'
+stdin long.json
+exec handrail hook claude PreToolUse
+stdout 'deny'
+exec cat home/.local/state/handrail/log.jsonl
+stdout '"rm a{509}\[truncated\]"'
+! stdout 'a{510}'
+
+# A cut never splits a character.
+exec sh -c 'printf "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"rm %sé\"}}" $(printf "a%.0s" $(seq 508)) > utf8.json'
+stdin utf8.json
+exec handrail hook claude PreToolUse
+exec cat home/.local/state/handrail/log.jsonl
+stdout '"rm a{508}\[truncated\]"'
+
+# Each line is cut at 4 KiB: the payload goes, and the line says so.
+exec sh -c 'rm -f home/.local/state/handrail/log.jsonl; for i in $(seq 12); do printf "rm %s$i; " $(printf "b%.0s" $(seq 400)); done > cmd.txt'
+exec sh -c 'printf "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"%s\"}}" "$(cat cmd.txt)" > many.json'
+stdin many.json
+exec handrail hook claude PreToolUse
+stdout 'deny'
+exec cat home/.local/state/handrail/log.jsonl
+stdout -count=1 '^\{'
+stdout '"matched":\[\{"rule":"blocker".*"payload":null,"unreadable":\[\],"truncated":true\}$'
+exec awk 'length > 4096' home/.local/state/handrail/log.jsonl
+! stdout .
+
+# When the entries alone pass 4 KiB, the last of them go too.
+exec sh -c 'cd many && for i in $(seq 20); do printf -- "---\nevent: PreToolUse\n---\nNote.\n" > .handrail/local/$i-$(printf "r%.0s" $(seq 240)).md; done; handrail log on >/dev/null; rm ../home/.local/state/handrail/log.jsonl; handrail hook claude PreToolUse < ../ls.json >/dev/null'
+exec cat home/.local/state/handrail/log.jsonl
+stdout -count=1 '"truncated":true'
+exec awk 'length > 4096' home/.local/state/handrail/log.jsonl
+! stdout .
+exec grep -c '"rule":"1-rrr' home/.local/state/handrail/log.jsonl
+stdout '^1$'
+
+# Over 5 MiB the log rotates to exactly one older generation.
+exec sh -c 'head -c 5242881 /dev/zero | tr "\0" "x" > home/.local/state/handrail/log.jsonl; echo stale > home/.local/state/handrail/log.jsonl.1'
+stdin rm.json
+exec handrail hook claude PreToolUse
+exec wc -c home/.local/state/handrail/log.jsonl.1
+stdout '^ *5242881 '
+exec cat home/.local/state/handrail/log.jsonl
+stdout -count=1 '^\{'
+
+# A write that fails never changes the Outcome, and is reported like any
+# failure of handrail's own.
+exec sh -c 'rm home/.local/state/handrail/log.jsonl && mkdir home/.local/state/handrail/log.jsonl'
+stdin rm.json
+exec handrail hook claude PreToolUse
+stdout '"permissionDecision": "deny"'
+stdout 'handrail: could not write the Decision log: '
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- many/.git/HEAD --
+ref: refs/heads/main
+-- many/.handrail/local/.keep --
+-- ls.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+-- rm.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}
+-- .handrail/local/blocker.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: rm
+---
+Not in this repo.
