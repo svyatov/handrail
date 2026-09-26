@@ -20,7 +20,7 @@ func TestAdapterWithoutAHomeDirectory(t *testing.T) {
 
 	adapter := Adapter{
 		Name: "nowhere", quirks: nil, title: "", dir: ".nowhere", homeEnv: "", file: "settings.json", sessionEnv: "",
-		aliases: nil, agentTypeKey: "", agentPromptKey: "", events: nil, patchInShell: false, bypass: nil,
+		aliases: nil, agentTypeKey: "", agentPromptKey: "", events: nil, patchInShell: false, bypass: nil, conditions: false,
 	}
 
 	if got := adapter.ConfigPath(); got != "" {
@@ -108,7 +108,7 @@ func TestAMissingEventDegradesToSkip(t *testing.T) {
 
 	adapter := Adapter{
 		Name: "partial", quirks: nil, title: "Partial", dir: "", homeEnv: "", file: "", sessionEnv: "",
-		aliases: nil, agentTypeKey: "", agentPromptKey: "", patchInShell: false, bypass: nil,
+		aliases: nil, agentTypeKey: "", agentPromptKey: "", patchInShell: false, bypass: nil, conditions: false,
 		events: []eventCaps{{name: "PreToolUse", deny: permissionDeny, inject: true, ask: false, silent: false}},
 	}
 	notDone := &rule.Rule{

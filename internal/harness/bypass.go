@@ -28,10 +28,10 @@ type Bypass struct {
 	Approvers []string
 }
 
-// Bypass reads what keeps handrail's hooks from running for the project at
-// root, from the files on this machine alone: a policy the harness fetches
-// when it starts is not here to read.
-func (a Adapter) Bypass(root string) (Bypass, error) { return a.bypass(a, root) }
+// Bypass reads what keeps handrail's hooks from running for a session started
+// in cwd, inside the project at root, from the files on this machine alone: a
+// policy the harness fetches when it starts is not here to read.
+func (a Adapter) Bypass(root, cwd string) (Bypass, error) { return a.bypass(a, root, cwd) }
 
 // layer is one settings file, highest precedence first in a list of them.
 type layer struct {
@@ -42,10 +42,10 @@ type layer struct {
 // claudeBypass reads disableAllHooks after Claude Code's settings precedence,
 // allowManagedHooksOnly from managed settings alone, and every PermissionRequest
 // hook those two leave running.
-func claudeBypass(a Adapter, root string) (Bypass, error) {
+func claudeBypass(a Adapter, root, cwd string) (Bypass, error) {
 	var out Bypass
 
-	layers, managed, err := claudeLayers(a, root)
+	layers, managed, err := claudeLayers(a, root, cwd)
 	if err != nil {
 		return out, err
 	}
@@ -79,13 +79,19 @@ func claudeBypass(a Adapter, root string) (Bypass, error) {
 
 // claudeLayers reads Claude Code's settings files, highest precedence first:
 // managed, then local, then project, then user. It also counts the managed
-// ones, which lead.
-func claudeLayers(adapter Adapter, root string) ([]layer, int, error) {
-	paths := managedFiles()
+// ones, which lead. The local file sits at the repository root, below it the
+// one an older Claude Code kept in the starting directory; the project file
+// is the starting directory's alone.
+func claudeLayers(adapter Adapter, root, cwd string) ([]layer, int, error) {
+	paths, err := managedFiles()
+	if err != nil {
+		return nil, 0, err
+	}
 
 	managed := len(paths)
 	paths = append(paths,
-		filepath.Join(root, ".claude", "settings.local.json"), filepath.Join(root, ".claude", "settings.json"))
+		filepath.Join(root, ".claude", "settings.local.json"), filepath.Join(cwd, ".claude", "settings.local.json"),
+		filepath.Join(cwd, ".claude", "settings.json"))
 
 	layers := make([]layer, 0, len(paths)+1)
 
@@ -117,7 +123,7 @@ func approves(settings map[string]any) bool {
 
 // codexBypass reads Codex CLI's hooks feature: the project's config.toml, then
 // the user's, the first that sets it winning.
-func codexBypass(a Adapter, root string) (Bypass, error) {
+func codexBypass(a Adapter, root, _ string) (Bypass, error) {
 	var out Bypass
 
 	for _, path := range []string{filepath.Join(root, ".codex", "config.toml"), a.path("config.toml")} {
@@ -150,7 +156,8 @@ type feature struct {
 
 // hooksFeature reads the hooks feature, or its deprecated codex_hooks name,
 // from a config.toml. It reads that one key and no more TOML: table headers,
-// and a key under [features] or dotted under features.
+// and a key under [features], dotted under features, or in an inline features
+// table.
 // ponytail: a line inside a multi-line string reads as a line; parse TOML
 // fully if a config ever hides the switch that way.
 func hooksFeature(toml string) feature {
@@ -181,20 +188,44 @@ func hooksFeature(toml string) feature {
 			name = table + "." + name
 		}
 
-		if key, ok := strings.CutPrefix(name, "features."); ok && (key == "hooks" || key == "codex_hooks") {
-			hooks = feature{key: key, on: strings.TrimSpace(value) == "true", set: true}
+		for _, kv := range inline(name, value, bare) {
+			if key, ok := strings.CutPrefix(kv[0], "features."); ok && (key == "hooks" || key == "codex_hooks") {
+				hooks = feature{key: key, on: strings.TrimSpace(kv[1]) == "true", set: true}
+			}
 		}
 	}
 
 	return hooks
 }
 
+// inline spreads an inline table's entries into dotted keys under name, and
+// leaves any other assignment as it is.
+func inline(name, value string, bare *strings.Replacer) [][2]string {
+	body, ok := strings.CutPrefix(strings.TrimSpace(value), "{")
+	if !ok {
+		return [][2]string{{name, value}}
+	}
+
+	var out [][2]string
+
+	for entry := range strings.SplitSeq(strings.TrimSuffix(strings.TrimSpace(body), "}"), ",") {
+		key, v, _ := strings.Cut(entry, "=")
+		out = append(out, [2]string{name + "." + bare.Replace(key), v})
+	}
+
+	return out
+}
+
 // managedFiles are Claude Code's managed settings files, highest precedence
 // first: it merges managed-settings.json, then each visible *.json drop-in in
 // alphabetical order, so the last drop-in wins.
-func managedFiles() []string {
+func managedFiles() ([]string, error) {
 	dropins := filepath.Join(ManagedDir, "managed-settings.d")
-	entries, _ := os.ReadDir(dropins) // sorted by name; none when it is absent
+
+	entries, err := os.ReadDir(dropins) // sorted by name
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
 
 	var files []string
 
@@ -205,7 +236,7 @@ func managedFiles() []string {
 		}
 	}
 
-	return append(files, filepath.Join(ManagedDir, "managed-settings.json"))
+	return append(files, filepath.Join(ManagedDir, "managed-settings.json")), nil
 }
 
 // winning is the index of the layer whose value for key holds after

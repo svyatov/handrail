@@ -52,6 +52,12 @@ cp $WORK/managed-only.json $HOME/managed/managed-settings.d/40-hooks.json
 ! exec handrail doctor
 stdout '^problem +claude: only managed hooks run: allowManagedHooksOnly is true in .*/managed/managed-settings\.d/40-hooks\.json$'
 
+# A drop-in directory doctor cannot list hides whatever its files set.
+[!root] chmod 0000 $HOME/managed/managed-settings.d
+[!root] ! exec handrail doctor
+[!root] stdout '^problem +claude: open .*/managed/managed-settings\.d: permission denied$'
+[!root] chmod 0755 $HOME/managed/managed-settings.d
+
 # Codex CLI's switch is its hooks feature, in config.toml. A hooks key under
 # any other table is not it.
 cp $WORK/codex-off.toml $HOME/.codex/config.toml
@@ -70,6 +76,11 @@ cp $WORK/codex-dotted.toml .codex/config.toml
 ! exec handrail doctor
 stdout '^problem +codex: hooks are disabled: \[features\] codex_hooks is false in .*/repo/\.codex/config\.toml$'
 
+# So does an inline features table.
+cp $WORK/codex-inline.toml .codex/config.toml
+! exec handrail doctor
+stdout '^problem +codex: hooks are disabled: \[features\] hooks is false in .*/repo/\.codex/config\.toml$'
+
 # A settings file doctor cannot read hides whatever it sets, so it is named.
 rm .codex/config.toml
 mkdir .codex/config.toml
@@ -87,8 +98,9 @@ hooks = false # off
 [other]
 hooks = true
 -- codex-on.toml --
-[features]
-"hooks" = true
+features = { multi_agent = false, "hooks" = true }
+-- codex-inline.toml --
+features = { multi_agent = true, "hooks" = false }
 -- codex-dotted.toml --
 features.codex_hooks = false
 -- managed-only.json --

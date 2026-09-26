@@ -216,7 +216,8 @@ func (a Adapter) Entries() ([]Entry, error) {
 				cmd, _ := hook[commandKey].(string)
 				if bin, ok := a.entryBinary(cmd, event); ok {
 					_, conditional := hook["if"]
-					entry.Binary, entry.Narrowed = bin, conditional || narrows(group["matcher"])
+					entry.Binary = bin
+					entry.Narrowed = (a.conditions && conditional) || (matches(event) && narrows(group["matcher"]))
 				}
 			}
 		}
@@ -234,6 +235,12 @@ type Entry struct {
 	// Narrowed is an entry an if condition or its group's matcher lets fire
 	// on only some calls.
 	Narrowed bool
+}
+
+// matches reports whether a group's matcher filters event. Both harnesses
+// ignore one on UserPromptSubmit and Stop.
+func matches(event string) bool {
+	return event != eventUserPromptSubmit && event != eventStop
 }
 
 // narrows reports whether a group's matcher lets it fire on only some calls.

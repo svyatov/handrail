@@ -53,7 +53,7 @@ func cmdDoctor(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 
 		out.okf("%s: config at %s", adapter.Name, adapter.ConfigPath())
 		out.checkEntries(adapter, bin)
-		out.checkBypass(adapter, ruleset.Root)
+		out.checkBypass(adapter, ruleset.Root, cwd)
 		// Degradation is reported at sync time and reprintable here: a rule
 		// weakened months ago is exactly the kind that reads as not firing.
 		for _, line := range adapter.Report(ruleset.Effective()) {
@@ -174,8 +174,8 @@ func (r *report) checkEntries(adapter harness.Adapter, bin string) {
 
 // checkBypass reports a setting that keeps every current entry from running,
 // which no entry check can see.
-func (r *report) checkBypass(adapter harness.Adapter, root string) {
-	bypass, err := adapter.Bypass(root)
+func (r *report) checkBypass(adapter harness.Adapter, root, cwd string) {
+	bypass, err := adapter.Bypass(root, cwd)
 	if err != nil {
 		r.badf("%s: %v", adapter.Name, err)
 
