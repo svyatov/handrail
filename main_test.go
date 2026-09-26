@@ -90,9 +90,12 @@ func TestHookColdStart(t *testing.T) {
 			func(out string) bool { return strings.Contains(out, "handrail warn: matched") },
 		},
 		{
-			// The one failing Example's notice shows every Example ran.
+			// One failing Example per tier, so the notice shows each tier's ran.
 			"SessionStart", "SessionStart", `"source":"startup"`,
-			func(out string) bool { return strings.Contains(out, "1 rule fails its Examples: drifted (global)") },
+			func(out string) bool {
+				return strings.Contains(out, "3 rules fail their Examples: drifted-global (global), "+
+					"drifted-shared (project-shared), drifted-personal (project-personal);")
+			},
 		},
 	} {
 		stdin := `{"hook_event_name":"` + invocation.event + `","session_id":"s1","cwd":"` + repo + `",` +
@@ -119,9 +122,10 @@ func TestHookColdStart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if lines := strings.Count(string(logged), `"tier":"project-personal"`); lines != hookRuns {
-		t.Errorf("the Decision log holds %d Project-personal matches, want one per matching run, %d:\n%s",
-			lines, hookRuns, logged)
+	lines, personal := strings.Count(string(logged), "\n"), strings.Count(string(logged), `"tier":"project-personal"`)
+	if lines != hookRuns || personal != hookRuns {
+		t.Errorf("the Decision log holds %d lines, %d of them Project-personal, want one per matching run, %d:\n%s",
+			lines, personal, hookRuns, logged)
 	}
 }
 
@@ -197,8 +201,8 @@ func buildBinary(t *testing.T, dir string) string {
 // populateTiers is a realistic worst case for a no-match call: every tier
 // populated, so the run walks three directories and parses every rule before
 // deciding nothing applies, and every rule carries Examples for SessionStart to
-// run. One Project-personal warn rule matches "echo matched", and one Global
-// rule's Example fails, so SessionStart shows it ran them.
+// run. One Project-personal warn rule matches "echo matched", and in each tier
+// one rule's Example fails, so SessionStart shows it ran that tier's.
 func populateTiers(t *testing.T, home, repo string) {
 	t.Helper()
 
@@ -220,15 +224,16 @@ func populateTiers(t *testing.T, home, repo string) {
 					fmt.Sprintf("examples:\n  match:\n    - command: never-%d-x\n", i)+
 					"  no_match:\n    - command: echo hi\n---\nA rule that does not match.\n")
 		}
+
+		writeFile(t, filepath.Join(tier.dir, "drifted-"+tier.name+".md"),
+			"---\nevent: PreToolUse\nkind: shell\nconditions:\n  - field: command\n    starts_with: never-drifted\n"+
+				"examples:\n  match:\n    - command: echo drifted\n---\nA rule whose Example fails.\n")
 	}
 
 	writeFile(t, filepath.Join(repo, ".handrail", "local", "matched.md"),
 		"---\nevent: PreToolUse\nkind: shell\nconditions:\n  - field: command\n    starts_with: echo matched\n"+
 			"examples:\n  match:\n    - command: cd /tmp && echo matched\n  no_match:\n    - command: echo hi\n"+
 			"---\nA rule that matches.\n")
-	writeFile(t, filepath.Join(home, ".config", "handrail", "drifted.md"),
-		"---\nevent: PreToolUse\nkind: shell\nconditions:\n  - field: command\n    starts_with: never-drifted\n"+
-			"examples:\n  match:\n    - command: echo drifted\n---\nA rule whose Example fails.\n")
 }
 
 // gitIndex makes repo a git repository whose index git itself wrote, holding
