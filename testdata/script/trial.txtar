@@ -32,6 +32,12 @@ exec handrail check --json
 stdout '"rule": "watched",(\n.*){4}\n +"enabled": true,\n +"trial": true'
 stdout '"rule": "greeting",(\n.*){4}\n +"enabled": true,\n +"trial": false'
 
+# Degradation never applies to a trial rule: it asks the harness for nothing,
+# so test shows Codex's ask as the ask the rule file names.
+exec sh -c 'cd asking && handrail test PreToolUse --harness codex --kind shell --field command=ls'
+stdout '^ask  ask-first  project-personal  trial$'
+! stdout 'degraded'
+
 # A disabled rule on trial is meaningless, so check refuses it.
 exec sh -c 'cd disabled && handrail check; echo code=$?'
 stdout '^code=1$'
@@ -81,6 +87,16 @@ event: PreToolUse
 kind: shell
 ---
 Prefer the dedicated tools.
+-- asking/.git/HEAD --
+ref: refs/heads/main
+-- asking/.handrail/local/ask-first.md --
+---
+event: PreToolUse
+kind: shell
+action: ask
+trial: true
+---
+Check with me first.
 -- disabled/.git/HEAD --
 ref: refs/heads/main
 -- disabled/.handrail/local/off.md --

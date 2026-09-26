@@ -57,7 +57,7 @@ env XDG_STATE_HOME=$WORK/state-dir
 mkdir $WORK/state-dir/handrail/trusted
 exec sh -c 'handrail trust; echo code=$?'
 stdout '^code=1$'
-stderr '^handrail: .*state-dir/handrail/trusted: '
+stderr 'is a directory'
 
 -- .git/HEAD --
 ref: refs/heads/main

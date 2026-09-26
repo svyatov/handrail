@@ -60,6 +60,14 @@ stderr 'handrail mode: unknown state "paused"; known: enforce, trial, off'
 exec handrail mode
 stdout '^enforce \(this project: .*\)$'
 
+# Writers never lose each other's lines: twenty repos trusted and set at once
+# each keep their grant and their state.
+exec sh -c 'for i in $(seq 1 20); do mkdir -p par/r$i/.git; done; for i in $(seq 1 20); do (cd par/r$i && handrail trust >/dev/null && handrail mode off >/dev/null) & done; wait'
+exec sh -c 'for i in $(seq 1 20); do (cd par/r$i && handrail mode); done'
+stdout -count=20 '^off \(this project: .*/par/r[0-9]+\)$'
+exec grep -c '/par/r' home/.local/state/handrail/trusted
+stdout '^20$'
+
 -- .git/HEAD --
 ref: refs/heads/main
 -- other/.git/HEAD --

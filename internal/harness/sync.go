@@ -342,8 +342,15 @@ func shellUnquote(s string) string {
 }
 
 // Action is the action the harness delivers for r: the rule's own, or the
-// nearest one it can deliver where it cannot deliver that.
-func (a Adapter) Action(r *rule.Rule) rule.Outcome { return a.degrade(r.Event, r.Action) }
+// nearest one it can deliver where it cannot deliver that. A trial rule keeps
+// its own: it asks the harness for nothing, so it has no capability to lose.
+func (a Adapter) Action(r *rule.Rule) rule.Outcome {
+	if r.Trial {
+		return r.Action
+	}
+
+	return a.degrade(r.Event, r.Action)
+}
 
 // Delivered is the Outcome the harness delivers for the matched rules: the
 // strongest action it delivers among them. A trial match delivers none.
@@ -351,7 +358,7 @@ func (a Adapter) Delivered(matched []rule.Match) rule.Outcome {
 	var outcome rule.Outcome
 
 	for _, m := range matched {
-		if !m.Trial {
+		if m.Delivers() {
 			outcome = max(outcome, a.Action(m.Rule))
 		}
 	}
@@ -367,10 +374,8 @@ func (a Adapter) Report(rules []*rule.Rule) []string {
 	var out []string
 
 	for _, effective := range rules {
-		// A trial rule asks for neither blocking nor injection, so it has no
-		// capability to lose.
 		delivered := a.Action(effective)
-		if delivered == effective.Action || effective.Trial {
+		if delivered == effective.Action {
 			continue
 		}
 		// A skipped rule delivers nothing, which a report says as skip.

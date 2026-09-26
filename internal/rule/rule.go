@@ -363,14 +363,14 @@ func (r *Rule) setConditions(entry pair) error {
 	return nil
 }
 
-// checkRequired holds an enabled rule to the two fields it cannot fire without.
+// checkRequired holds an enabled rule to the two fields it cannot fire without,
+// and refuses trial on a disabled one, which has nothing to watch.
 func (r *Rule) checkRequired() error {
-	// A disabled rule is exempt from matcher validation; whatever fields it
-	// does carry Parse has already validated.
 	if !r.Enabled && r.Trial {
 		return fmt.Errorf("line %d: %w", r.trialLine, errTrialDisabled)
 	}
-
+	// A disabled rule is exempt from matcher validation; whatever fields it
+	// does carry Parse has already validated.
 	if !r.Enabled {
 		return nil
 	}

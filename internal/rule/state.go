@@ -3,9 +3,10 @@ package rule
 import (
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 )
 
@@ -35,30 +36,35 @@ func registryFile(name string) string {
 	return filepath.Join(dir, name)
 }
 
-// registry returns one registry file's lines, none when it cannot be read.
-func registry(name string) []string {
+// registry returns one registry file's lines, none when there is no file yet.
+// The error is a file that is there and cannot be read, which a reader treats
+// as no lines and a writer must not.
+func registry(name string) ([]string, error) {
 	file := registryFile(name)
 	if file == "" {
-		return nil
+		return nil, nil
 	}
 
 	data, err := os.ReadFile(file)
-	if err != nil {
-		return nil
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
 	}
 
-	return strings.FieldsFunc(string(data), func(r rune) bool { return r == '\n' })
+	if err != nil {
+		return nil, err
+	}
+
+	return strings.FieldsFunc(string(data), func(r rune) bool { return r == '\n' }), nil
 }
 
-// writeRegistry replaces one registry file's lines. The new file is written
-// beside the old and renamed over it, so a reader sees one or the other.
-func writeRegistry(name string, lines []string) error {
+// appendRegistry adds one line to a registry file. A write only ever appends,
+// in one write to a file opened for appending, so writers running at once never
+// lose each other's lines.
+func appendRegistry(name, line string) error {
 	// One path per line, so a newline in a path would write a second line and
 	// record a path nobody asked for. A directory may legally hold one.
-	for _, line := range lines {
-		if strings.Contains(line, "\n") {
-			return fmt.Errorf("%w: %q", errNewlinePath, line)
-		}
+	if strings.Contains(line, "\n") {
+		return fmt.Errorf("%w: %q", errNewlinePath, line)
 	}
 
 	file := registryFile(name)
@@ -71,26 +77,14 @@ func writeRegistry(name string, lines []string) error {
 		return err
 	}
 
-	out, err := os.CreateTemp(filepath.Dir(file), name+".*")
+	out, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, registryMode)
 	if err != nil {
 		return err
 	}
 
-	err = out.Chmod(registryMode)
-	if err == nil {
-		_, err = fmt.Fprint(out, strings.Join(lines, "\n")+"\n")
-	}
-
+	_, err = io.WriteString(out, line+"\n")
 	if closeErr := out.Close(); err == nil {
 		err = closeErr
-	}
-
-	if err == nil {
-		err = os.Rename(out.Name(), file)
-	}
-
-	if err != nil {
-		_ = os.Remove(out.Name())
 	}
 
 	return err
@@ -123,7 +117,7 @@ func ParseState(name string) (State, bool) {
 
 // stateFile is the registry file of the Enforcement state. Each line is a
 // state, a space, and the Project root it holds for; the machine-wide state is
-// a state alone.
+// a state alone. Setting a state appends, so the last line for a scope holds.
 const stateFile = "enforcement"
 
 // Scope is where the Enforcement state that applies was set.
@@ -138,11 +132,14 @@ const (
 
 // StateOf is the Enforcement state for root and where it was set: its own,
 // else the machine-wide one, else enforce. A root of "" asks for the
-// machine-wide state alone.
+// machine-wide state alone. A registry that cannot be read reads as enforce,
+// the state that guards.
 func StateOf(root string) (State, Scope) {
 	machine, scope := StateEnforce, ScopeDefault
+	project, found := StateEnforce, false
+	lines, _ := registry(stateFile)
 
-	for _, line := range registry(stateFile) {
+	for _, line := range lines {
 		name, path, _ := strings.Cut(line, " ")
 
 		state, ok := ParseState(name)
@@ -151,8 +148,12 @@ func StateOf(root string) (State, Scope) {
 		case path == "":
 			machine, scope = state, ScopeMachine
 		case path == root:
-			return state, ScopeProject
+			project, found = state, true
 		}
+	}
+
+	if found {
+		return project, ScopeProject
 	}
 
 	return machine, scope
@@ -160,7 +161,8 @@ func StateOf(root string) (State, Scope) {
 
 // StateNotice is what a project that is not enforcing owes the user at every
 // SessionStart, and "" when it enforces. The state has no expiry, so this is
-// what stands between a suspension and a project that looks guarded.
+// what stands between a forgotten off or trial and a project that looks
+// guarded.
 func (rs *Ruleset) StateNotice() string {
 	if rs.State == StateEnforce {
 		return ""
@@ -183,16 +185,10 @@ func (rs *Ruleset) StateNotice() string {
 // SetState records state for root, or machine-wide for a root of "",
 // replacing whatever that scope held.
 func SetState(root string, state State) error {
-	lines := slices.DeleteFunc(registry(stateFile), func(line string) bool {
-		_, path, _ := strings.Cut(line, " ")
-
-		return path == root
-	})
-
 	line := state.String()
 	if root != "" {
 		line += " " + root
 	}
 
-	return writeRegistry(stateFile, append(lines, line))
+	return appendRegistry(stateFile, line)
 }

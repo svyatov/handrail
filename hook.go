@@ -82,7 +82,7 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	ruleset := rule.Load(cwd)
 	if ruleset.State == rule.StateOff {
-		return suspended(adapter, ruleset, event, stdout, stderr)
+		return deliverOff(adapter, ruleset, event, stdout, stderr)
 	}
 
 	matched, outcome := ruleset.Evaluate(payloads)
@@ -92,9 +92,9 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return adapter.Deliver(event, text.agent, text.human, outcome, stdout, stderr)
 }
 
-// suspended is what hook delivers under the off state: the state notice at
+// deliverOff is what hook delivers under the off state: the state notice at
 // SessionStart, to both audiences, and nothing anywhere else.
-func suspended(adapter harness.Adapter, ruleset *rule.Ruleset, event string, stdout, stderr io.Writer) int {
+func deliverOff(adapter harness.Adapter, ruleset *rule.Ruleset, event string, stdout, stderr io.Writer) int {
 	notice := ""
 	if event == "SessionStart" {
 		notice = ruleset.StateNotice()
@@ -288,7 +288,7 @@ func messages(
 	heard := slices.Clone(sections)
 
 	// A match on trial delivers nothing, so it has no section.
-	for _, match := range slices.DeleteFunc(slices.Clone(matched), func(m rule.Match) bool { return m.Trial }) {
+	for _, match := range slices.DeleteFunc(slices.Clone(matched), func(m rule.Match) bool { return !m.Delivers() }) {
 		label := fmt.Sprintf("handrail %s: %s (%s)", match.Action, match.Name, match.Tier)
 
 		section := label + "\n" + match.Message

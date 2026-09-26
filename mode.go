@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/svyatov/handrail/internal/harness"
 	"github.com/svyatov/handrail/internal/rule"
 )
 
@@ -59,13 +60,11 @@ func cmdMode(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 func setMode(root, name string, stderr io.Writer) bool {
 	// Not a boundary: env -u gets past it. It stops an agent switching handrail
 	// off in passing, and the SessionStart notice shows one that went around it.
-	for _, session := range []string{"CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"} {
-		if os.Getenv(session) != "" {
-			fmt.Fprintf(stderr, "handrail mode: refusing to set the enforcement state inside a harness session "+
-				"(%s is set); run it in your own terminal\n", session)
+	if session := harness.Session(); session != "" {
+		fmt.Fprintf(stderr, "handrail mode: refusing to set the enforcement state inside a harness session "+
+			"(%s is set); run it in your own terminal\n", session)
 
-			return false
-		}
+		return false
 	}
 
 	state, ok := rule.ParseState(name)

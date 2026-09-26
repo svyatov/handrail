@@ -362,7 +362,7 @@ func (rs *Ruleset) Evaluate(payloads []Payload) ([]Match, Outcome) {
 		match.Trial = live.Trial || rs.State == StateTrial
 
 		matched = append(matched, match)
-		if !match.Trial {
+		if match.Delivers() {
 			outcome = max(outcome, live.Action)
 		}
 	}
@@ -402,6 +402,10 @@ type Match struct {
 	// ordering slot.
 	Trial bool
 }
+
+// Delivers reports whether the match reaches the harness at all, which a
+// match on trial never does.
+func (m *Match) Delivers() bool { return !m.Trial }
 
 // addFiles adds every path a matched payload names that Files lacks.
 func (m *Match) addFiles(p Payload) {

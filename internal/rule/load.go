@@ -113,11 +113,11 @@ func Load(cwd string) *Ruleset {
 		root = RepoRoot(cwd)
 	}
 
+	state, scope := StateOf(root)
 	ruleset := &Ruleset{
 		Root: root, Demoted: "", Rules: nil, Untrusted: nil, Tiers: nil, Problems: nil,
-		State: StateEnforce, StateScope: ScopeDefault,
+		State: state, StateScope: scope,
 	}
-	ruleset.State, ruleset.StateScope = StateOf(root)
 	inRoot := func(dir func(string) string) string {
 		if root == "" {
 			return ""

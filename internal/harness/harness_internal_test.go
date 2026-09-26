@@ -19,7 +19,7 @@ func TestAdapterWithoutAHomeDirectory(t *testing.T) {
 	t.Setenv("HOME", "")
 
 	adapter := Adapter{
-		Name: "nowhere", quirks: nil, title: "", dir: ".nowhere", homeEnv: "", file: "settings.json",
+		Name: "nowhere", quirks: nil, title: "", dir: ".nowhere", homeEnv: "", file: "settings.json", sessionEnv: "",
 		aliases: nil, agentTypeKey: "", agentPromptKey: "", events: nil, patchInShell: false,
 	}
 
@@ -107,7 +107,7 @@ func TestAMissingEventDegradesToSkip(t *testing.T) {
 	t.Parallel()
 
 	adapter := Adapter{
-		Name: "partial", quirks: nil, title: "Partial", dir: "", homeEnv: "", file: "",
+		Name: "partial", quirks: nil, title: "Partial", dir: "", homeEnv: "", file: "", sessionEnv: "",
 		aliases: nil, agentTypeKey: "", agentPromptKey: "", patchInShell: false,
 		events: []eventCaps{{name: "PreToolUse", deny: permissionDeny, inject: true, ask: false, silent: false}},
 	}
