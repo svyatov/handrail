@@ -224,7 +224,7 @@ name of its own. A Project-shared rule may not set `agent_only`.
 Writing into a rule directory may raise an approval prompt: that is the user's
 guard rule doing its job ([guards.md](guards.md)), and the approval is the
 consent. On Codex the prompt becomes a block; there, print the file and its path
-for the user to save.
+for the user to save, and continue once they say it is saved.
 
 ## 5. Prove it matches, and keep the proof
 

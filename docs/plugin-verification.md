@@ -60,6 +60,11 @@ isolated `HOME`, and not through an installed plugin.
 Both runs were done by a subagent with scripted answers, not with a human at an
 approval prompt. The live gap from case 8 still stands.
 
+Still owed for this change, which alters what the bootstrap prints: cases 1 to
+6 and 10 through an installed plugin on each harness. On Codex nothing here
+confirms that it reads `systemMessage` from a SessionStart hook's stdout, or
+that it keeps that JSON out of the agent's context.
+
 ## 2026-08-18, v0.1.0-rc.1 on Claude Code, darwin/arm64
 
 Cases 1 to 6 pass. Case 2 was driven with a stub `curl` serving a corrupted

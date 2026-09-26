@@ -43,25 +43,35 @@ Before any signal, replay one call per rule-directory guard, all three in one
 shell call:
 
 ```sh
+G=${XDG_CONFIG_HOME:-$HOME/.config}/handrail
 "$HANDRAIL" test PreToolUse --kind file_edit --field path=.handrail/local/survey-probe.md --json
-"$HANDRAIL" test PreToolUse --kind file_edit --field "path=${XDG_CONFIG_HOME:-$HOME/.config}/handrail/survey-probe.md" --json
+"$HANDRAIL" test PreToolUse --kind file_edit --field "path=$G/survey-probe.md" --json
 "$HANDRAIL" test PreToolUse --kind shell --field 'command=cd .handrail/local' --json
 ```
 
 The call names a rule directory, so where the `shell` guard already stands it
 raises that guard's approval prompt: ask the user to approve it. On Codex the
-guard blocks the call instead; the block shows the `shell` guard is in place, so
-ask the user to run the same commands in their own terminal and paste the
+guard blocks the call instead; the block shows the `shell` guard is in place,
+so ask the user to run the same commands in their own terminal and paste the
 output.
 
 A guard is in place when `matched[]` holds an entry with `action` `ask` or
-`block` and `trial` false. Where the first two do not both show one, propose the
+`block` whose rule is not on trial by its own file (`trial` false in its
+`check --json` entry). Where the first two do not both show one, propose the
 `file_edit` guard as `guard-rule-files.md`; where the third does not, the
-`shell` one as `guard-rule-commands.md`. Propose each exactly as "Rule
-directories" in [../add/guards.md](../add/guards.md) writes it, Examples
-included, at the Global tier with `action: ask`, and say why: without it,
-anything the agent runs can rewrite the rules. These proposals come first and
-follow steps 6 and 7 like any other.
+`shell` one as `guard-rule-commands.md`. Propose each as "Rule directories" in
+[../add/guards.md](../add/guards.md) writes it, Examples included, at the Global
+tier with `action: ask`, and say why: without it, anything the agent runs can
+rewrite the rules. Where `$XDG_CONFIG_HOME` is set, apply the note at the top of
+guards.md: the `file_edit` guard's second glob becomes `"$G/**"`, its Example
+under `.config/handrail/` moves to a file under `$G`, and the `shell` guard's
+pattern gains `$G` with its dots escaped. These proposals come first and follow
+steps 6 and 7 like any other.
+
+**Not enforcing.** When `enforcement` in the `test --json` output is not
+`enforce`, handrail delivers nothing in this project, and every match reports
+`trial` true. Say so once, and judge trial from `check --json` wherever this
+skill reads `trial`.
 
 ## 4. Build the list
 
@@ -106,11 +116,11 @@ ruleset:
 "$HANDRAIL" test PreToolUse --kind file_edit --field path=package-lock.json --json
 ```
 
-Order the actions `block` > `ask` > `warn`, and treat an entry with `trial` true
-as weaker than all three. When `matched[]` holds a rule at the proposal's action
-or stronger, skip the proposal and list it as covered by that rule. When it
-holds only weaker ones, propose it and name the existing rule. Coverage is this
-replay, never another rule's Examples.
+Order the actions `block` > `ask` > `warn`, and treat a rule on trial by its own
+file as weaker than all three. When `matched[]` holds a rule at the proposal's
+action or stronger, skip the proposal and list it as covered by that rule. When
+it holds only weaker ones, propose it and name the existing rule. Coverage is
+this replay, never another rule's Examples.
 
 ## 6. Propose, one at a time
 
@@ -125,10 +135,11 @@ Order: repo prose (Grade 1), then Grade 2, then Grade 3, as
    Global (`${XDG_CONFIG_HOME:-$HOME/.config}/handrail/<name>.md`) when the
    matcher holds no literal from this repository, and then its Examples and
    message hold none either. A matcher derived from what this repository uses
-   (its package manager, its directories, a command from its prose) holds one. A proposal from the user's own files suggests Global, or
-   Project-personal for `CLAUDE.local.md`, and says a Global rule applies in
-   both harnesses. Never write Project-shared (`.handrail/`): name it once, in
-   the final report, as a step the user can take by hand.
+   (its package manager, its directories, a command from its prose) holds one.
+   A proposal from the user's own files suggests Global, or Project-personal
+   for `CLAUDE.local.md`, and says a Global rule applies in both harnesses.
+   Never write Project-shared (`.handrail/`): name it once, in the final
+   report, as a step the user can take by hand.
 4. **What it catches.** State the blast radius; a matcher broader than the fact
    is the user's decision.
 
@@ -146,14 +157,10 @@ the next, and nothing is written before its own approval.
 
 ## 7. On approval: write, validate, replay
 
-1. **Write** the file. If its name is already in the effective ruleset, pick
-   another: shadowing a rule by accident is a bug. After writing into
-   `.handrail/local/`, run `"$HANDRAIL" sync` once unless `.git/info/exclude`
-   already holds its line, so the rules stay out of git.
-   A rule-directory guard may raise an approval prompt on the write: that prompt
-   is the user's consent working. **On Codex** the guard's `ask` is a block:
-   when a rule blocks the write, print the file and its path for the user to
-   save, and continue once they say it is saved.
+1. **Write** the file, following "Pick the tier and the path" in
+   [../add/SKILL.md](../add/SKILL.md), including its notes on `sync` and on
+   Codex. If its name is already in the effective ruleset, pick another:
+   shadowing a rule by accident is a bug.
 2. **`"$HANDRAIL" check`** must pass with the new rule in the table. It also
    runs the rule's Examples.
 3. **Replay twice.** The positive payload must match. A real neighbouring file
@@ -168,9 +175,9 @@ the next, and nothing is written before its own approval.
    Tell the user both payloads are synthetic. Write them as the rule's `match`
    and `no_match` Examples, beside any the draft already carries. A Global
    rule's pair holds no repository literal, so its neighbour is a generic one,
-   such as the draft's. A guard keeps the Examples guards.md gives. A replay that fails
-   means the matcher is wrong: fix it and replay again. Never leave a rule on
-   disk that failed its own replay.
+   such as the draft's. A guard keeps the Examples guards.md gives. A replay
+   that fails means the matcher is wrong: fix it and replay again. Never leave
+   a rule on disk that failed its own replay.
 
 ## 8. Report
 

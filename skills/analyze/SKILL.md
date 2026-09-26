@@ -51,11 +51,11 @@ show it. Your context wins over the file for recent turns; the file wins for old
 ones.
 
 **No transcript at all** (harness without transcript access, or the file is
-missing): say so, and work from your own context alone; every step below still
-applies. An incident compaction dropped from your context is lost: for it, offer
-the fallback of the user describing it in words to the handrail `add` skill
-(`/handrail:add` in Claude Code, a `$` mention in Codex). Do not guess at a
-transcript path.
+missing): say so, and skip the new-rule job (step 4). Offer its fallback: the
+user describes the incident in words to the handrail `add` skill
+(`/handrail:add` in Claude Code, a `$` mention in Codex), which writes a rule
+from a plain-language description. The Decision log jobs (steps 5 and 6) still
+run. Do not guess at a transcript path.
 
 Never read the harness's own record of hook results: it is not handrail's, and
 its format is not stable.
@@ -67,10 +67,11 @@ its format is not stable.
 ```
 
 `rules[]` is the effective ruleset: `rule`, `tier`, `event`, `kind`, `action`,
-`enabled`, `trial`, `shadowed_by`, `path`, and `stats` (`matches`, `sessions`,
-`first_seen`, `last_seen`). A rule is live when `enabled` is true and
-`shadowed_by` and `dropped_by` are null. The top-level `stats` holds `oldest`, the time of the
-oldest log line, and `unreadable[]`, counts per `tool` and `field` of calls
+`enabled`, `trial`, `shadowed_by`, `dropped_by`, `path`, and `stats`
+(`matches`, `sessions`, `first_seen`, `last_seen`). A rule is live when
+`enabled` is true and `shadowed_by` and `dropped_by` are null. The top-level
+`stats` holds `oldest`, the time of the oldest log line, and `unreadable[]`,
+counts per `tool` and `field` of calls
 handrail could not read. Messages are not in the JSON, so open `path` to read a
 rule you are about to propose beside. If `errors[]` is not empty, show the
 errors first: they may hide coverage, and nothing can land until `check` is
@@ -78,7 +79,7 @@ clean.
 
 **No grant.** When stderr says the Decision log is off for this project, the
 stats count trial matches only. With no grant, or with `oldest` null, do the
-transcript job (step 4) in full, conclude trials from what the trial lines show,
+new-rule job (step 4) in full, conclude trials from what the trial lines show,
 and say once that you could not see rule history.
 
 When a proposal concerns one rule, pull that rule's lines, and tell the user how
@@ -89,11 +90,11 @@ many you pulled:
 ```
 
 Each line is one evaluation: `time`, `session_id`, `kind`, `tool`, `outcome`,
-`matched[]` (`rule`, `tier`, `action`, and `trial`: `"rule"` for the rule's own
-`trial: true`, `"state"` for `handrail mode trial`, absent when enforcing), `unreadable`, and `payload`, the
-canonical fields as handrail derived them, each a list of Candidates with their
-`spellings`. A value ending in `[truncated]`, or a line with `"truncated": true`
-and a null `payload`, is cut.
+`matched[]` (`rule`, `tier`, `action`, and `trial`: `"rule"` for the rule's
+own `trial: true`, `"state"` for `handrail mode trial`, absent when enforcing),
+`unreadable`, and `payload`, the canonical fields as handrail derived them, each
+a list of Candidates with their `spellings`. A value ending in `[truncated]`,
+or a line with `"truncated": true` and a null `payload`, is cut.
 
 ## 4. New rules
 
@@ -162,10 +163,10 @@ is asked about alone, with no other proposal in the same question. Under a
 prompt-injected agent, the party proposing a retirement may be the party that
 produced the evidence for it.
 
-Retiring an enforcing rule is first offered as a downgrade to `trial: true`,
-when the rule is the user's to edit (Global or Project-personal). A Project-shared rule is the
-repository's: it can only take a Project-personal `enabled: false` stub or a
-wholesale copy with the change (`../add/SKILL.md`).
+Retiring an enforcing Project-personal rule is first offered as a downgrade to
+`trial: true`. A Global or Project-shared rule is inherited here, and the log's
+evidence is this project's alone: it can only take a Project-personal
+`enabled: false` stub or a wholesale copy with the change (`../add/SKILL.md`).
 
 ## 8. Propose, one at a time
 
@@ -196,13 +197,9 @@ the log showed nothing worth a durable rule, and stop.
 ## 9. On approval: write, validate, replay
 
 1. **Write** the file at the agreed path, following "Pick the tier and the path"
-   in `../add/SKILL.md`, including its note on `sync` and `.git/info/exclude`.
-   A new rule whose name is already in the effective ruleset takes another name,
-   unless the shadow is the approved proposal. A rule-directory guard may raise
-   an approval prompt on the write: that prompt is the user's consent working.
-   **On Codex** the guard's `ask` is a block: when a rule blocks the write, print
-   the file and its path for the user to save, and continue once they say it is
-   saved.
+   in `../add/SKILL.md`, including its notes on `sync` and on Codex. A new rule
+   whose name is already in the effective ruleset takes another name, unless
+   the shadow is the approved proposal.
 2. **`"$HANDRAIL" check`** must pass, with the rule in the table.
 3. **Replay the incident.** A new or widened rule must match it; a narrowed rule
    must no longer match the call the user overrode it for; a promoted trial must
