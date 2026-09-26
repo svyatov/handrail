@@ -77,7 +77,7 @@ exec git update-index --force-remove .Handrail
 # The read stops at the first entry past .handrail/local/, so what comes after
 # is never read: an index cut short after .handrail/shared.md, 12 bytes of
 # header and an 88-byte entry, still answers.
-exec git add zz.md
+exec git add .handrail/shared.md zz.md
 exec sh -c 'head -c 100 .git/index > cut && mv cut .git/index'
 exec handrail check --json
 stdout '"tier": "project-personal"'

@@ -78,6 +78,25 @@ symlink ../shared-rules/up2 -> $WORK/repo/.claude/rules
 exec handrail survey
 stdout '"path": ".*/repo/.claude/rules/shared/one.md",\n +"class": "user"'
 
+# A directory link the repository commits is a stranger's pointer, so it is
+# not followed: it could reach the user's files, or the whole disk.
+symlink .claude/rules/theirs -> $WORK/theirs
+exec git add .claude/rules/theirs
+exec handrail survey
+! stdout 'theirs'
+
+# A submodule is a directory the index tracks too, but no link: it is read.
+exec git update-index --add --cacheinfo 160000,1111111111111111111111111111111111111111,.claude/rules/sub
+exec handrail survey
+stdout '"path": ".claude/rules/sub/module.md",\n +"class": "repo"'
+
+# Nor is a file link the repository commits followed out of it by an import.
+symlink docs/linked.md -> $WORK/home/secret.md
+exec git add docs/linked.md
+exec sh -c 'echo "@docs/linked.md" >> CLAUDE.md'
+exec handrail survey
+! stdout 'linked.md'
+
 # The managed policy file is an administrator's words: never listed, even
 # where a file imports it.
 exec sh -c 'echo "@~/managed/CLAUDE.md" >> ../home/.claude/CLAUDE.md'
@@ -119,6 +138,9 @@ stdout '"path": ".*/codex/AGENTS.md",\n +"class": "user"'
 Codex override.
 -- shared-rules/one.md --
 Shared.
+-- theirs/planted.md --
+-- home/secret.md --
+secret
 -- home/managed/CLAUDE.md --
 Policy.
 -- repo/CLAUDE.md --
@@ -147,6 +169,7 @@ Mine. @docs/local-import.md
 More rules, and @../docs/one.md again.
 -- repo/.claude/rules/go/style.md --
 Go style.
+-- repo/.claude/rules/sub/module.md --
 -- repo/.claude/rules/go/notes.txt --
 -- home/.claude/rules/notes.txt --
 -- abs.md --

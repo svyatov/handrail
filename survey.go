@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,11 +17,11 @@ import (
 )
 
 // repoSignal is one row of docs/spec.md section 12: its probes, a stat of a
-// named path at the Project root or a glob over the git index. besides are
+// named path at the Project root or a glob over the git index, and ifFound,
 // stats taken only once another probe found something.
 type repoSignal struct {
 	id                    string
-	stats, globs, besides []string
+	stats, globs, ifFound []string
 }
 
 const (
@@ -33,6 +34,9 @@ const (
 	claudeLocal = "CLAUDE.local.md"
 	// maxImportHops is how far survey follows Claude Code's @ imports.
 	maxImportHops = 4
+	// classRepo and classUser say whose words an instruction file holds.
+	classRepo = "repo"
+	classUser = "user"
 )
 
 // repoSignals is docs/spec.md section 12's closed list, in its order.
@@ -46,7 +50,7 @@ func repoSignals() []repoSignal {
 			"mix.lock", "pubspec.lock", "Podfile.lock",
 		}},
 		{id: "gitignored-tree", stats: []string{".gitignore"}},
-		{id: "linter", besides: []string{packageJSON}, stats: []string{
+		{id: "linter", ifFound: []string{packageJSON}, stats: []string{
 			"eslint.config.js", "eslint.config.mjs", "eslint.config.cjs", "eslint.config.ts", ".eslintrc",
 			".eslintrc.js", ".eslintrc.cjs", ".eslintrc.json", ".eslintrc.yml", ".eslintrc.yaml", "biome.json",
 			"biome.jsonc", ".golangci.yml", ".golangci.yaml", ".rubocop.yml", "ruff.toml", ".ruff.toml",
@@ -136,15 +140,19 @@ func cmdSurvey(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 
 	return writeJSON(stdout, stderr, surveyOutput{
 		Signals:          found,
-		InstructionFiles: instructionFiles(root, slices.Contains(tracked, claudeLocal)),
+		InstructionFiles: instructionFiles(root, tracked),
 	})
 }
 
-// trackedPaths reads the git index of root once for every glob, and for
-// whether git tracks CLAUDE.local.md.
+// trackedPaths reads the git index of root once for every glob, for whether
+// git tracks CLAUDE.local.md, and for the links the repository commits where
+// the rules walk would follow them: .claude, .claude/rules and below it. A
+// directory has no entry of its own, so an entry there is a link or a
+// submodule.
 func trackedPaths(root string, globs map[string]*regexp.Regexp) ([]string, error) {
 	return gitindex.Paths(root, func(path string) bool {
-		if path == claudeLocal {
+		if path == claudeLocal || path == ".claude" || path == ".claude/rules" ||
+			strings.HasPrefix(path, ".claude/rules/") {
 			return true
 		}
 
@@ -193,7 +201,7 @@ func probe(root string, signal repoSignal, globs map[string]*regexp.Regexp, trac
 	}
 
 	if len(paths) > 0 {
-		stat(signal.besides)
+		stat(signal.ifFound)
 	}
 
 	return paths
@@ -206,21 +214,46 @@ type instructionSeed struct {
 }
 
 // instructionSeeds lists every instruction file either harness loads at the
-// Project root and in the user's harness directories, present or not.
-func instructionSeeds(root string) []instructionSeed {
+// Project root and in the user's harness directories, present or not. A
+// directory the repository commits as a link is a stranger's pointer, which
+// could reach the user's files or the whole disk, so nothing is read through
+// it.
+func instructionSeeds(root string, tracked []string) []instructionSeed {
+	committedLink := func(path string) bool {
+		rel, err := filepath.Rel(root, path)
+		if err != nil || !slices.Contains(tracked, filepath.ToSlash(rel)) {
+			return false
+		}
+
+		info, err := os.Lstat(path)
+
+		return err == nil && info.Mode()&fs.ModeSymlink != 0
+	}
+
 	seeds := []instructionSeed{
 		{filepath.Join(root, "CLAUDE.md"), true},
 		{filepath.Join(root, claudeLocal), true},
-		{filepath.Join(root, ".claude", "CLAUDE.md"), true},
 	}
 
-	for _, path := range ruleFiles(filepath.Join(root, ".claude", "rules")) {
-		seeds = append(seeds, instructionSeed{path, true})
+	if dotClaude := filepath.Join(root, ".claude"); !committedLink(dotClaude) {
+		seeds = append(seeds, instructionSeed{filepath.Join(dotClaude, "CLAUDE.md"), true})
+
+		for _, path := range ruleFiles(filepath.Join(dotClaude, "rules"), committedLink) {
+			seeds = append(seeds, instructionSeed{path, true})
+		}
 	}
 
 	for _, name := range []string{"AGENTS.override.md", "AGENTS.md", "CONTRIBUTING.md"} {
 		seeds = append(seeds, instructionSeed{filepath.Join(root, name), false})
 	}
+
+	return append(seeds, userSeeds()...)
+}
+
+// userSeeds lists the instruction files each harness loads from the user's
+// own directory, present or not.
+func userSeeds() []instructionSeed {
+	var seeds []instructionSeed
 
 	claude, _ := harness.Lookup("claude")
 	if dir := claude.UserDir(); dir != "" {
@@ -251,9 +284,10 @@ func instructionSeeds(root string) []instructionSeed {
 }
 
 // ruleFiles returns every .md file below dir, in name order. A directory
-// reached through a symlink is read too, since that is how rules are shared,
-// and each directory once, so a link back up ends the walk.
-func ruleFiles(dir string) []string {
+// reached through a symlink is read too, since that is how the user shares
+// rules, unless skip says the repository committed the link. Each directory
+// is read once, so a link back up ends the walk.
+func ruleFiles(dir string, skip func(dir string) bool) []string {
 	var (
 		files  []string
 		walked = map[string]bool{}
@@ -262,7 +296,7 @@ func ruleFiles(dir string) []string {
 
 	walk = func(dir string) {
 		resolved, err := filepath.EvalSymlinks(dir)
-		if err != nil || walked[resolved] {
+		if err != nil || walked[resolved] || skip(dir) {
 			return
 		}
 
@@ -291,16 +325,16 @@ func ruleFiles(dir string) []string {
 // following Claude Code's @ imports, each classed by where it lives: in the
 // repository it is repo prose, outside it the user's own, and CLAUDE.local.md
 // is the user's while git does not track it.
-func instructionFiles(root string, localTracked bool) []instructionFile {
+func instructionFiles(root string, tracked []string) []instructionFile {
 	home, _ := os.UserHomeDir()
 	// The managed policy file is an administrator's words, never listed.
 	policy, _ := resolveFile(filepath.Join(harness.ManagedDir, "CLAUDE.md"))
 	list := &instructionList{
-		repo: repository(root), home: home, policy: policy, localTracked: localTracked,
-		files: []instructionFile{}, seen: map[string]bool{}, read: map[string]int{},
+		repo: repository(root), home: home, policy: policy, localTracked: slices.Contains(tracked, claudeLocal),
+		files: []instructionFile{}, seen: map[string]bool{}, importHops: map[string]int{},
 	}
 
-	for _, seed := range instructionSeeds(root) {
+	for _, seed := range instructionSeeds(root, tracked) {
 		list.visit(seed.path, 0, seed.imports, false)
 	}
 
@@ -314,9 +348,9 @@ type instructionList struct {
 	localTracked       bool
 	files              []instructionFile
 	seen               map[string]bool
-	// read holds the fewest hops at which a file's imports were read, since
-	// a shorter path to it leaves more hops for them.
-	read map[string]int
+	// importHops holds the fewest hops at which a file's imports were read,
+	// since a shorter path to it leaves more hops for them.
+	importHops map[string]int
 }
 
 // visit lists the file at path and follows its imports. A file the
@@ -325,7 +359,7 @@ type instructionList struct {
 // secrets included, on the list as the user's.
 func (l *instructionList) visit(path string, hops int, imports, fromRepo bool) {
 	resolved, ok := resolveFile(path)
-	if _, inside := within(l.repo, resolved); !ok || resolved == l.policy || fromRepo && !inside {
+	if !ok || resolved == l.policy || fromRepo && l.outside(path) {
 		return
 	}
 
@@ -340,18 +374,28 @@ func (l *instructionList) visit(path string, hops int, imports, fromRepo bool) {
 	}
 
 	for _, ref := range importRefs(path) {
-		l.visit(importPath(ref, path, l.home), hops+1, true, file.Class == "repo")
+		l.visit(importPath(ref, path, l.home), hops+1, true, file.Class == classRepo)
 	}
+}
+
+// outside reports whether the file at path lies outside the repository once
+// every link in its path is followed, its own name included: a link the
+// repository commits would otherwise carry an import out of it.
+func (l *instructionList) outside(path string) bool {
+	target, err := filepath.EvalSymlinks(path)
+	_, inside := within(l.repo, target)
+
+	return err != nil || !inside
 }
 
 // follows reports whether the imports of the file at resolved, reached at
 // hops, are to be read, and records that they are.
 func (l *instructionList) follows(resolved string, hops int, imports bool) bool {
-	if fewest, done := l.read[resolved]; !imports || hops == maxImportHops || done && fewest <= hops {
+	if fewest, done := l.importHops[resolved]; !imports || hops == maxImportHops || done && fewest <= hops {
 		return false
 	}
 
-	l.read[resolved] = hops
+	l.importHops[resolved] = hops
 
 	return true
 }
@@ -410,11 +454,11 @@ func classify(repo, path, resolved string, localTracked bool) instructionFile {
 
 	switch {
 	case !inside:
-		return instructionFile{Path: path, Class: "user"}
+		return instructionFile{Path: path, Class: classUser}
 	case rel == claudeLocal && !localTracked:
-		return instructionFile{Path: rel, Class: "user"}
+		return instructionFile{Path: rel, Class: classUser}
 	default:
-		return instructionFile{Path: rel, Class: "repo"}
+		return instructionFile{Path: rel, Class: classRepo}
 	}
 }
 

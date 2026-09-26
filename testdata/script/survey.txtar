@@ -14,6 +14,19 @@ stdout '"path": ".*/home/.claude/CLAUDE.md",\n +"class": "user"'
 ! stdout '"repo"'
 cd ..
 
+# A CLAUDE.md the repository commits as a link is the repository's file, even
+# where it points out of it. A .claude directory it commits as a link is not
+# followed.
+cd linked
+exec git init -q
+symlink CLAUDE.md -> $WORK/outside.md
+symlink .claude -> $WORK/home/.claude
+exec git add CLAUDE.md .claude
+exec handrail survey
+stdout '"path": "CLAUDE.md",\n +"class": "repo"'
+! stdout 'linked/.claude'
+cd ..
+
 # survey reads the index in process: a git that would leave a mark is never
 # run.
 cd repo
@@ -69,6 +82,9 @@ cd ..
 
 -- home/.claude/CLAUDE.md --
 Mine.
+-- outside.md --
+-- linked/README.md --
+-- home/.claude/rules/mine.md --
 -- empty/.git/HEAD --
 ref: refs/heads/main
 -- bin/git --
