@@ -89,6 +89,7 @@ Starting from nothing, the sequence is:
 | `log [on\|off]` | Record which rules matched in this project, and read that record back: `--rule NAME`, `--all`, `-n N`, `--json`. Off until you turn it on, and a trial rule's matches are recorded either way. |
 | `import hookify` | Convert upstream hookify rule files into personal rules, reporting anything the format cannot express. |
 | `doctor` | Diagnose the install offline. The first thing to run when nothing fires. |
+| `survey` | Print, as JSON, the facts this repo states that a rule could guard (lockfiles, CI workflows, `.env` files, key material and more), and the instruction files either harness loads. Reads nothing but the git index and those files. |
 | `version` | Version, commit, and build date. |
 
 `handrail hook` also exists. Sync installs it, harnesses call it, and you never type it.

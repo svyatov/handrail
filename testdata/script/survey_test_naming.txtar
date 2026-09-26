@@ -1,0 +1,38 @@
+[!exec:git] skip
+
+# test-naming: globs over the git index, at most three matches each, and a
+# stat of package.json and Gemfile. A file git does not track is never seen.
+cd repo
+exec git init -q
+exec git add src spec
+exec handrail survey
+stdout '"id": "test-naming",\n +"paths": \[\n +"package.json",\n +"src/a.test.ts",\n +"src/b.test.ts",\n +"src/c.test.ts",\n +"spec/x_spec.rb"\n +\]'
+! stdout 'd.test.ts'
+! stdout 'untracked.test.js'
+
+exec handrail test PreToolUse --kind file_edit --field path=src/a.test.ts --field 'content=it.only('
+stdout '^warn  test-naming  global$'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/src/a.test.ts --field 'content=it.only('
+stdout '^warn  test-naming  global$'
+exec handrail test PreToolUse --kind file_edit --field path=src/a.test.ts --field 'content=it('
+stdout '^outcome: allow$'
+
+-- repo/package.json --
+{}
+-- repo/src/a.test.ts --
+-- repo/src/b.test.ts --
+-- repo/src/c.test.ts --
+-- repo/src/d.test.ts --
+-- repo/spec/x_spec.rb --
+-- repo/untracked.test.js --
+-- home/.config/handrail/test-naming.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    glob: '**/*.test.ts'
+  - field: content
+    matches: \b(describe|it|test)\.only\(
+---
+A focused test skips the rest of the suite.

@@ -1,0 +1,33 @@
+# linter: a stat of each linter config, and of package.json only once one is
+# found, since package.json alone says nothing about a linter.
+cd repo
+exec handrail survey
+stdout '"id": "linter",\n +"paths": \[\n +"eslint.config.js",\n +"package.json"\n +\]'
+
+rm eslint.config.js
+exec handrail survey
+! stdout '"linter"'
+
+exec handrail test PreToolUse --kind file_edit --field path=src/a.ts --field 'content=// eslint-disable-next-line'
+stdout '^warn  linter  global$'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/src/a.ts --field 'content=// eslint-disable-next-line'
+stdout '^warn  linter  global$'
+exec handrail test PreToolUse --kind file_edit --field path=src/a.ts --field 'content=const a = 1'
+stdout '^outcome: allow$'
+
+-- repo/.git/HEAD --
+ref: refs/heads/main
+-- repo/eslint.config.js --
+-- repo/package.json --
+{}
+-- home/.config/handrail/linter.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    glob: '**/src/**'
+  - field: content
+    contains: eslint-disable
+---
+Fix the lint finding instead of suppressing it.

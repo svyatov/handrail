@@ -702,7 +702,7 @@ func (t *Term) compile() error {
 
 		t.re = re
 	case opGlob:
-		re, err := globToRegexp(t.Value)
+		re, err := Glob(t.Value)
 		if err != nil {
 			return fmt.Errorf("line %d: invalid glob: %w", t.line, err)
 		}
@@ -713,10 +713,10 @@ func (t *Term) compile() error {
 	return nil
 }
 
-// globToRegexp compiles a glob into an anchored regexp, which is both the
-// validation (a pattern that cannot compile would never match) and the matcher.
-// The dialect is path.Match plus **, spelled out in docs/spec.md section 2.
-func globToRegexp(pattern string) (*regexp.Regexp, error) {
+// Glob compiles a glob into an anchored regexp, which is both the validation
+// (a pattern that cannot compile would never match) and the matcher. The
+// dialect is path.Match plus **, spelled out in docs/spec.md section 2.
+func Glob(pattern string) (*regexp.Regexp, error) {
 	var out strings.Builder
 	out.WriteByte('^')
 

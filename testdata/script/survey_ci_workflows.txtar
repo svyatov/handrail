@@ -1,0 +1,29 @@
+[!exec:git] skip
+
+# ci-workflows: the workflow files the git index tracks.
+cd repo
+exec git init -q
+exec git add .github
+exec handrail survey
+stdout '"id": "ci-workflows",\n +"paths": \[\n +".github/workflows/ci.yml",\n +".github/workflows/release.yaml"\n +\]'
+! stdout 'dependabot'
+
+exec handrail test PreToolUse --kind file_edit --field path=.github/workflows/ci.yml
+stdout '^warn  ci-workflows  global$'
+exec handrail test PreToolUse --kind file_edit --field path=$WORK/repo/.github/workflows/ci.yml
+stdout '^warn  ci-workflows  global$'
+exec handrail test PreToolUse --kind file_edit --field path=.github/dependabot.yml
+stdout '^outcome: allow$'
+
+-- repo/.github/workflows/ci.yml --
+-- repo/.github/workflows/release.yaml --
+-- repo/.github/dependabot.yml --
+-- home/.config/handrail/ci-workflows.md --
+---
+event: PreToolUse
+kind: file_edit
+conditions:
+  - field: path
+    glob: '**/.github/workflows/*.y*ml'
+---
+CI workflows run with the repository's secrets.

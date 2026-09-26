@@ -1,0 +1,30 @@
+[!exec:git] skip
+
+# terraform-state: state files the git index tracks.
+cd repo
+exec git init -q
+exec git add infra
+exec handrail survey
+stdout '"id": "terraform-state",\n +"paths": \[\n +"infra/terraform.tfstate"\n +\]'
+
+exec handrail test PreToolUse --kind shell --field 'command=terraform destroy'
+stdout '^warn  terraform-state  global$'
+exec handrail test PreToolUse --kind shell --field 'command=terraform apply -auto-approve'
+stdout '^warn  terraform-state  global$'
+exec handrail test PreToolUse --kind shell --field 'command=terraform plan'
+stdout '^outcome: allow$'
+
+-- repo/infra/terraform.tfstate --
+{}
+-- home/.config/handrail/terraform-state.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - any:
+      - field: command
+        contains: terraform apply
+      - field: command
+        contains: terraform destroy
+---
+This changes real infrastructure.

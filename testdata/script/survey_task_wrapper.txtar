@@ -1,0 +1,23 @@
+# task-wrapper: a stat of each task runner file.
+cd repo
+exec handrail survey
+stdout '"id": "task-wrapper",\n +"paths": \[\n +"Makefile",\n +"justfile"\n +\]'
+
+exec handrail test PreToolUse --kind shell --field 'command=cd x && go test ./...'
+stdout '^warn  task-wrapper  global$'
+exec handrail test PreToolUse --kind shell --field 'command=task test'
+stdout '^outcome: allow$'
+
+-- repo/.git/HEAD --
+ref: refs/heads/main
+-- repo/Makefile --
+-- repo/justfile --
+-- home/.config/handrail/task-wrapper.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: go test
+---
+Run the tests through task test.

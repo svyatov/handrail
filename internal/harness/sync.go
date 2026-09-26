@@ -12,12 +12,12 @@ import (
 	"github.com/svyatov/handrail/internal/rule"
 )
 
-// userDir is the harness's user-level directory, which is also how sync detects
+// UserDir is the harness's user-level directory, which is also how sync detects
 // it: the CLI creates the directory on first run, so its absence means no
 // install worth writing config for. A harness that lets a variable relocate
 // that directory is followed there, since config written anywhere else is
 // config it will never read.
-func (a Adapter) userDir() string {
+func (a Adapter) UserDir() string {
 	if a.homeEnv != "" {
 		if dir := os.Getenv(a.homeEnv); dir != "" {
 			return dir
@@ -34,7 +34,7 @@ func (a Adapter) userDir() string {
 
 // Installed reports whether the harness has run on this machine.
 func (a Adapter) Installed() bool {
-	dir := a.userDir()
+	dir := a.UserDir()
 	if dir == "" {
 		return false
 	}
@@ -50,7 +50,7 @@ func (a Adapter) Installed() bool {
 // is the same answer, since joining it yields the directory: a paste target
 // that is a directory is no more usable than one that is a bare name.
 func (a Adapter) path(file string) string {
-	dir := a.userDir()
+	dir := a.UserDir()
 	if dir == "" || file == "" {
 		return ""
 	}

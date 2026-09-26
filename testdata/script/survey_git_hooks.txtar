@@ -1,0 +1,27 @@
+# git-hooks: a stat of each hook manager's file or directory.
+cd repo
+exec handrail survey
+stdout '"id": "git-hooks",\n +"paths": \[\n +".husky"\n +\]'
+
+exec handrail test PreToolUse --kind shell --field 'command=git commit -n -m wip'
+stdout '^warn  git-hooks  global$'
+exec handrail test PreToolUse --kind shell --field 'command=git commit --no-verify -m wip'
+stdout '^warn  git-hooks  global$'
+exec handrail test PreToolUse --kind shell --field 'command=git commit -m wip'
+stdout '^outcome: allow$'
+
+-- repo/.git/HEAD --
+ref: refs/heads/main
+-- repo/.husky/pre-commit --
+-- home/.config/handrail/git-hooks.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - any:
+      - field: command
+        contains: --no-verify
+      - field: command
+        matches: git\s+commit\s+(\S+\s+)*-\w*n
+---
+The commit hooks run on every commit.

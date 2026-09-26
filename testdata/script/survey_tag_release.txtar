@@ -1,0 +1,38 @@
+[!exec:git] skip
+
+# tag-release: the workflows the git index tracks, and a stat of package.json.
+cd repo
+exec git init -q
+exec git add .github
+exec handrail survey
+stdout '"id": "tag-release",\n +"paths": \[\n +"package.json",\n +".github/workflows/release.yml"\n +\]'
+
+exec handrail test PreToolUse --kind shell --field 'command=git tag -a v1.0.0 -m r'
+stdout '^warn  tag-release  global$'
+exec handrail test PreToolUse --kind shell --field 'command=git push --tags'
+stdout '^warn  tag-release  global$'
+exec handrail test PreToolUse --kind shell --field 'command=npm publish'
+stdout '^warn  tag-release  global$'
+exec handrail test PreToolUse --kind shell --field 'command=git tag'
+stdout '^outcome: allow$'
+
+-- repo/package.json --
+{}
+-- repo/.github/workflows/release.yml --
+on:
+  push:
+    tags: ['v*']
+-- home/.config/handrail/tag-release.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - any:
+      - field: command
+        contains: git push --tags
+      - field: command
+        matches: git\s+tag\s+(-\w+\s+)*v?\d
+      - field: command
+        starts_with: npm publish
+---
+A tag push publishes a release.

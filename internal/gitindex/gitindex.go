@@ -121,6 +121,79 @@ func Under(root, dir string) (bool, error) {
 	return search.split(dirs.Own, index)
 }
 
+// Paths returns, sorted, every path the index of the working tree at root
+// tracks that keep accepts. Unlike Under it reads the whole index, a split
+// index's shared one included: a pattern has no place in the sort order to
+// stop at.
+func Paths(root string, keep func(string) bool) ([]string, error) {
+	dirs, err := Dirs(root)
+	if err != nil || dirs.Own == "" {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(filepath.Join(dirs.Own, "index"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	hashLen, err := hashLen(dirs.Common)
+	if err != nil {
+		return nil, err
+	}
+
+	dec, err := newDecoder(bytes.NewReader(data), hashLen)
+	if err != nil {
+		return nil, err
+	}
+
+	paths, err := dec.collect(nil, keep)
+	if err != nil {
+		return nil, err
+	}
+
+	shared, err := sharedPaths(dirs.Own, data, dec.off, hashLen, keep)
+	if err != nil {
+		return nil, err
+	}
+
+	paths = append(paths, shared...)
+	slices.Sort(paths)
+
+	// An unmerged path has an entry per stage.
+	return slices.Compact(paths), nil
+}
+
+// sharedPaths returns the paths keep accepts from the shared index that the
+// index in data links to, whose extensions start at off, less the entries it
+// deletes. An index that links to none has none.
+func sharedPaths(own string, data []byte, off, hashLen int, keep func(string) bool) ([]string, error) {
+	if len(data)-hashLen < off {
+		return nil, errTruncated
+	}
+
+	base, deleted, err := link(data[off:len(data)-hashLen], hashLen)
+	if err != nil || base == "" {
+		return nil, err
+	}
+
+	shared, err := os.Open(filepath.Join(own, "sharedindex."+base))
+	if err != nil {
+		return nil, err
+	}
+	defer shared.Close()
+
+	dec, err := newDecoder(shared, hashLen)
+	if err != nil {
+		return nil, err
+	}
+
+	return dec.collect(deleted, keep)
+}
+
 // scan is one Under question, asked of one index file at a time.
 type scan struct {
 	below   string // dir with a trailing slash
@@ -393,6 +466,25 @@ func newDecoder(r io.Reader, hashLen int) (*decoder, error) {
 	dec.count = binary.BigEndian.Uint32(header[8:])
 
 	return dec, nil
+}
+
+// collect reads every entry, passing over the positions deleted holds, and
+// returns the paths keep accepts.
+func (d *decoder) collect(deleted bitmap, keep func(string) bool) ([]string, error) {
+	var paths []string
+
+	for pos := range uint64(d.count) {
+		name, err := d.next()
+		if err != nil {
+			return nil, err
+		}
+
+		if !deleted.has(pos) && keep(name) {
+			paths = append(paths, name)
+		}
+	}
+
+	return paths, nil
 }
 
 // read returns the next size bytes.
