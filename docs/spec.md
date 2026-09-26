@@ -283,13 +283,13 @@ ADR: [0008](adr/0008-hookify-importer-mapping.md).
 | `all` (default) | Inferred from condition fields; skipped when fields span more than one event |
 | `command` | `command` |
 | `file_path` | `path` |
-| `new_text`, `content` | `content` |
+| `new_text`, `content` | `content`; on `event: stop`, `response`. No stop carries content, so upstream never matches there, and the report marks each converted stop rule `inert upstream, now matches response` |
 | `user_prompt` | `prompt` |
 | `regex_match` | `matches`, with `(?i)` prepended (upstream compiles IGNORECASE), RE2-validated |
 | string operators | Verbatim (upstream is case-sensitive already) |
-| `pattern:` shorthand | Expanded using upstream's own field inference |
+| `pattern:` shorthand | Expanded using upstream's own field inference, which names `content` on a stop rule |
 
-Inexpressible constructs are skipped with a per-rule report naming the reason and the original path; nothing broken is ever written: `old_text`, `transcript`, `reason`, non-RE2 patterns, unmappable `tool_matcher` values, ambiguous `all` rules. A skipped `transcript` condition's report names `response` as the nearest field, which holds the agent's last message only. The converted filename comes from the upstream `name:` field; an existing target is never overwritten (re-runs are safe); originals are untouched; `enabled: false` survives. Upstream has no trial state and no Examples, so the importer writes neither.
+Inexpressible constructs are skipped with a per-rule report naming the reason and the original path; nothing broken is ever written: `old_text`, `transcript`, `reason`, non-RE2 patterns, unmappable `tool_matcher` values, ambiguous `all` rules. A skipped `transcript` condition on a stop rule has a report that names `response` as the nearest field, which holds the agent's last message only. The converted filename comes from the upstream `name:` field; an existing target is never overwritten (re-runs are safe); originals are untouched; `enabled: false` survives. Upstream has no trial state and no Examples, so the importer writes neither.
 
 ## 9. Repo layout, toolchain, distribution
 

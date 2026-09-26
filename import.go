@@ -96,7 +96,13 @@ func reportImport(stdout io.Writer, root string, results []rule.Imported) {
 
 		imported++
 
-		fmt.Fprintf(stdout, "imported %s -> %s\n", relTo(root, result.Source), relTo(root, result.Target))
+		fmt.Fprintf(stdout, "imported %s -> %s", relTo(root, result.Source), relTo(root, result.Target))
+
+		if result.Note != "" {
+			fmt.Fprintf(stdout, " (%s)", result.Note)
+		}
+
+		fmt.Fprintln(stdout)
 	}
 
 	fmt.Fprintf(stdout, "%d imported, %d skipped\n", imported, skipped)

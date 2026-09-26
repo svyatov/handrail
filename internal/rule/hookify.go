@@ -42,6 +42,9 @@ const (
 	fileMode = 0o644
 )
 
+// upstreamStop is upstream's stop event, where handrail departs from upstream.
+const upstreamStop = "stop"
+
 // Imported is one upstream file's outcome: converted and written to Target, or
 // skipped for Reason. A skip leaves nothing behind, so the original path and
 // the reason are everything a hand-port needs.
@@ -49,6 +52,7 @@ type Imported struct {
 	Source string
 	Target string // empty when skipped
 	Reason string // empty when converted
+	Note   string // set when the converted rule fires where upstream never did
 }
 
 // ImportHookify converts every upstream rule file at src into a Project-personal
@@ -63,9 +67,9 @@ func ImportHookify(src, dst string) ([]Imported, error) {
 
 	out := make([]Imported, 0, len(sources))
 	for _, s := range sources {
-		target, err := importOne(s, dst)
+		res, err := importOne(s, dst)
 
-		res := Imported{Source: s, Target: target, Reason: ""}
+		res.Source = s
 		if err != nil {
 			res.Reason = err.Error()
 		}
@@ -154,36 +158,34 @@ type term struct {
 
 // importOne converts one upstream file and writes the handrail rule file under
 // dst, returning the path it wrote.
-func importOne(path, dst string) (string, error) {
+func importOne(path, dst string) (Imported, error) {
 	upstream, err := readHookify(path)
 	if err != nil {
-		return "", err
+		return Imported{}, err
 	}
 
 	name := upstream.name
-	if name == "" {
-		return "", errNoName
-	}
 
-	if !isRuleName(name) {
-		return "", fmt.Errorf("name %q %w", name, errUnusableName)
+	err = checkName(name)
+	if err != nil {
+		return Imported{}, err
 	}
 
 	terms, err := hookifyConditions(upstream.conditions, upstream.event, upstream.pattern)
 	if err != nil {
-		return "", err
+		return Imported{}, err
 	}
 
 	where, err := hookifyEvent(upstream.event, terms)
 	if err != nil {
-		return "", err
+		return Imported{}, err
 	}
 	// The canonical event, not the upstream one: an all rule has no upstream
 	// event to weigh a tool matcher against, and the inferred one is what the
 	// converted rule will actually carry.
 	where.kind, err = hookifyToolMatcher(upstream.toolMatcher, where)
 	if err != nil {
-		return "", err
+		return Imported{}, err
 	}
 	// Upstream treats anything that is not "block" as a warning.
 	action := upstream.action
@@ -196,17 +198,22 @@ func importOne(path, dst string) (string, error) {
 	// needs hand-fixing before handrail check passes is not an import.
 	_, err = Parse(name, []byte(file))
 	if err != nil {
-		return "", fmt.Errorf("converted rule is invalid: %w", err)
+		return Imported{}, fmt.Errorf("converted rule is invalid: %w", err)
 	}
 
-	target := filepath.Join(dst, name+".md")
+	res := Imported{Source: path, Target: filepath.Join(dst, name+".md"), Reason: "", Note: ""}
 
-	err = writeNew(target, file)
+	err = writeNew(res.Target, file)
 	if err != nil {
-		return "", err
+		return Imported{}, err
+	}
+	// A stop carries only response, which upstream has no field for, so every
+	// converted stop rule is one whose content upstream never matched.
+	if where.event == eventStop {
+		res.Note = "inert upstream, now matches " + fieldResponse
 	}
 
-	return target, nil
+	return res, nil
 }
 
 // hookifyFile is one upstream file as far as the Importer reads it.
@@ -278,6 +285,19 @@ func (h *hookifyFile) set(entry pair) error {
 	return nil
 }
 
+// checkName reports why an upstream name cannot be the converted file's name.
+func checkName(name string) error {
+	if name == "" {
+		return errNoName
+	}
+
+	if !isRuleName(name) {
+		return fmt.Errorf("name %q %w", name, errUnusableName)
+	}
+
+	return nil
+}
+
 // isRuleName reports whether name can be a rule file's basename. Identity is the
 // filename, so a name carrying a separator or a leading dot would name a file
 // nobody asked for.
@@ -306,7 +326,7 @@ func hookifyConditions(list *node, event, pattern string) ([]term, error) {
 
 	terms := make([]term, 0, len(list.seq))
 	for _, item := range list.seq {
-		t, err := hookifyCondition(item)
+		t, err := hookifyCondition(event, item)
 		if err != nil {
 			return nil, err
 		}
@@ -322,10 +342,10 @@ func hookifyPattern(event, pattern string) ([]term, error) {
 	if pattern == "" {
 		return nil, errNoConditions
 	}
-	// Upstream's own inference, verbatim, which docs/spec.md section 8 asks
-	// for. On a prompt or stop rule it names content, a field neither event
-	// carries: the shorthand is inert upstream too, and inventing a field
-	// the author never wrote would import a guardrail they never had.
+	// Upstream's own inference, which docs/spec.md section 8 asks for. On a
+	// prompt rule it names content, a field that event never carries: the
+	// shorthand is inert upstream too, and inventing a field the author never
+	// wrote would import a guardrail they never had.
 	field := fieldContent
 
 	switch event {
@@ -335,7 +355,7 @@ func hookifyPattern(event, pattern string) ([]term, error) {
 		field = "new_text"
 	}
 
-	t, err := convertCondition(field, "regex_match", pattern)
+	t, err := convertCondition(event, field, "regex_match", pattern)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +364,7 @@ func hookifyPattern(event, pattern string) ([]term, error) {
 }
 
 // hookifyCondition converts one entry of the condition list.
-func hookifyCondition(item *node) (term, error) {
+func hookifyCondition(event string, item *node) (term, error) {
 	if !item.isMapping() {
 		return term{}, fmt.Errorf("line %d: condition %w", item.line, errNotMapping)
 	}
@@ -368,14 +388,28 @@ func hookifyCondition(item *node) (term, error) {
 		}
 	}
 
-	return convertCondition(field, operator, value)
+	return convertCondition(event, field, operator, value)
 }
 
-// convertCondition maps one upstream field and operator onto handrail's.
-func convertCondition(field, operator, value string) (term, error) {
+// convertCondition maps one upstream field and operator onto handrail's, on a
+// rule whose upstream event is event.
+func convertCondition(event, field, operator, value string) (term, error) {
 	canonical, where, known := hookifyField(field)
 	if !known {
-		return term{}, fmt.Errorf("condition field %q %w", field, errNoCanonicalField)
+		err := fmt.Errorf("condition field %q %w", field, errNoCanonicalField)
+		if event == upstreamStop && field == "transcript" {
+			// Whoever ports the rule by hand needs the nearest field, and what
+			// it lacks next to a whole transcript.
+			err = fmt.Errorf("%w; the nearest is response, which holds the agent's last message only", err)
+		}
+
+		return term{}, err
+	}
+	// The one departure from upstream: a stop carries no content, so upstream
+	// never matches it there, but a content pattern on a stop is written against
+	// what the agent said, and response is the nearest thing a stop carries.
+	if event == upstreamStop && canonical == fieldContent {
+		canonical, where = fieldResponse, eventKind{eventStop, ""}
 	}
 
 	converted, known := hookifyOperator(operator)
@@ -441,7 +475,7 @@ func hookifyEvent(event string, terms []term) (eventKind, error) {
 		return eventKind{eventPreToolUse, kindFileEdit}, nil
 	case "prompt":
 		return eventKind{eventUserPromptSubmit, ""}, nil
-	case "stop":
+	case upstreamStop:
 		return eventKind{eventStop, ""}, nil
 	case "", "all":
 		return inferEvent(terms)
