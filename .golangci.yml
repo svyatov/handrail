@@ -215,10 +215,11 @@ linters:
           - goconst
       # Lookup tables the hook path reads on every call, so a function that
       # builds them would allocate them per call; and the two vars GoReleaser
-      # sets through -ldflags -X, which reaches only package variables.
+      # sets through -ldflags -X, which reaches only package variables; and
+      # ManagedDir, which the tests point into their sandbox.
       - linters:
           - gochecknoglobals
-        text: ^(adapters|programs|wrappers|sum|grep|mise|commit|date) is a global variable
+        text: ^(adapters|programs|wrappers|sum|grep|mise|commit|date|ManagedDir) is a global variable
       # These structs' field order is the order of their JSON keys, or, for
       # Failure, embeddedstructfieldcheck pins the embedded field first. The
       # finding is only about where pointer bytes sit, not the struct size.

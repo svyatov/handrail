@@ -1,0 +1,43 @@
+# Claude Code reads the shared .claude/settings.json from the directory a
+# session starts in, and settings.local.json from the repository root, so from
+# a subdirectory doctor reads the settings a session started there reads.
+cd repo
+exec handrail sync
+cd sub
+
+# The root's shared file does not apply to a session started below it.
+exec handrail doctor
+! stdout 'hooks are disabled'
+
+# The shared file in the starting directory does.
+mkdir .claude
+cp $WORK/true.json .claude/settings.json
+! exec handrail doctor
+stdout '^problem +claude: hooks are disabled: disableAllHooks is true in .*/repo/sub/\.claude/settings\.json$'
+
+# The root's local file beats it.
+cp $WORK/false.json ../.claude/settings.local.json
+exec handrail doctor
+! stdout 'hooks are disabled'
+
+# A local file an older Claude Code left in the starting directory still
+# counts, below the root's.
+rm .claude/settings.json
+cp $WORK/true.json .claude/settings.local.json
+exec handrail doctor
+! stdout 'hooks are disabled'
+rm ../.claude/settings.local.json
+! exec handrail doctor
+stdout '^problem +claude: hooks are disabled: disableAllHooks is true in .*/repo/sub/\.claude/settings\.local\.json$'
+
+-- true.json --
+{"disableAllHooks": true}
+-- false.json --
+{"disableAllHooks": false}
+-- home/.claude/settings.json --
+{}
+-- repo/.git/HEAD --
+ref: refs/heads/main
+-- repo/.claude/settings.json --
+{"disableAllHooks": true}
+-- repo/sub/placeholder --

@@ -32,7 +32,12 @@ stdout '^problem +\.handrail/local/ is not excluded in \.git/info/exclude; run h
 
 # A rule that cannot be parsed guards nothing, and doctor names the file.
 stdout '^problem +.*/broken\.md: line 2: unknown event "Nope"$'
-stdout '^ok +1 rule valid$'
+stdout '^ok +1 rule valid, 0 on trial$'
+
+# An Example that fails in a tier nobody trusted is still named, since
+# trusting the tier would put that rule in force.
+stdout '^problem +.*/\.handrail/shared\.md: line 9: match example fails: command="sudo reboot"$'
+! stdout 'Examples pass'
 
 # An entry whose exec bit an install lost fires nothing either, and it looks
 # exactly like a working entry from the settings file alone.
@@ -43,6 +48,7 @@ stdout '^problem +claude: the PreToolUse entry names .*/moved/handrail, which is
 
 # Fixing what sync and trust own turns those checks green.
 rm .handrail/local/broken.md
+cp shared-fixed.md .handrail/shared.md
 exec handrail trust
 exec handrail sync
 exec handrail doctor
@@ -98,8 +104,20 @@ a binary that is not the one running
 -- .handrail/shared.md --
 ---
 event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: rm
+examples:
+  match:
+    - command: sudo reboot
 ---
 A committed rule nobody has granted yet.
+-- shared-fixed.md --
+---
+event: PreToolUse
+---
+A committed rule, its Example gone.
 -- .handrail/local/broken.md --
 ---
 event: Nope

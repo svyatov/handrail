@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 
 	"github.com/svyatov/handrail/internal/harness"
 	"github.com/svyatov/handrail/internal/rule"
@@ -52,6 +53,7 @@ func cmdDoctor(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 
 		out.okf("%s: config at %s", adapter.Name, adapter.ConfigPath())
 		out.checkEntries(adapter, bin)
+		out.checkBypass(adapter, ruleset.Root, cwd)
 		// Degradation is reported at sync time and reprintable here: a rule
 		// weakened months ago is exactly the kind that reads as not firing.
 		for _, line := range adapter.Report(ruleset.Effective()) {
@@ -60,15 +62,7 @@ func cmdDoctor(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	fmt.Fprintln(stdout)
-	out.okf("project root %s", ruleset.Root)
-	out.checkTiers(ruleset)
-	out.checkExclusion(ruleset)
-
-	for _, p := range ruleset.Invalid() {
-		out.badf("%s: %s", p.Path, p.Message)
-	}
-
-	out.okf("%s valid", countRules(len(ruleset.Rules)))
+	out.checkProject(ruleset)
 
 	if out.problems > 0 {
 		return 1
@@ -98,6 +92,48 @@ func (r *report) badf(format string, a ...any) {
 	r.linef("problem", format, a...)
 }
 
+// checkProject reports what this repo's rules depend on: where they are read
+// from, what is granted and set for it, and whether they parse and pass their
+// Examples.
+func (r *report) checkProject(ruleset *rule.Ruleset) {
+	r.okf("project root %s", ruleset.Root)
+	r.checkTiers(ruleset)
+
+	// A demoted tier is still read, only gated as shared, so it is a fact to
+	// know rather than a fault.
+	if ruleset.Demoted != "" {
+		r.notef(".handrail/local/ is read as Project-shared: %s", ruleset.Demoted)
+	} else {
+		r.okf(".handrail/local/ is not supplied by the repository")
+	}
+
+	r.checkExclusion(ruleset)
+	r.checkLog(ruleset.Root)
+
+	// A state that is not enforce is the user's to set, and loud everywhere.
+	state := describeState(ruleset.State, ruleset.StateScope, ruleset.Root)
+	if ruleset.State == rule.StateEnforce {
+		r.okf("enforcement state: %s", state)
+	} else {
+		r.notef("enforcement state: %s", state)
+	}
+
+	for _, p := range ruleset.Invalid() {
+		r.badf("%s: %s", p.Path, p.Message)
+	}
+
+	trial := 0
+
+	for _, entry := range ruleset.Effective() {
+		if entry.Trial {
+			trial++
+		}
+	}
+
+	r.okf("%s valid, %d on trial", countRules(len(ruleset.Rules)), trial)
+	r.checkExamples(slices.Concat(ruleset.Rules, ruleset.Untrusted))
+}
+
 // checkEntries answers the question a broken install turns into: is there an
 // entry for every event, and does it invoke a binary that is here, runnable,
 // and this one? A silent harness usually has one of those four wrong.
@@ -115,6 +151,9 @@ func (r *report) checkEntries(adapter harness.Adapter, bin string) {
 		switch {
 		case entry.Binary == "":
 			r.badf("%s: no hook entry for %s; run handrail sync", adapter.Name, entry.Event)
+		case entry.Narrowed:
+			r.badf("%s: the %s entry is narrowed by its if or its group's matcher, so it misses calls; run handrail sync",
+				adapter.Name, entry.Event)
 		case !runnable(entry.Binary):
 			// An install that loses the exec bit leaves every entry in place and
 			// every rule unenforced, which is the failure that looks like none.
@@ -130,6 +169,26 @@ func (r *report) checkEntries(adapter harness.Adapter, bin string) {
 
 	if current == len(entries) {
 		r.okf("%s: %d hook entries current", adapter.Name, current)
+	}
+}
+
+// checkBypass reports a setting that keeps every current entry from running,
+// which no entry check can see.
+func (r *report) checkBypass(adapter harness.Adapter, root, cwd string) {
+	bypass, err := adapter.Bypass(root, cwd)
+	if err != nil {
+		r.badf("%s: %v", adapter.Name, err)
+
+		return
+	}
+
+	for _, reason := range bypass.Disabled {
+		r.badf("%s: %s", adapter.Name, reason)
+	}
+	// handrail cannot stop another hook approving its ask, so this is a fact
+	// to know rather than a fault to fix.
+	for _, path := range bypass.Approvers {
+		r.notef("%s: a PermissionRequest hook in %s can answer a handrail ask without the human", adapter.Name, path)
 	}
 }
 
@@ -151,6 +210,8 @@ func (r *report) checkTiers(rs *rule.Ruleset) {
 			continue
 		case tier.Name == rule.TierProjectShared && tier.Trusted:
 			trusted = ", trusted"
+		case tier.Name == rule.TierProjectShared:
+			trusted = ", not trusted"
 		}
 
 		r.okf("%s: %s in %s%s", tier.Name, countRules(tier.Count), tier.Dir, trusted)
@@ -170,6 +231,48 @@ func (r *report) checkExclusion(rs *rule.Ruleset) {
 		r.okf(".handrail/local/ is excluded in .git/info/exclude")
 	default:
 		r.badf(".handrail/local/ is not excluded in .git/info/exclude; run handrail sync")
+	}
+}
+
+// checkExamples runs every rule file's Examples, as check does, and names each
+// one that fails.
+func (r *report) checkExamples(rules []*rule.Rule) {
+	failures := exampleFailures(rules)
+	for _, f := range failures {
+		r.badf("%s", f)
+	}
+
+	if len(failures) == 0 {
+		total := 0
+		for _, entry := range rules {
+			total += len(entry.Examples)
+		}
+
+		r.okf("%d Examples pass", total)
+	}
+}
+
+// checkLog reports root's Decision log grant, with the file the log writes and
+// its size. A log that is off is the user's choice, so it is a note.
+func (r *report) checkLog(root string) {
+	file := rule.LogPaths().Current
+	if file == "" {
+		r.notef("no Decision log: set HOME or XDG_STATE_HOME")
+
+		return
+	}
+
+	size := "not written yet"
+
+	info, err := os.Stat(file)
+	if err == nil {
+		size = fmt.Sprintf("%d bytes", info.Size())
+	}
+
+	if rule.Logging(root) {
+		r.okf("the Decision log is on for this project: %s, %s", file, size)
+	} else {
+		r.notef("the Decision log is off for this project, so only trial matches are recorded: %s, %s", file, size)
 	}
 }
 

@@ -30,6 +30,7 @@ exec sh -c 'handrail doctor; echo code=$?'
 stdout '^code=1$'
 stdout '^problem +global: no config directory: set HOME or XDG_CONFIG_HOME$'
 stdout '^note +claude: not installed$'
+stdout '^note +no Decision log: set HOME or XDG_STATE_HOME$'
 
 # With home set and no XDG variable, the base is the spec's default under it.
 env HOME=$WORK/home

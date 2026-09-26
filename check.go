@@ -226,17 +226,26 @@ func pathOf(r *rule.Rule) *string {
 // reportExamples runs every rule's Examples, names each failing one on stderr,
 // and reports whether any failed.
 func reportExamples(rules []*rule.Rule, stderr io.Writer) bool {
-	failed := false
+	failures := exampleFailures(rules)
+	for _, f := range failures {
+		fmt.Fprintf(stderr, "handrail: %s\n", f)
+	}
+
+	return len(failures) > 0
+}
+
+// exampleFailures runs every rule's Examples and names each failing one with
+// the file that holds its rule.
+func exampleFailures(rules []*rule.Rule) []string {
+	var out []string
 
 	for _, r := range rules {
 		for _, e := range harness.FailingExamples(r) {
-			fmt.Fprintf(stderr, "handrail: %s: %s\n", r.Path, exampleFailure(r, e))
-
-			failed = true
+			out = append(out, r.Path+": "+exampleFailure(r, e))
 		}
 	}
 
-	return failed
+	return out
 }
 
 // reportTierMoves names each Project-shared file dropped for naming a Global

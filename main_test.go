@@ -12,13 +12,21 @@ import (
 	"time"
 
 	"github.com/rogpeppe/go-internal/testscript"
+
+	"github.com/svyatov/handrail/internal/harness"
 )
 
 // main itself, not a closure around run: testscript hands the command its own
 // os.Args, so main reads exactly what a real invocation reads, and the entry
-// point gets covered by every script rather than by nothing.
+// point gets covered by every script rather than by nothing. Claude Code's
+// managed settings live outside any home directory, so the sandbox moves them
+// under its own.
 func TestMain(m *testing.M) {
-	testscript.Main(m, map[string]func(){"handrail": main})
+	testscript.Main(m, map[string]func(){"handrail": func() {
+		harness.ManagedDir = filepath.Join(os.Getenv("HOME"), "managed")
+
+		main()
+	}})
 }
 
 func TestScripts(t *testing.T) {

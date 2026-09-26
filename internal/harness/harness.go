@@ -45,6 +45,11 @@ type Adapter struct {
 	// patchInShell is true where the harness applies an apply_patch heredoc a
 	// shell call sends, rather than running the line.
 	patchInShell bool
+	// conditions is true where a hook's if field limits the calls it runs on.
+	conditions bool
+	// bypass reads the harness's settings for what keeps its hooks from
+	// running, since each harness keeps that switch in its own format.
+	bypass func(a Adapter, root, cwd string) (Bypass, error)
 }
 
 // eventCaps is one row of an Adapter's Capability matrix.
@@ -73,6 +78,7 @@ const (
 	eventSessionEnd       = "SessionEnd"
 	eventSubagentStart    = "SubagentStart"
 	eventSubagentStop     = "SubagentStop"
+	eventStop             = "Stop"
 	toolAgent             = "Agent"
 	kindShell             = "shell"
 	kindFileEdit          = "file_edit"
@@ -100,7 +106,7 @@ var adapters = []Adapter{
 	{
 		Name: "claude", title: "Claude Code", dir: ".claude", homeEnv: "CLAUDE_CONFIG_DIR", file: "settings.json",
 		aliases: [][]string{{toolAgent, "Task"}}, agentTypeKey: "subagent_type", agentPromptKey: "prompt",
-		patchInShell: false, sessionEnv: "CLAUDE_CODE_SESSION_ID",
+		patchInShell: false, sessionEnv: "CLAUDE_CODE_SESSION_ID", bypass: claudeBypass, conditions: true,
 		events: []eventCaps{
 			{name: "PreToolUse", deny: permissionDeny, inject: true, ask: true},
 			{name: "PostToolUse", inject: true},
@@ -118,6 +124,7 @@ var adapters = []Adapter{
 	},
 	{
 		Name: "codex", title: "Codex CLI", dir: ".codex", homeEnv: "CODEX_HOME", file: "hooks.json", patchInShell: true,
+		bypass: codexBypass, conditions: false,
 		aliases:      [][]string{{"apply_patch", "Edit", "Write"}, {"spawn_agent", toolAgent}},
 		agentTypeKey: "agent_type", agentPromptKey: "message", sessionEnv: "CODEX_THREAD_ID",
 		events: []eventCaps{
