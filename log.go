@@ -58,11 +58,11 @@ const logTime = "2006-01-02T15:04:05.000Z07:00"
 
 // logEvent is one hook event as the Decision log records it.
 type logEvent struct {
-	ruleset  *rule.Ruleset
-	event    string
-	cwd      string
-	envelope []byte // the harness payload as it arrived, for its session id
-	adapter  harness.Adapter
+	ruleset *rule.Ruleset
+	event   string
+	cwd     string
+	session string
+	adapter harness.Adapter
 }
 
 // record appends the Decision log's lines for one event: one per payload in
@@ -78,7 +78,9 @@ func (rec logEvent) record(payloads []rule.Payload, matched []rule.Match) []stri
 	stamp := time.Now().UTC().Format(logTime)
 
 	for index, payload := range rec.ruleset.Yield(payloads) {
-		hits := slices.DeleteFunc(slices.Clone(matched), func(m rule.Match) bool { return !slices.Contains(m.Hits, index) })
+		hits := slices.DeleteFunc(slices.Clone(matched), func(m rule.Match) bool {
+			return !slices.Contains(m.PayloadIndices, index)
+		})
 		if len(hits) == 0 && !payload.Has("unreadable") {
 			continue
 		}
@@ -116,15 +118,9 @@ func (rec logEvent) record(payloads []rule.Payload, matched []rule.Match) []stri
 // line is the Decision log line for one payload, the Outcome the harness
 // delivers for it, and the rules it names.
 func (rec logEvent) line(stamp string, payload rule.Payload, outcome rule.Outcome, hits []rule.Match) logLine {
-	var session struct {
-		ID string `json:"session_id"`
-	}
-
-	_ = json.Unmarshal(rec.envelope, &session)
-
 	fields := payload.Fields()
 	line := logLine{
-		Time: stamp, Version: version, Harness: rec.adapter.Name, Event: rec.event, SessionID: clip(session.ID),
+		Time: stamp, Version: version, Harness: rec.adapter.Name, Event: rec.event, SessionID: clip(rec.session),
 		Root: clip(rec.ruleset.Root), Cwd: clip(rec.cwd), Kind: payload.Kind, Tool: "",
 		Outcome: outcome.String(), Matched: []logEntry{}, Payload: fields, Unreadable: []string{}, raw: nil,
 		Truncated: false,
@@ -263,7 +259,7 @@ func cmdLog(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	file := rule.LogPaths()[1]
+	file := rule.LogPaths().Current
 	if verb == "on" {
 		fmt.Fprintf(stdout, "logging decisions for %s to %s\n", root, file)
 	} else {
@@ -289,7 +285,8 @@ type logQuery struct {
 func readLog() []logLine {
 	var lines []logLine
 
-	for _, file := range rule.LogPaths() {
+	files := rule.LogPaths()
+	for _, file := range []string{files.Older, files.Current} {
 		data, _ := os.ReadFile(file)
 		for raw := range bytes.Lines(data) {
 			var line logLine
@@ -304,14 +301,18 @@ func readLog() []logLine {
 	return lines
 }
 
-// projectLines is the Decision log's lines for root, oldest first, and says on
-// stderr when root holds no grant, since then only trial matches were recorded.
-func projectLines(root string, all bool, stderr io.Writer) []logLine {
+// noteGrant says on stderr when root holds no Decision log grant, since then
+// only trial matches were recorded.
+func noteGrant(root string, stderr io.Writer) {
 	if !rule.Logging(root) {
 		fmt.Fprintln(stderr, "handrail: the Decision log is off for this project, so only trial matches are recorded; "+
 			"run handrail log on to record every decision")
 	}
+}
 
+// projectLines is the Decision log's lines for root, or every project's with
+// all, oldest first.
+func projectLines(root string, all bool) []logLine {
 	lines := readLog()
 	if all {
 		return lines
@@ -322,7 +323,9 @@ func projectLines(root string, all bool, stderr io.Writer) []logLine {
 
 // printLog prints the lines the query asks for, newest first.
 func printLog(query logQuery, stdout, stderr io.Writer) int {
-	lines := projectLines(query.root, query.all, stderr)
+	noteGrant(query.root, stderr)
+
+	lines := projectLines(query.root, query.all)
 	if query.rule != "" {
 		lines = slices.DeleteFunc(lines, func(l logLine) bool {
 			return !slices.ContainsFunc(l.Matched, func(e logEntry) bool { return e.Rule == query.rule })

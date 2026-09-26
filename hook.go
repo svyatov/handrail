@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -62,9 +61,8 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	// handrail's own failures never decide the event: each is declared as
 	// unreadable, where a rule may fail closed on it, and named on both channels.
-	var envelope bytes.Buffer
-
-	payloads, cwd, err := readCall(adapter, event, io.TeeReader(stdin, &envelope))
+	call, err := readCall(adapter, event, stdin)
+	payloads := call.Payloads
 
 	var failures []string
 	if err != nil {
@@ -72,7 +70,7 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	// A directory that is not there names no project, whoever named it, but the
 	// call was still read, so it keeps its kind and meets the Global tier.
-	cwd, err = eventDir(cwd)
+	cwd, err := eventDir(call.Cwd)
 	if err != nil {
 		failures = append(failures, fmt.Sprintf("handrail: no working directory, so no project rule was evaluated: %v", err))
 	}
@@ -92,7 +90,7 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	failures = append(failures, loadNotices(ruleset)...)
 	// A line the log could not write is reported like any failure of
 	// handrail's own, and the Outcome stands.
-	logged := logEvent{ruleset: ruleset, event: event, cwd: cwd, envelope: envelope.Bytes(), adapter: adapter}
+	logged := logEvent{ruleset: ruleset, event: event, cwd: cwd, session: call.Session, adapter: adapter}
 	failures = append(failures, logged.record(payloads, matched)...)
 
 	text := messages(adapter, ruleset, event, matched, failures)
@@ -139,18 +137,21 @@ func eventDir(cwd string) (string, error) {
 // stdin never arrived, or it arrived and was not the payload. Reporting the
 // second as the first sends the reader to look at the pipe when the harness's
 // JSON is what to fix.
-func readCall(adapter harness.Adapter, event string, stdin io.Reader) ([]rule.Payload, string, error) {
+func readCall(adapter harness.Adapter, event string, stdin io.Reader) (harness.Call, error) {
 	data, err := io.ReadAll(stdin)
 	if err != nil {
-		return unreadableCall(event), "", fmt.Errorf("handrail: could not read the %s payload: %w", event, err)
+		return harness.Call{Cwd: "", Session: "", Payloads: unreadableCall(event)},
+			fmt.Errorf("handrail: could not read the %s payload: %w", event, err)
 	}
 
-	payloads, cwd, err := adapter.Normalize(event, data)
+	call, err := adapter.Normalize(event, data)
 	if err != nil {
-		return unreadableCall(event), cwd, fmt.Errorf("handrail: could not parse the %s payload: %w", event, err)
+		call.Payloads = unreadableCall(event)
+
+		return call, fmt.Errorf("handrail: could not parse the %s payload: %w", event, err)
 	}
 
-	return payloads, cwd, nil
+	return call, nil
 }
 
 // unreadableCall is the one payload a call handrail could not read stands in

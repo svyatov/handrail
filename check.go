@@ -75,8 +75,11 @@ func cmdCheck(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 
 	// past is nil without --stats, which reads no history.
 	var past *history
+
 	if *withStats {
-		past = new(history(projectLines(ruleset.Root, false, stderr)))
+		noteGrant(ruleset.Root, stderr)
+
+		past = new(history(projectLines(ruleset.Root, false)))
 	}
 
 	var examplesFailed bool
@@ -89,7 +92,7 @@ func cmdCheck(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 			return code
 		}
 	} else {
-		examplesFailed, err = printCheck(stdout, stderr, ruleset, past)
+		examplesFailed, err = printCheck(stdout, stderr, ruleset, problems, past)
 		if err != nil {
 			fmt.Fprintf(stderr, "handrail: %v\n", err)
 
@@ -107,7 +110,9 @@ func cmdCheck(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 // printCheck is check's human report: the annotated ruleset, its history when
 // past is not nil, and on stderr every problem, tier move and failing
 // Example. It reports whether any Example failed.
-func printCheck(stdout, stderr io.Writer, ruleset *rule.Ruleset, past *history) (bool, error) {
+func printCheck(
+	stdout, stderr io.Writer, ruleset *rule.Ruleset, problems []rule.Problem, past *history,
+) (bool, error) {
 	err := printRuleset(stdout, ruleset.Rules)
 	if err == nil && past != nil {
 		err = printStats(stdout, ruleset.Effective(), *past)
@@ -117,7 +122,7 @@ func printCheck(stdout, stderr io.Writer, ruleset *rule.Ruleset, past *history) 
 		return false, err
 	}
 
-	reportProblems(ruleset.Invalid(), stderr)
+	reportProblems(problems, stderr)
 	reportTierMoves(ruleset, stderr)
 
 	return reportExamples(slices.Concat(ruleset.Rules, ruleset.Untrusted), stderr), nil

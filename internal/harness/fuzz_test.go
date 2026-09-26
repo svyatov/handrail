@@ -37,7 +37,7 @@ func FuzzNormalize(f *testing.F) {
 
 	f.Fuzz(func(_ *testing.T, event string, data []byte) {
 		for _, a := range harness.Adapters() {
-			_, _, _ = a.Normalize(event, data)
+			_, _ = a.Normalize(event, data)
 		}
 	})
 }

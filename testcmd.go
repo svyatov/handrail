@@ -227,7 +227,8 @@ func captureCall(
 	// it will there, a broken one included. The cwd it reports is dropped,
 	// because test answers for the ruleset in the working directory rather
 	// than the one the capture was taken under.
-	payloads, _, err := readCall(adapter, event, stdin)
+	call, err := readCall(adapter, event, stdin)
+	payloads := call.Payloads
 
 	var failures []string
 	if err != nil {

@@ -373,7 +373,7 @@ func (rs *Ruleset) Evaluate(payloads []Payload) ([]Match, Outcome) {
 // matchAll is this rule's Match over an event's payloads, and whether it
 // matched any of them.
 func (r *Rule) matchAll(payloads []Payload) (Match, bool) {
-	match, hit := Match{Rule: r, Files: nil, Hits: nil, Trial: false}, false
+	match, hit := Match{Rule: r, Files: nil, PayloadIndices: nil, Trial: false}, false
 	for index, payload := range payloads {
 		if !r.matches(payload) {
 			continue
@@ -381,7 +381,7 @@ func (r *Rule) matchAll(payloads []Payload) (Match, bool) {
 
 		hit = true
 
-		match.Hits = append(match.Hits, index)
+		match.PayloadIndices = append(match.PayloadIndices, index)
 		match.addFiles(payload)
 	}
 	// One file is the one the message is about, with nothing to list.
@@ -399,9 +399,9 @@ type Match struct {
 	*Rule
 
 	Files []string
-	// Hits are the indices, among the payloads Yield returns, of those the
-	// rule matched, for the Decision log's line per payload.
-	Hits []int
+	// PayloadIndices are the indices, among the payloads Yield returns, of
+	// those the rule matched, for the Decision log's line per payload.
+	PayloadIndices []int
 	// Trial marks a match that delivers nothing: no Outcome, no message, no
 	// ordering slot.
 	Trial bool

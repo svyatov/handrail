@@ -2,7 +2,6 @@ package rule
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -17,15 +16,20 @@ const (
 	logRotateSize = 5 << 20
 )
 
-// LogPaths are the Decision log's files, the older generation first, and nil
-// when there is no state dir.
-func LogPaths() []string {
+// LogFiles are the Decision log's two generations, both "" when there is no
+// state dir.
+type LogFiles struct {
+	Older, Current string
+}
+
+// LogPaths are the Decision log's files.
+func LogPaths() LogFiles {
 	file := registryFile(logFile)
 	if file == "" {
-		return nil
+		return LogFiles{Older: "", Current: ""}
 	}
 
-	return []string{file + ".1", file}
+	return LogFiles{Older: file + ".1", Current: file}
 }
 
 // Logging reports whether root holds a Decision log grant. A registry that
@@ -54,45 +58,22 @@ func SetLogging(root string, on bool) error {
 	return appendRegistry(logGrantFile, line)
 }
 
-// AppendLog appends lines to the Decision log, each one write to a file opened
-// for appending, and nothing with no state dir, where there is no log. Past
-// logRotateSize the file first becomes the one older generation.
+// AppendLog appends lines to the Decision log, each one write, and nothing with
+// no state dir, where there is no log. Past logRotateSize the file first
+// becomes the one older generation.
 func AppendLog(lines [][]byte) error {
-	paths := LogPaths()
-	if paths == nil {
+	files := LogPaths()
+	if files.Current == "" {
 		return nil
 	}
 
-	older, file := paths[0], paths[1]
-
-	err := os.MkdirAll(filepath.Dir(file), registryDirMode)
-	if err != nil {
-		return err
-	}
-
-	info, statErr := os.Stat(file)
-	if statErr == nil && info.Size() > logRotateSize {
-		err = os.Rename(file, older)
+	info, err := os.Stat(files.Current)
+	if err == nil && info.Size() > logRotateSize {
+		err = os.Rename(files.Current, files.Older)
 		if err != nil {
 			return err
 		}
 	}
 
-	out, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, registryMode)
-	if err != nil {
-		return err
-	}
-
-	for _, line := range lines {
-		_, err = out.Write(line)
-		if err != nil {
-			break
-		}
-	}
-
-	if closeErr := out.Close(); err == nil {
-		err = closeErr
-	}
-
-	return err
+	return appendFile(files.Current, lines...)
 }

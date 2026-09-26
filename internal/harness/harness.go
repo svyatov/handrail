@@ -177,29 +177,45 @@ func Names() []string {
 	return names
 }
 
+// Call is one harness payload as handrail reads it: the canonical payloads,
+// the cwd tier discovery should start from, and the session it belongs to.
+type Call struct {
+	Cwd      string
+	Session  string
+	Payloads []rule.Payload
+}
+
 // Normalize turns a harness payload for event into the canonical payloads the
-// matcher evaluates, one per edit a patch makes, and reports the cwd tier
-// discovery should start from. The envelope is read untyped, so a canonical
-// key holding a value of the wrong type costs its own field and not the whole
-// payload; only an envelope that is not an object, or a tool input that is
-// not one, fails it.
-func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, error) {
+// matcher evaluates, one per edit a patch makes, with the cwd and the session.
+// The envelope is read untyped, so a canonical key holding a value of the
+// wrong type costs its own field and not the whole payload; only an envelope
+// that is not an object, or a tool input that is not one, fails it. The
+// session is read even then, since the Decision log names it.
+func (a Adapter) Normalize(event string, data []byte) (Call, error) {
 	decoded, err := decodeEnvelope(data)
+	session, _ := decoded.fields["session_id"].(string)
+
 	if err != nil {
-		return nil, "", err
+		return Call{Cwd: "", Session: session, Payloads: nil}, err
 	}
 
-	env, cwd, input := decoded.fields, decoded.cwd, decoded.input
+	return Call{Cwd: decoded.cwd, Session: session, Payloads: payloads(a, event, decoded)}, nil
+}
+
+// payloads reads the canonical payloads a harness payload yields from its
+// decoded envelope, none for an internal agent.
+func payloads(adapter Adapter, event string, decoded envelope) []rule.Payload {
+	env, input := decoded.fields, decoded.input
 	payload := rule.Payload{Event: event, Kind: "", StopHookActive: false}
 	name := toolName(&payload, env)
 	payload.Kind = classify(name)
-	tools := a.toolNames(name)
+	tools := adapter.toolNames(name)
 	setTool(&payload, tools)
 	// Read by key presence, on any tool, and from the tool input alone: the
 	// envelope's model is the session's, and its agent_type on a tool event
 	// names the subagent calling rather than one the call asks for.
-	set(&payload, "agent_type", input, a.agentTypeKey)
-	set(&payload, "agent_prompt", input, a.agentPromptKey)
+	set(&payload, "agent_type", input, adapter.agentTypeKey)
+	set(&payload, "agent_prompt", input, adapter.agentPromptKey)
 	set(&payload, "model", input, "model")
 	set(&payload, "url", input, "url")
 	setToolURL(&payload, name, input)
@@ -210,7 +226,7 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 	case kindShell:
 		set(&payload, "command", input, "command")
 		setSandbox(&payload, input)
-		edits = a.shellEdits(event, tools, input)
+		edits = adapter.shellEdits(event, tools, input)
 	case kindFileEdit:
 		set(&payload, "path", input, "file_path", "notebook_path")
 
@@ -233,7 +249,7 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 		if raw, ok := input["command"]; ok && !payload.Has("path") {
 			patch, _ := raw.(string)
 
-			return patchPayloads(event, tools, "", patch), cwd, nil
+			return patchPayloads(event, tools, "", patch)
 		}
 	case "file_read":
 		set(&payload, "path", input, "file_path")
@@ -245,10 +261,10 @@ func (a Adapter) Normalize(event string, data []byte) ([]rule.Payload, string, e
 	setStop(&payload, event, env)
 
 	if !setSubagent(&payload, event, env) {
-		return nil, cwd, nil
+		return nil
 	}
 
-	return append([]rule.Payload{payload}, edits...), cwd, nil
+	return append([]rule.Payload{payload}, edits...)
 }
 
 // envelope is a harness payload read untyped, along with the two keys whose
