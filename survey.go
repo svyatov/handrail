@@ -293,44 +293,67 @@ func ruleFiles(dir string) []string {
 // is the user's while git does not track it.
 func instructionFiles(root string, localTracked bool) []instructionFile {
 	home, _ := os.UserHomeDir()
-	files := []instructionFile{}
-	seen := map[string]bool{}
-	// read holds the fewest hops at which a file's imports were read, since
-	// a shorter path to it leaves more hops for them.
-	read := map[string]int{}
 	// The managed policy file is an administrator's words, never listed.
 	policy, _ := resolveFile(filepath.Join(harness.ManagedDir, "CLAUDE.md"))
-	repo := repository(root)
-
-	var visit func(path string, hops int, imports bool)
-
-	visit = func(path string, hops int, imports bool) {
-		resolved, ok := resolveFile(path)
-		if !ok || resolved == policy {
-			return
-		}
-
-		if !seen[resolved] {
-			seen[resolved] = true
-			files = append(files, classify(repo, path, resolved, localTracked))
-		}
-
-		if fewest, done := read[resolved]; !imports || hops == maxImportHops || done && fewest <= hops {
-			return
-		}
-
-		read[resolved] = hops
-
-		for _, ref := range importRefs(path) {
-			visit(importPath(ref, path, home), hops+1, true)
-		}
+	list := &instructionList{
+		repo: repository(root), home: home, policy: policy, localTracked: localTracked,
+		files: []instructionFile{}, seen: map[string]bool{}, read: map[string]int{},
 	}
 
 	for _, seed := range instructionSeeds(root) {
-		visit(seed.path, 0, seed.imports)
+		list.visit(seed.path, 0, seed.imports, false)
 	}
 
-	return files
+	return list.files
+}
+
+// instructionList is the walk instructionFiles makes over the seeds and
+// their imports.
+type instructionList struct {
+	repo, home, policy string
+	localTracked       bool
+	files              []instructionFile
+	seen               map[string]bool
+	// read holds the fewest hops at which a file's imports were read, since
+	// a shorter path to it leaves more hops for them.
+	read map[string]int
+}
+
+// visit lists the file at path and follows its imports. A file the
+// repository supplies is a stranger's words, so fromRepo keeps its imports
+// inside the repository: followed out, they could put the user's own files,
+// secrets included, on the list as the user's.
+func (l *instructionList) visit(path string, hops int, imports, fromRepo bool) {
+	resolved, ok := resolveFile(path)
+	if _, inside := within(l.repo, resolved); !ok || resolved == l.policy || fromRepo && !inside {
+		return
+	}
+
+	file := classify(l.repo, path, resolved, l.localTracked)
+	if !l.seen[resolved] {
+		l.seen[resolved] = true
+		l.files = append(l.files, file)
+	}
+
+	if !l.follows(resolved, hops, imports) {
+		return
+	}
+
+	for _, ref := range importRefs(path) {
+		l.visit(importPath(ref, path, l.home), hops+1, true, file.Class == "repo")
+	}
+}
+
+// follows reports whether the imports of the file at resolved, reached at
+// hops, are to be read, and records that they are.
+func (l *instructionList) follows(resolved string, hops int, imports bool) bool {
+	if fewest, done := l.read[resolved]; !imports || hops == maxImportHops || done && fewest <= hops {
+		return false
+	}
+
+	l.read[resolved] = hops
+
+	return true
 }
 
 // repository returns root where it is a git repository's, and "" where it is
@@ -383,17 +406,27 @@ func resolveFile(path string) (string, bool) {
 // where it lives there, and by its absolute path where it does not. With no
 // repository, repo is "", which no path is relative to.
 func classify(repo, path, resolved string, localTracked bool) instructionFile {
+	rel, inside := within(repo, resolved)
+
+	switch {
+	case !inside:
+		return instructionFile{Path: path, Class: "user"}
+	case rel == claudeLocal && !localTracked:
+		return instructionFile{Path: rel, Class: "user"}
+	default:
+		return instructionFile{Path: rel, Class: "repo"}
+	}
+}
+
+// within returns resolved relative to repo, slash-separated, and whether it
+// lies there.
+func within(repo, resolved string) (string, bool) {
 	rel, err := filepath.Rel(repo, resolved)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return instructionFile{Path: path, Class: "user"}
+		return "", false
 	}
 
-	rel = filepath.ToSlash(rel)
-	if rel == claudeLocal && !localTracked {
-		return instructionFile{Path: rel, Class: "user"}
-	}
-
-	return instructionFile{Path: rel, Class: "repo"}
+	return filepath.ToSlash(rel), true
 }
 
 // importRefs returns the paths the file at path imports with @, outside code
