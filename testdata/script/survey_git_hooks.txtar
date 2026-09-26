@@ -10,6 +10,12 @@ stdout '^warn  git-hooks  global$'
 exec handrail test PreToolUse --kind shell --field 'command=git commit -m wip'
 stdout '^outcome: allow$'
 
+# A flag of a later command in the line is not the commit's.
+exec handrail test PreToolUse --kind shell --field 'command=git commit -m wip && git log -n 3'
+stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind shell --field 'command=git commit -m wip; grep -n foo a.ts'
+stdout '^outcome: allow$'
+
 -- repo/.git/HEAD --
 ref: refs/heads/main
 -- repo/.husky/pre-commit --
@@ -22,6 +28,6 @@ conditions:
       - field: command
         contains: --no-verify
       - field: command
-        matches: git\s+commit\s+(\S+\s+)*-\w*n
+        matches: git\s+commit\s+([^\s;&|]+\s+)*-\w*n
 ---
 The commit hooks run on every commit.

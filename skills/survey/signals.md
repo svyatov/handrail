@@ -96,12 +96,15 @@ Reads: the config found and the `package.json` scripts, for the source layout th
 lint command covers. Grade 3: "Should the agent be stopped from suppressing
 <linter> findings under <layout>?" The suppression marker is the linter's own:
 `eslint-disable`, `biome-ignore`, `//nolint`, `rubocop:disable`, `noqa`.
+`content` is a Write's whole file and an Edit's new text, so the rule also
+fires on a rewrite of a file, or an Edit of a hunk, that already holds a
+suppression. Say so in the question, and offer `ask` ahead of `block`.
 
 ```markdown
 ---
 event: PreToolUse
 kind: file_edit
-action: block
+action: ask
 conditions:
   - field: path
     glob: "src/**"
@@ -158,12 +161,13 @@ conditions:
       - field: command
         contains: --no-verify
       - field: command
-        matches: git\s+commit\s+(\S+\s+)*-\w*n
+        matches: git\s+commit\s+([^\s;&|]+\s+)*-\w*n
 examples:
   match:
     - command: git commit -n -m wip
   no_match:
     - command: git commit -m wip
+    - command: git commit -m wip && git log -n 3
 ---
 This repository runs hooks on every commit. Do not skip them: fix what they
 report.
@@ -322,8 +326,8 @@ need from this file.
 Reads: the workflows, for an `on:` that fires on a tag push; `package.json`, for
 `"private": true`. No workflow whose `on:` fires on a tag push: drop the git
 entries. The `npm publish` entry only where `package.json` is present and not
-private. Neither left: no proposal. Grade 3: "A tag push publishes a release here. Should tagging
-and publishing need your approval?"
+private. Neither left: no proposal. Grade 3: "A tag push publishes a release
+here. Should tagging and publishing need your approval?"
 
 ```markdown
 ---
@@ -333,16 +337,18 @@ action: ask
 conditions:
   - any:
       - field: command
-        contains: git push --tags
+        matches: git\s+push\s+([^\s;&|]+\s+)*(--tags|--follow-tags|(refs/tags/)?v?\d)
       - field: command
-        matches: git\s+tag\s+(-\w+\s+)*v?\d
+        matches: git\s+tag\s+([^\s;&|]+\s+)*v?\d
       - field: command
         starts_with: npm publish
 examples:
   match:
     - command: git tag -a v1.0.0 -m r
+    - command: git push origin v1.0.0
   no_match:
     - command: git tag
+    - command: git push origin main
 ---
 A tag push publishes a release from this repository. The human approves each
 one.

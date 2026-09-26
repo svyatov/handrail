@@ -16,6 +16,19 @@ stdout '^warn  tag-release  global$'
 exec handrail test PreToolUse --kind shell --field 'command=git tag'
 stdout '^outcome: allow$'
 
+# A tag after a quoted message, a tag pushed by name, and a push that follows
+# tags all publish; a branch push and a flag of a later command do not.
+exec handrail test PreToolUse --kind shell --field 'command=git tag -a -m "Release 1.0" v1.0.0'
+stdout '^warn  tag-release  global$'
+exec handrail test PreToolUse --kind shell --field 'command=git push origin v1.0.0'
+stdout '^warn  tag-release  global$'
+exec handrail test PreToolUse --kind shell --field 'command=git push origin main --follow-tags'
+stdout '^warn  tag-release  global$'
+exec handrail test PreToolUse --kind shell --field 'command=git push origin main'
+stdout '^outcome: allow$'
+exec handrail test PreToolUse --kind shell --field 'command=git tag && head -1 CHANGELOG.md'
+stdout '^outcome: allow$'
+
 -- repo/package.json --
 {}
 -- repo/.github/workflows/release.yml --
@@ -29,9 +42,9 @@ kind: shell
 conditions:
   - any:
       - field: command
-        contains: git push --tags
+        matches: git\s+push\s+([^\s;&|]+\s+)*(--tags|--follow-tags|(refs/tags/)?v?\d)
       - field: command
-        matches: git\s+tag\s+(-\w+\s+)*v?\d
+        matches: git\s+tag\s+([^\s;&|]+\s+)*v?\d
       - field: command
         starts_with: npm publish
 ---
