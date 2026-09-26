@@ -73,9 +73,11 @@ The rule you just wrote is the third row. The two `global` rows are rules this r
 Starting from nothing, the sequence is:
 
 1. Install the plugin, per the block above, and start a new session.
-2. Describe a guardrail in words to `/handrail:add`, or write the file yourself.
+2. Run `/handrail:survey` to have handrail propose rules from what this repo states, or describe a guardrail in words to `/handrail:add`, or write the file yourself.
 3. `handrail check` to confirm it loaded and is not shadowed.
 4. `handrail test` to prove it matches the call you meant to catch.
+
+Later, `/handrail:analyze` turns a session's corrections into rules, tunes a rule the log shows you overriding, and concludes rules on trial.
 
 ## Commands
 

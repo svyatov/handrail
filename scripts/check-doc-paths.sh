@@ -23,7 +23,7 @@ bindir=$(sed -n 's/^bindir=//p' scripts/bootstrap.sh)
 	echo "scripts/bootstrap.sh has no bindir line" >&2
 	exit 1
 }
-for skill in skills/add/SKILL.md skills/analyze/SKILL.md; do
+for skill in skills/add/SKILL.md skills/analyze/SKILL.md skills/survey/SKILL.md; do
 	grep -qF "$bindir/handrail" "$skill" ||
 		mismatch "$skill does not spell the install directory as bootstrap.sh does: $bindir"
 done
@@ -46,6 +46,19 @@ found=$(echo "$pairs" | grep -c .)
 missing=$(echo "$pairs" | while read -r dir env; do
 	grep -qF "\${$env:-\$HOME/$dir}" skills/analyze/SKILL.md ||
 		echo "skills/analyze/SKILL.md does not read \${$env:-\$HOME/$dir}, which $adapters declares"
+done)
+[ -z "$missing" ] || mismatch "$missing"
+
+# Every signal id survey can print, which the Surveyor looks up by heading. A
+# signal added to the code without a section is one the Surveyor cannot read.
+ids=$(sed -n 's/.*id: *"\([a-z-]*\)".*/\1/p' survey.go)
+[ -n "$ids" ] || {
+	echo "survey.go has no signal ids: fix this script's sed" >&2
+	exit 1
+}
+missing=$(echo "$ids" | while read -r id; do
+	grep -qx "## $id" skills/survey/signals.md ||
+		echo "skills/survey/signals.md has no section for the signal $id, which survey.go prints"
 done)
 [ -z "$missing" ] || mismatch "$missing"
 

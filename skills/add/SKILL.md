@@ -211,9 +211,9 @@ Filename is the identity: kebab-case, descriptive, `.md`.
 | Global | `${XDG_CONFIG_HOME:-$HOME/.config}/handrail/<name>.md` | The rule is project-agnostic and should hold in every repo. |
 | Project-shared | `.handrail/<name>.md` | Only when the user explicitly asks to commit it for the team. Never write here otherwise. Inert until `handrail trust` is run for this repo. |
 
-If you just created `.handrail/local/` in this repo, run `"$HANDRAIL" sync`
-once: sync is what appends the ignore line to `.git/info/exclude`, so without it
-private rules show up in `git status`.
+After writing into `.handrail/local/`, run `"$HANDRAIL" sync` once unless
+`.git/info/exclude` already holds its line: sync is what appends the ignore line
+there, so without it private rules show up in `git status`.
 
 A same-named file in a higher tier shadows the lower one wholesale, and a
 duplicate name within one tier is a hard error, so check the `check` output in
@@ -242,9 +242,12 @@ not read, so if a compound command does not match, read that list before
 changing the operator.
 
 Write both into the rule's frontmatter: the replay under `examples: match:`, the
-near-miss under `no_match:`, each as the fields you passed to `--field`. They
-keep proving what the rule means after every handrail upgrade. Never copy a
-credential into an Example.
+near-miss under `no_match:`, each as the fields you passed to `--field`. Where
+the `--kind` you replayed with is not the rule's `kind:`, write it into the
+entry as `kind:`: an entry without one takes the rule's kind, else `other`, so a
+`command` Example under a `path` rule needs `kind: shell` to yield its file
+payload. They keep proving what the rule means after every handrail upgrade.
+Never copy a credential into an Example.
 
 ## 6. Validate
 
