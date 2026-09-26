@@ -38,6 +38,51 @@ findings below.
 | 9 | `/handrail:survey` in a sandbox repository with a lockfile, a `.gitignore` and a `CLAUDE.md` prohibition, and no rule-directory guards | The two guards are proposed first, then one proposal per signal and per prohibition, each needing its own approval; every approved rule passes `check` and matches its positive payload under `test` |
 | 10 | Case 1, then a second session | The first session's stdout is only `{"systemMessage": ...}` naming `/handrail:survey`; the second prints nothing |
 
+## 2026-09-27, 0.3.0 on Claude Code 2.1.283 and Codex CLI 0.157.1, darwin/arm64
+
+Cases 1 to 6 and 10 pass on both harnesses, each driven through the plugin
+installed from a local marketplace at `main` after #201. Every case ran as a
+headless session (`claude -p`, `codex exec --dangerously-bypass-hook-trust`)
+in a clean environment: an isolated `HOME`, no `XDG_*` variables, and a `PATH`
+holding no `handrail`. The sessions had no valid credentials, so each failed
+after its SessionStart hooks had run. v0.3.0 was not tagged yet, so a stub
+`curl` served four archives built from `main` with version 0.3.0 and their
+`checksums.txt`, and logged every URL the bootstrap requested.
+
+- Exec-bit survival: `scripts/bootstrap.sh` sat at mode `755` in both plugin
+  caches, and the installed binary landed at mode `755` on both. Claude Code
+  runs a plugin from a local marketplace out of the source directory, so case 1
+  was repeated on each harness with the marketplace added from GitHub
+  (`svyatov/handrail`, then at #201), the README's install path. There both
+  harnesses read the plugin from `plugins/cache/handrail/handrail/0.3.0/`, and
+  case 1 passed.
+- Per-arch selection: on the arm64 host the bootstrap requested
+  `handrail_0.3.0_darwin_arm64.tar.gz`. With a stub `uname -m` reporting
+  `x86_64`, it requested `handrail_0.3.0_darwin_amd64.tar.gz` on both harnesses,
+  installed a `Mach-O 64-bit executable x86_64`, and that binary ran under
+  Rosetta and reported `handrail 0.3.0`.
+- Case 1 and case 6: the SessionStart hook fired from the plugin cache, the
+  binary installed under `$HOME/.local/share/handrail/bin/`, and `sync` wrote
+  eight entries naming that absolute path, into `settings.json` and `hooks.json`.
+- Case 2: with the stub serving a damaged archive, the install was refused and
+  no `bin` directory was created. Claude Code's debug log named both digests.
+  Inside `codex exec` the refusal was silent, as on 2026-08-18.
+- Case 3: with a `handrail` on `PATH`, no URL was requested and nothing was
+  written. Case 4: a managed binary reporting `handrail 0.0.1` was replaced by
+  0.3.0.
+- Case 5 and the second half of case 10: a stub `head`, which the bootstrap
+  calls only in its version check, showed the hook ran. No URL was requested,
+  the binary stayed byte-identical, and the hook printed nothing.
+- Case 10, first session: Claude Code's debug log recorded the hook's stdout as
+  exactly the `systemMessage` JSON naming `/handrail:survey`. On Codex the hint
+  is absent from the session rollout, so it stays out of the agent's context.
+  It is also absent from `codex exec --json` output. Whether Codex's TUI shows
+  it to the human is not verified.
+
+Still owed: case 1 against the real v0.3.0 release once it is published. That
+run checks the published archive names and `checksums.txt`, which the stub
+reproduced from `.goreleaser.yml`.
+
 ## 2026-09-26, the v2 skills and the survey hint, darwin/arm64
 
 Run against a build of `main` at the version the bootstrap pins, with an
@@ -63,7 +108,8 @@ approval prompt. The live gap from case 8 still stands.
 Still owed for this change, which alters what the bootstrap prints: cases 1 to
 6 and 10 through an installed plugin on each harness. On Codex nothing here
 confirms that it reads `systemMessage` from a SessionStart hook's stdout, or
-that it keeps that JSON out of the agent's context.
+that it keeps that JSON out of the agent's context. The 2026-09-27 run above
+covers both, except whether Codex shows the hint to the human.
 
 ## 2026-08-18, v0.1.0-rc.1 on Claude Code, darwin/arm64
 
