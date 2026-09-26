@@ -76,7 +76,7 @@ func repoSignals() []repoSignal {
 	}
 }
 
-type surveySignal struct {
+type foundSignal struct {
 	ID    string   `json:"id"`
 	Paths []string `json:"paths"`
 }
@@ -87,7 +87,7 @@ type instructionFile struct {
 }
 
 type surveyOutput struct {
-	Signals          []surveySignal    `json:"signals"`
+	Signals          []foundSignal     `json:"signals"`
 	InstructionFiles []instructionFile `json:"instruction_files"`
 }
 
@@ -115,7 +115,7 @@ func cmdSurvey(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 
 	for _, signal := range signals {
 		for _, glob := range signal.globs {
-			globs[glob], _ = rule.Glob(glob) // the table's globs are constants that compile
+			globs[glob], _ = rule.CompileGlob(glob) // the table's globs are constants that compile
 		}
 	}
 
@@ -126,12 +126,12 @@ func cmdSurvey(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	found := []surveySignal{}
+	found := []foundSignal{}
 
 	for _, signal := range signals {
 		paths := probe(root, signal, globs, tracked)
 		if len(paths) > 0 {
-			found = append(found, surveySignal{ID: signal.id, Paths: paths})
+			found = append(found, foundSignal{ID: signal.id, Paths: paths})
 		}
 	}
 

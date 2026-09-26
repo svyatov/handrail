@@ -167,26 +167,38 @@ func Paths(root string, keep func(string) bool) ([]string, error) {
 	return slices.Compact(paths), nil
 }
 
-// sharedPaths returns the paths keep accepts from the shared index that the
-// index in data links to, whose extensions start at off, less the entries it
-// deletes. An index that links to none has none.
-func sharedPaths(own string, data []byte, off, hashLen int, keep func(string) bool) ([]string, error) {
+// sharedIndex reads the link extension of the index in data, whose entries
+// end at off: the path of the shared index it links to, which sits beside it
+// in own, and the positions of the shared entries it deletes. The path is ""
+// when there is no link.
+func sharedIndex(own string, data []byte, off, hashLen int) (string, bitmap, error) {
 	if len(data)-hashLen < off {
-		return nil, errTruncated
+		return "", nil, errTruncated
 	}
 
 	base, deleted, err := link(data[off:len(data)-hashLen], hashLen)
 	if err != nil || base == "" {
+		return "", nil, err
+	}
+
+	return filepath.Join(own, "sharedindex."+base), deleted, nil
+}
+
+// sharedPaths returns the paths keep accepts from the shared index the index
+// in data links to, less the entries it deletes, and none without a link.
+func sharedPaths(own string, data []byte, off, hashLen int, keep func(string) bool) ([]string, error) {
+	shared, deleted, err := sharedIndex(own, data, off, hashLen)
+	if err != nil || shared == "" {
 		return nil, err
 	}
 
-	shared, err := os.Open(filepath.Join(own, "sharedindex."+base))
+	indexFile, err := os.Open(shared)
 	if err != nil {
 		return nil, err
 	}
-	defer shared.Close()
+	defer indexFile.Close()
 
-	dec, err := newDecoder(shared, hashLen)
+	dec, err := newDecoder(indexFile, hashLen)
 	if err != nil {
 		return nil, err
 	}
@@ -271,16 +283,12 @@ func (s scan) split(own, index string) (bool, error) {
 		}
 	}
 
-	if len(data)-s.hashLen < dec.off {
-		return false, errTruncated
-	}
-
-	base, deleted, err := link(data[dec.off:len(data)-s.hashLen], s.hashLen)
-	if err != nil || base == "" {
+	shared, deleted, err := sharedIndex(own, data, dec.off, s.hashLen)
+	if err != nil || shared == "" {
 		return false, err
 	}
 
-	return s.file(filepath.Join(own, "sharedindex."+base), deleted)
+	return s.file(shared, deleted)
 }
 
 // link reads a split index's link extension out of the extensions that follow
