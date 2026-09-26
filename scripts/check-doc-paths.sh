@@ -3,7 +3,9 @@
 # a path the code decides: where bootstrap installs the binary, and where each
 # harness keeps its state. Nothing executes a skill's copy, so a move or a
 # rename breaks skill invocation silently, at the one moment nobody is looking.
-# This is the grep that turns that into a failing lint.
+# This is the grep that turns that into a failing lint. The Surveyor's signal
+# drafts are held to the code and the spec the same way: every signal id has a
+# section, and every regex a draft writes is the one the spec's row states.
 #
 # Run from the repo root, by `mise run lint`.
 
@@ -12,7 +14,7 @@ set -eu
 status=0
 # Every mismatch is reported, so one run names every file to edit.
 mismatch() {
-	echo "$1" >&2
+	printf '%s\n' "$1" >&2
 	status=1
 }
 
@@ -60,6 +62,16 @@ missing=$(echo "$ids" | while read -r id; do
 	grep -qx "## $id" skills/survey/signals.md ||
 		echo "skills/survey/signals.md has no section for the signal $id, which survey.go prints"
 done)
+[ -z "$missing" ] || mismatch "$missing"
+
+# Every regex a draft writes, as the spec's section 12 table spells it: in
+# backticks, with each | escaped for the table. The testscripts replay the
+# spec's row, so a draft that drifts from it writes a rule nothing replayed.
+missing=$(sed -n "s/^ *\(not_\)\{0,1\}matches: '\{0,1\}\(.*[^']\)'\{0,1\}$/\2/p" skills/survey/signals.md |
+	while read -r re; do
+		grep -qF "\`$(printf '%s' "$re" | sed 's/|/\\|/g')\`" docs/spec.md ||
+			printf '%s\n' "skills/survey/signals.md writes $re, which no docs/spec.md section 12 row states"
+	done)
 [ -z "$missing" ] || mismatch "$missing"
 
 exit $status

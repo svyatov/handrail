@@ -71,10 +71,10 @@ its format is not stable.
 (`matches`, `sessions`, `first_seen`, `last_seen`). A rule is live when
 `enabled` is true and `shadowed_by` and `dropped_by` are null. The top-level
 `stats` holds `oldest`, the time of the oldest log line, and `unreadable[]`,
-counts per `tool` and `field` of calls
-handrail could not read. Messages are not in the JSON, so open `path` to read a
-rule you are about to propose beside. If `errors[]` is not empty, show the
-errors first: they may hide coverage, and nothing can land until `check` is
+counts per `tool` and `field` of calls handrail could not read. Messages are not
+in the JSON, so open `path` to read a rule you are about to propose beside. If
+`errors[]` is not empty, show the errors first: they may hide coverage, and
+nothing can land until `check` is
 clean.
 
 **No grant.** When stderr says the Decision log is off for this project, the
@@ -121,8 +121,10 @@ What does not count. Be strict here, a bad rule fires forever:
 
 ## 5. Tune existing rules
 
-The one signal is the **override**: a rule matched (a log line, or a block or
-ask in this session), and the user then asked the agent for the act anyway. Read
+The one signal is the **override**: a rule matched (a log line, or a block, a
+refused ask or a warn in this session), and the user then asked the agent for
+the act anyway. An ask the user approved is the rule working, not an override.
+Read
 the rule, pull its lines, and propose the smallest change that stops it firing
 on that act: usually one added `not_equals` exception. A Global or
 Project-shared rule takes it in a Project-personal copy, as "Relax a Global rule

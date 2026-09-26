@@ -215,6 +215,13 @@ After writing into `.handrail/local/`, run `"$HANDRAIL" sync` once unless
 `.git/info/exclude` already holds its line: sync is what appends the ignore line
 there, so without it private rules show up in `git status`.
 
+If a rule you wrote under `.handrail/local/` is missing from `check`'s table and
+`check` says on stderr that it skipped untrusted Project-shared rules, this
+repository commits `.handrail/local/`, so the tier is read as Project-shared and
+your rule is inert. Say so, and offer Global for this rule and the rest. Never
+run `handrail trust` yourself: it would enable the repository's own committed
+rules, and trusting a repository is the user's act, in their own terminal.
+
 A same-named file in a higher tier shadows the lower one wholesale, and a
 duplicate name within one tier is a hard error, so check the `check` output in
 step 6 for the name you chose before settling on it. A Project-shared rule never

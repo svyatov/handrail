@@ -39,7 +39,7 @@ file that `survey` did not list. `check --json` is the effective ruleset; if its
 
 ## 3. Guard the rule directories first
 
-Before any signal, replay one call per rule-directory guard, all three in one
+Before any signal, replay each rule-directory guard's calls, all four in one
 shell call:
 
 ```sh
@@ -47,6 +47,7 @@ G=${XDG_CONFIG_HOME:-$HOME/.config}/handrail
 "$HANDRAIL" test PreToolUse --kind file_edit --field path=.handrail/local/survey-probe.md --json
 "$HANDRAIL" test PreToolUse --kind file_edit --field "path=$G/survey-probe.md" --json
 "$HANDRAIL" test PreToolUse --kind shell --field 'command=cd .handrail/local' --json
+"$HANDRAIL" test PreToolUse --kind shell --field "command=cd $G" --json
 ```
 
 The call names a rule directory, so where the `shell` guard already stands it
@@ -58,8 +59,8 @@ output.
 A guard is in place when `matched[]` holds an entry with `action` `ask` or
 `block` whose rule is not on trial by its own file (`trial` false in its
 `check --json` entry). Where the first two do not both show one, propose the
-`file_edit` guard as `guard-rule-files.md`; where the third does not, the
-`shell` one as `guard-rule-commands.md`. Propose each as "Rule directories" in
+`file_edit` guard as `guard-rule-files.md`; where the last two do not both,
+the `shell` one as `guard-rule-commands.md`. Propose each as "Rule directories" in
 [../add/guards.md](../add/guards.md) writes it, Examples included, at the Global
 tier with `action: ask`, and say why: without it, anything the agent runs can
 rewrite the rules. Where `$XDG_CONFIG_HOME` is set, apply the note at the top of
@@ -69,9 +70,9 @@ pattern gains `$G` with its dots escaped. These proposals come first and follow
 steps 6 and 7 like any other.
 
 **Not enforcing.** When `enforcement` in the `test --json` output is not
-`enforce`, handrail delivers nothing in this project, and every match reports
-`trial` true. Say so once, and judge trial from `check --json` wherever this
-skill reads `trial`.
+`enforce`, handrail delivers nothing in this project, though `test` still
+reports what the ruleset does under `enforce`. Say so once: a rule that lands
+here stays silent until the user runs `handrail mode enforce`.
 
 ## 4. Build the list
 

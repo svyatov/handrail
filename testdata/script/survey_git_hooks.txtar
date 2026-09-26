@@ -15,7 +15,18 @@ exec handrail test PreToolUse --kind shell --field 'command=git commit -m wip &&
 stdout '^outcome: allow$'
 exec handrail test PreToolUse --kind shell --field 'command=git commit -m wip; grep -n foo a.ts'
 stdout '^outcome: allow$'
+stdin ../newline.json
+exec handrail test PreToolUse --stdin
+stdout '^outcome: allow$'
 
+# A global option before the subcommand, and a hooks path pointed away.
+exec handrail test PreToolUse --kind shell --field 'command=git -C sub commit -n -m wip'
+stdout '^warn  git-hooks  global$'
+exec handrail test PreToolUse --kind shell --field 'command=git -c core.hooksPath=/dev/null commit -m wip'
+stdout '^warn  git-hooks  global$'
+
+-- newline.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git commit -m wip\ngit log -n 3"}}
 -- repo/.git/HEAD --
 ref: refs/heads/main
 -- repo/.husky/pre-commit --
@@ -28,6 +39,8 @@ conditions:
       - field: command
         contains: --no-verify
       - field: command
-        matches: git\s+commit\s+([^\s;&|]+\s+)*-\w*n
+        contains: core.hooksPath
+      - field: command
+        matches: git[ \t]+(-[Cc][ \t]+[^\s;&|]+[ \t]+)*commit[ \t]+([^\s;&|]+[ \t]+)*-\w*n
 ---
 The commit hooks run on every commit.

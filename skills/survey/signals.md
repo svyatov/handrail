@@ -161,10 +161,13 @@ conditions:
       - field: command
         contains: --no-verify
       - field: command
-        matches: git\s+commit\s+([^\s;&|]+\s+)*-\w*n
+        contains: core.hooksPath
+      - field: command
+        matches: git[ \t]+(-[Cc][ \t]+[^\s;&|]+[ \t]+)*commit[ \t]+([^\s;&|]+[ \t]+)*-\w*n
 examples:
   match:
     - command: git commit -n -m wip
+    - command: git -C sub commit -n -m wip
   no_match:
     - command: git commit -m wip
     - command: git commit -m wip && git log -n 3
@@ -337,18 +340,21 @@ action: ask
 conditions:
   - any:
       - field: command
-        matches: git\s+push\s+([^\s;&|]+\s+)*(--tags|--follow-tags|(refs/tags/)?v?\d)
+        matches: git[ \t]+push[ \t]+([^\s;&|]+[ \t]+)*(--tags|--follow-tags|(refs/tags/)?v?\d+(\.\d+)+(\s|$))
       - field: command
-        matches: git\s+tag\s+([^\s;&|]+\s+)*v?\d
+        matches: git[ \t]+tag[ \t]+([^\s;&|]+[ \t]+)*v?\d
       - field: command
         starts_with: npm publish
+  - field: command
+    not_matches: '[ \t](-l|--list|-n|--contains)([ \t]|$)'
 examples:
   match:
     - command: git tag -a v1.0.0 -m r
     - command: git push origin v1.0.0
   no_match:
     - command: git tag
-    - command: git push origin main
+    - command: git push origin main 2>&1
+    - command: git tag -l v1.*
 ---
 A tag push publishes a release from this repository. The human approves each
 one.
