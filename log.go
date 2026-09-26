@@ -145,24 +145,35 @@ func (rec logEvent) line(stamp string, payload rule.Payload, outcome rule.Outcom
 	}
 
 	for _, hit := range hits {
-		action := rec.adapter.Action(hit.Rule)
-		entry := logEntry{Rule: clip(hit.Name), Tier: hit.Tier, Action: action.String(), DegradedFrom: nil, Trial: ""}
-
-		if action != hit.Action {
-			entry.DegradedFrom = new(hit.Action.String())
-		}
-
-		switch {
-		case hit.Rule.Trial:
-			entry.Trial = "rule"
-		case hit.Trial:
-			entry.Trial = "state"
-		}
-
-		line.Matched = append(line.Matched, entry)
+		line.Matched = append(line.Matched, rec.entry(hit))
 	}
 
 	return line
+}
+
+// entry is one matched rule as its line names it: the action the harness
+// delivers, the one degradation replaced, and the route to its trial.
+func (rec logEvent) entry(hit rule.Match) logEntry {
+	// A trial rule is never degraded, and the Adapter sees only the rule's own
+	// trial: true, not the enforcement state's.
+	action := hit.Action
+	if !hit.Trial {
+		action = rec.adapter.Action(hit.Rule)
+	}
+
+	entry := logEntry{Rule: clip(hit.Name), Tier: hit.Tier, Action: action.String(), DegradedFrom: nil, Trial: ""}
+	if action != hit.Action {
+		entry.DegradedFrom = new(hit.Action.String())
+	}
+
+	switch {
+	case hit.Rule.Trial:
+		entry.Trial = "rule"
+	case hit.Trial:
+		entry.Trial = "state"
+	}
+
+	return entry
 }
 
 // The Decision log's bounds (docs/spec.md section 5), and the mark a value
@@ -259,15 +270,33 @@ func cmdLog(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	file := rule.LogPaths().Current
+	files := rule.LogPaths()
 	if verb == "on" {
-		fmt.Fprintf(stdout, "logging decisions for %s to %s\n", root, file)
+		fmt.Fprintf(stdout, "logging decisions for %s to %s\n", root, files.Current)
 	} else {
 		fmt.Fprintf(stdout, "stopped logging decisions for %s; its lines stay in %s, and trial matches still write there\n",
-			root, file)
+			root, strings.Join(existing(files), " and "))
 	}
 
 	return 0
+}
+
+// existing is the log's files that are there, the current one when neither is.
+func existing(files rule.LogFiles) []string {
+	var out []string
+
+	for _, file := range []string{files.Current, files.Older} {
+		_, err := os.Stat(file)
+		if err == nil {
+			out = append(out, file)
+		}
+	}
+
+	if out == nil {
+		out = []string{files.Current}
+	}
+
+	return out
 }
 
 // logQuery is what log reads: whose lines, which rule's, and how many.

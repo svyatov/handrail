@@ -1,8 +1,10 @@
 package rule
 
 import (
+	"fmt"
 	"os"
 	"strings"
+	"syscall"
 )
 
 // The Decision log's grant and its file. The grant sits in the state registry
@@ -69,11 +71,38 @@ func AppendLog(lines [][]byte) error {
 
 	info, err := os.Stat(files.Current)
 	if err == nil && info.Size() > logRotateSize {
-		err = os.Rename(files.Current, files.Older)
+		err = rotate(files)
 		if err != nil {
 			return err
 		}
 	}
 
 	return appendFile(files.Current, lines...)
+}
+
+// rotate moves a full log to the older generation. Hooks that run at once all
+// see it full, so the rotation holds a lock and checks again under it: the
+// second hook would otherwise move the first one's fresh file over the full
+// generation. The lock is a file beside the log, since the log itself is
+// renamed away; appends take no lock.
+func rotate(files LogFiles) error {
+	lock, err := os.OpenFile(files.Current+".lock", os.O_CREATE|os.O_RDWR, registryMode)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = lock.Close() }() // closing releases the lock
+
+	err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX)
+	if err != nil {
+		return fmt.Errorf("locking %s: %w", lock.Name(), err)
+	}
+
+	// Another hook rotated it first.
+	info, err := os.Stat(files.Current)
+	if err != nil || info.Size() <= logRotateSize {
+		return nil
+	}
+
+	return os.Rename(files.Current, files.Older)
 }

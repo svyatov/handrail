@@ -54,6 +54,10 @@ exec handrail hook claude PreToolUse
 stdout '"permissionDecision": "deny"'
 stdout 'handrail: could not write the Decision log: '
 
+# log off says where the existing lines are: both generations.
+exec handrail log off
+stdout '; its lines stay in \S+/log\.jsonl and \S+/log\.jsonl\.1, and trial matches still write there$'
+
 -- .git/HEAD --
 ref: refs/heads/main
 -- many/.git/HEAD --

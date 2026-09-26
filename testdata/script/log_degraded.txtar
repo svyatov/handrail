@@ -9,6 +9,14 @@ stdout '"harness":"codex",.*"outcome":"block","matched":\[\{"rule":"ask-first","
 exec handrail log
 stdout '  ask-first \(project-personal, block, degraded from ask\)$'
 
+# A rule on trial is never degraded, whichever route put it there: under the
+# trial state the entry names the ask the rule file holds.
+exec handrail mode trial
+stdin ls.json
+exec handrail hook codex PreToolUse
+exec handrail log --json -n 1
+stdout '"outcome":"allow","matched":\[\{"rule":"ask-first","tier":"project-personal","action":"ask","degraded_from":null,"trial":"state"\}\]'
+
 -- .git/HEAD --
 ref: refs/heads/main
 -- ls.json --

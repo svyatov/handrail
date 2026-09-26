@@ -4,6 +4,10 @@ exec handrail hook claude PreToolUse
 stdout 'deny'
 ! exists home/.local/state/handrail/log.jsonl
 
+# log off with no lines yet names where they would be.
+exec handrail log off
+stdout '; its lines stay in \S+/log\.jsonl, and trial matches still write there$'
+
 # log on grants the Project root in the state registry, readable by the user alone.
 exec handrail log on
 stdout '^logging decisions for .+ to .+/home/.local/state/handrail/log.jsonl$'
@@ -45,6 +49,13 @@ stdout '"kind":"file_edit","tool":"Bash","outcome":"block","matched":\[\{"rule":
 exec sh -c 'cd other && handrail hook claude PreToolUse < ../rm.json'
 exec cat home/.local/state/handrail/log.jsonl
 stdout -count=3 '^\{'
+
+# A grant registry that cannot be read grants nothing.
+[!root] chmod 000 home/.local/state/handrail/decision-log
+[!root] stdin rm.json
+[!root] exec handrail hook claude PreToolUse
+[!root] exec cat home/.local/state/handrail/log.jsonl
+[!root] stdout -count=3 '^\{'
 
 -- .git/HEAD --
 ref: refs/heads/main

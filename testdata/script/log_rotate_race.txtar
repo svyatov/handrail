@@ -1,0 +1,18 @@
+# Hooks that run at once over a full log rotate it once: the older generation
+# is the full file, never a fresh one a second rotation moved over it. A race
+# is not certain to show in one round, so this runs ten.
+exec handrail log on
+exec sh -c 'state=home/.local/state/handrail; for round in $(seq 10); do head -c 5242881 /dev/zero | tr "\0" x > $state/log.jsonl; for i in $(seq 16); do handrail hook claude PreToolUse < rm.json > /dev/null & done; wait; size=$(wc -c < $state/log.jsonl.1); if [ $size -lt 5242881 ]; then echo "round $round: the older generation holds $size bytes"; exit 1; fi; done'
+! stdout .
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- rm.json --
+{"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}
+-- .handrail/local/blocker.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+---
+Not in this repo.
