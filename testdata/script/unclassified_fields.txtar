@@ -34,9 +34,19 @@ stdout '^warn  notebooks  '
 stdin grep-path.json
 exec handrail test PreToolUse --stdin --harness claude
 ! stdout 'env-writes'
+stdout '^outcome: allow$'
 
 # content reads content, else new_string, else new_source.
+stdin frobnicate-content.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  secret-content  '
+stdin frobnicate-content-last.json
+exec handrail test PreToolUse --stdin --harness claude
+! stdout 'secret-content'
 stdin frobnicate-new-string.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  secret-content  '
+stdin frobnicate-new-source.json
 exec handrail test PreToolUse --stdin --harness claude
 stdout '^warn  secret-content  '
 
@@ -53,6 +63,12 @@ exec handrail test PreToolUse --stdin --harness codex
 ! stdout 'patch-command'
 stdout '^warn  env-writes  '
 stdout '^warn  secret-content  '
+
+# Nor does it when the call names a path of its own, so no patch is read.
+stdin codex-patch-path.json
+exec handrail test PreToolUse --stdin --harness codex
+! stdout 'patch-command'
+stdout '^warn  env-writes  '
 
 # A command key holding a non-string is unreadable, as on a shell call.
 stdin frobnicate-argv.json
@@ -81,6 +97,12 @@ conditions:
     glob: "*.ipynb"
 ---
 A notebook.
+-- frobnicate-content.json --
+{"tool_name": "Frobnicate", "tool_input": {"content": "SECRET=1", "new_string": "x"}}
+-- frobnicate-content-last.json --
+{"tool_name": "Frobnicate", "tool_input": {"content": "x", "new_string": "SECRET=1", "new_source": "SECRET=1"}}
+-- frobnicate-new-source.json --
+{"tool_name": "Frobnicate", "tool_input": {"new_source": "SECRET=1"}}
 -- frobnicate-new-string.json --
 {"tool_name": "Frobnicate", "tool_input": {"new_string": "SECRET=1", "new_source": "print()"}}
 -- .handrail/secret-content.md --
@@ -103,6 +125,8 @@ conditions:
 Removes a guard.
 -- codex-patch.json --
 {"tool_name": "apply_patch", "tool_input": {"command": "*** Begin Patch\n*** Add File: a.env\n+SECRET=1\n*** End Patch\n"}}
+-- codex-patch-path.json --
+{"tool_name": "apply_patch", "tool_input": {"file_path": "a.env", "command": "*** Begin Patch\n*** Add File: b.txt\n+x\n*** End Patch\n"}}
 -- .handrail/patch-command.md --
 ---
 event: PreToolUse

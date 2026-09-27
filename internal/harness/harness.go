@@ -221,17 +221,20 @@ func payloads(adapter Adapter, event string, decoded envelope) []rule.Payload {
 	// Read by key presence, on any tool, so a tool handrail does not classify
 	// still contributes them, and from the tool input alone: the envelope's
 	// model is the session's, and its agent_type on a tool event names the
-	// subagent calling rather than one the call asks for. A patch envelope
-	// under command fills no command: the patch branch below drops this
-	// payload for the ones its sections yield.
+	// subagent calling rather than one the call asks for. A file edit's
+	// command is apply_patch's envelope, which fills no command.
 	set(&payload, "agent_type", input, adapter.agentTypeKey)
 	set(&payload, "agent_prompt", input, adapter.agentPromptKey)
 	set(&payload, "model", input, "model")
 	set(&payload, "url", input, "url")
-	set(&payload, "command", input, "command")
+
+	if payload.Kind != kindFileEdit {
+		set(&payload, "command", input, "command")
+	}
+
 	set(&payload, "path", input, "file_path", "notebook_path")
-	// The tool input keys a file edit carries its written text under, in the
-	// order content reads them.
+	// The tool input keys a call carries its written text under, in the order
+	// content reads them.
 	textKeys := [...]string{"content", "new_string", "new_source"}
 	set(&payload, "content", input, textKeys[:]...)
 	set(&payload, "removed_content", input, "old_string")
