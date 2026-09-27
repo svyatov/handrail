@@ -2,10 +2,9 @@
 
 handrail ships no rules. These are rules you offer when the user asks to protect
 handrail itself, their agent setup, their credentials, or calls handrail cannot
-read. Write each
-only on request, into the Global tier unless the user says otherwise. Where
-`$XDG_CONFIG_HOME` or `$XDG_STATE_HOME` is set, write the resolved directory in
-place of the default glob.
+read. Write each only on request, into the Global tier unless the user says
+otherwise. Where `$XDG_CONFIG_HOME` or `$XDG_STATE_HOME` is set, write the
+resolved directory in place of the default glob.
 
 ## Rule directories
 
@@ -115,8 +114,8 @@ agent change them.
 A pair, because a file write carries `content` and a shell call carries
 `command`. The pattern holds only prefixed shapes that rarely match anything but
 a credential: AWS access key ids, GitHub tokens, Anthropic keys, Slack tokens and
-private key headers. Add a shape the user names, and never a generic
-high-entropy one: that is a scanner's job, in pre-commit or CI.
+private key headers. Add a shape the user names to both patterns, and never a
+generic high-entropy one: that is a scanner's job, in pre-commit or CI.
 
 ```markdown
 ---
@@ -125,12 +124,13 @@ kind: file_edit
 action: block
 conditions:
   - field: content
-    matches: \bAKIA[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{36}\b|\bgithub_pat_[A-Za-z0-9_]{82}\b|\bsk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{80,}|\bxox[abposr]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY
+    matches: \b(AKIA|ASIA)[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{36}\b|\bgithub_pat_[A-Za-z0-9_]{82}\b|\bsk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{80,}|\bxox[abposr]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY
   - field: content
     not_contains: EXAMPLE
 examples:
   match:
     - content: "aws_access_key_id = AKIAZ7QJ4HRD2KX5LMNB"
+    - content: "aws_access_key_id = ASIAZ7QJ4HRD2KX5LMNB"
   no_match:
     - content: "aws_access_key_id = AKIAIOSFODNN7EXAMPLE"
 ---
@@ -145,14 +145,13 @@ kind: shell
 action: block
 conditions:
   - field: command
-    matches: \bAKIA[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{36}\b|\bgithub_pat_[A-Za-z0-9_]{82}\b|\bsk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{80,}|\bxox[abposr]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY
-  - field: command
-    not_contains: EXAMPLE
+    matches: \b(AKIA|ASIA)[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{36}\b|\bgithub_pat_[A-Za-z0-9_]{82}\b|\bsk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{80,}|\bxox[abposr]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY
 examples:
   match:
-    - command: export AWS_ACCESS_KEY_ID=AKIAZ7QJ4HRD2KX5LMNB
+    - command: export AWS_ACCESS_KEY_ID=ASIAZ7QJ4HRD2KX5LMNB
+    - command: "cat <<'EOF' > .env\nAWS_ACCESS_KEY_ID=AKIAZ7QJ4HRD2KX5LMNB\nEOF"
   no_match:
-    - command: export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+    - command: git commit -m "rotate the AKIA keys"
 ---
 This command holds what looks like a live credential. Read it from the
 environment or a secrets manager instead of putting it in the command line.
@@ -160,8 +159,10 @@ environment or a secrets manager instead of putting it in the command line.
 
 State two limits when you offer it. `not_contains: EXAMPLE` keeps the AWS
 documentation key in fixtures from firing, and so also lets through a real key
-in a write or command that holds the word. And the rule reads only what the call
-writes: a secret copied by `cp` or produced by a program is invisible to it.
+in a write that holds the word. The shell rule has no such exception: a `not_`
+term never reads the whole command line, and a heredoc body is only there. And
+the pair reads only what the call writes: a secret copied by `cp` or produced by
+a program is invisible to it.
 
 ## Calls handrail cannot read
 
