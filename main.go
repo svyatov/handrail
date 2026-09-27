@@ -2,7 +2,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -33,6 +35,7 @@ Commands:
   doctor    Diagnose this machine's install, offline
   survey    Print this repo's Repo signals and instruction files, as JSON
   version   Print version, commit, and build date
+  help      Print this usage, or a command's own with help <command>
 `
 
 func main() {
@@ -46,19 +49,24 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// stdin; the rest take it to share one signature. run is called once per
 	// process, so building the table here costs what a package-level one would.
 	commands := map[string]func(args []string, stdin io.Reader, stdout, stderr io.Writer) int{
-		"sync":    cmdSync,
-		"hook":    cmdHook,
-		"check":   cmdCheck,
-		"test":    cmdTest,
-		"trust":   cmdTrust,
-		"log":     cmdLog,
-		"mode":    cmdMode,
-		"on":      modeAlias("enforce"),
-		"off":     modeAlias("off"),
-		"import":  cmdImport,
-		"doctor":  cmdDoctor,
-		"survey":  cmdSurvey,
-		"version": cmdVersion,
+		"sync":      cmdSync,
+		"hook":      cmdHook,
+		"check":     cmdCheck,
+		"test":      cmdTest,
+		"trust":     cmdTrust,
+		"log":       cmdLog,
+		"mode":      cmdMode,
+		"on":        modeAlias("enforce"),
+		"off":       modeAlias("off"),
+		"import":    cmdImport,
+		"doctor":    cmdDoctor,
+		"survey":    cmdSurvey,
+		"version":   cmdVersion,
+		"--version": cmdVersion,
+		"-v":        cmdVersion,
+		"help":      cmdHelp,
+		"--help":    cmdHelp,
+		"-h":        cmdHelp,
 	}
 
 	if len(args) == 0 {
@@ -78,21 +86,63 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return cmd(args[1:], stdin, stdout, stderr)
 }
 
-// parseFlags parses a command's flags and refuses a positional argument after
-// them, reporting whether the command may go on.
-func parseFlags(flags *flag.FlagSet, args []string, stderr io.Writer) bool {
+// cmdHelp prints the usage on stdout: asked for, it is an answer, not an error.
+// Given a command, it asks that command for its own; help asked about itself
+// is sent -h, which its own flags answer, so it answers once.
+func cmdHelp(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("help", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprint(flags.Output(), usage) }
+
+	if code, ok := parseFlagSet(flags, args, stdout, stderr); !ok {
+		return code
+	}
+
+	if flags.NArg() > 0 {
+		return run([]string{flags.Arg(0), "-h"}, stdin, stdout, stderr)
+	}
+
+	fmt.Fprint(stdout, usage)
+
+	return 0
+}
+
+// parseFlagSet parses a command's flags and leaves its positionals to the
+// caller, reporting whether the command may go on and, when it may not, its
+// exit code. A help request is answered on stdout with 0; a bad flag is a
+// usage error on stderr with 1.
+func parseFlagSet(flags *flag.FlagSet, args []string, stdout, stderr io.Writer) (int, bool) {
+	// Which stream the usage belongs on is only known once Parse has written it.
+	var out bytes.Buffer
+	flags.SetOutput(&out)
+
 	err := flags.Parse(args)
-	if err != nil {
-		return false
+	switch {
+	case errors.Is(err, flag.ErrHelp):
+		fmt.Fprint(stdout, out.String())
+
+		return 0, false
+	case err != nil:
+		fmt.Fprint(stderr, out.String())
+
+		return 1, false
+	}
+
+	return 0, true
+}
+
+// parseFlags is parseFlagSet for a command that takes no positional argument.
+func parseFlags(flags *flag.FlagSet, args []string, stdout, stderr io.Writer) (int, bool) {
+	if code, ok := parseFlagSet(flags, args, stdout, stderr); !ok {
+		return code, false
 	}
 
 	if flags.NArg() > 0 {
 		fmt.Fprintf(stderr, "handrail %s: unexpected argument %q\n", flags.Name(), flags.Arg(0))
 
-		return false
+		return 1, false
 	}
 
-	return true
+	return 0, true
 }
 
 // reportProblems names each rule file problem on stderr.

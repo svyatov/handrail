@@ -6,6 +6,17 @@ stdout '^date: unknown$'
 stdout '^code=0$'
 ! stderr .
 
+# --version is the spelling people and agents try first.
+exec sh -c 'handrail --version; echo code=$?'
+stdout '^handrail dev$'
+stdout '^code=0$'
+! stderr .
+
+exec sh -c 'handrail -v; echo code=$?'
+stdout '^handrail dev$'
+stdout '^code=0$'
+! stderr .
+
 # An unknown flag is a usage error, not a version print.
 exec sh -c 'handrail version -nope; echo code=$?'
 stdout '^code=1$'

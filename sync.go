@@ -16,9 +16,9 @@ import (
 // not per-project: the hook entries are user-level, so every repo holding rules
 // is enforced once this has run, and no harness config is written into any repo.
 func cmdSync(args []string, _ io.Reader, stdout, stderr io.Writer) int {
-	only, ok := parseSyncFlags(args, stderr)
-	if !ok {
-		return 1
+	var only string
+	if code, ok := parseSyncFlags(args, &only, stdout, stderr); !ok {
+		return code
 	}
 
 	// The hook entries depend on no rule, so an invalid one is reported and
@@ -75,15 +75,15 @@ func cmdSync(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// parseSyncFlags reads sync's arguments into the one harness it is limited
-// to, "" for all of them, and reports whether sync may go on.
-func parseSyncFlags(args []string, stderr io.Writer) (string, bool) {
+// parseSyncFlags reads sync's arguments into only, the one harness it is
+// limited to, "" for all of them, and reports whether sync may go on and, when
+// it may not, its exit code.
+func parseSyncFlags(args []string, only *string, stdout, stderr io.Writer) (int, bool) {
 	fs := flag.NewFlagSet("sync", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	only := fs.String("harness", "", "sync only this harness")
+	fs.StringVar(only, "harness", "", "sync only this harness")
 
-	if !parseFlags(fs, args, stderr) {
-		return "", false
+	if code, ok := parseFlags(fs, args, stdout, stderr); !ok {
+		return code, false
 	}
 
 	if *only != "" {
@@ -91,11 +91,11 @@ func parseSyncFlags(args []string, stderr io.Writer) (string, bool) {
 			fmt.Fprintf(stderr, "handrail sync: unknown harness %q; known: %s\n",
 				*only, strings.Join(harness.Names(), ", "))
 
-			return "", false
+			return 1, false
 		}
 	}
 
-	return *only, true
+	return 0, true
 }
 
 // syncTargets is every installed harness sync writes to, or only the one

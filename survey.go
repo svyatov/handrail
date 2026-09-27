@@ -99,10 +99,8 @@ type surveyOutput struct {
 // git index and those instruction files, and spawns nothing.
 func cmdSurvey(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("survey", flag.ContinueOnError)
-	flags.SetOutput(stderr)
-
-	if !parseFlags(flags, args, stderr) {
-		return 1
+	if code, ok := parseFlags(flags, args, stdout, stderr); !ok {
+		return code
 	}
 
 	cwd, err := os.Getwd()

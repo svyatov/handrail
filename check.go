@@ -55,13 +55,11 @@ type checkOutput struct {
 
 func cmdCheck(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
-	flags.SetOutput(stderr)
-
 	asJSON := flags.Bool("json", false, "print the effective ruleset as JSON")
 	withStats := flags.Bool("stats", false, "add each effective rule's Decision log history")
 
-	if !parseFlags(flags, args, stderr) {
-		return 1
+	if code, ok := parseFlags(flags, args, stdout, stderr); !ok {
+		return code
 	}
 
 	ruleset, err := loadRules(stderr)

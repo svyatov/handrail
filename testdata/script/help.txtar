@@ -1,0 +1,83 @@
+# Asking for help is not a usage error: the text goes to stdout and the exit is
+# 0. Exit codes are pinned through the shell, because "! exec" only asserts
+# non-zero.
+
+exec sh -c 'handrail help; echo code=$?'
+stdout '^Usage: handrail <command>'
+stdout '^code=0$'
+! stderr .
+
+exec sh -c 'handrail --help; echo code=$?'
+stdout '^Usage: handrail <command>'
+stdout '^code=0$'
+! stderr .
+
+exec sh -c 'handrail -h; echo code=$?'
+stdout '^Usage: handrail <command>'
+stdout '^code=0$'
+! stderr .
+
+# A command asked for help answers with its flags, and does nothing else.
+exec sh -c 'handrail check -h; echo code=$?'
+stdout '^Usage of check:'
+stdout '-json'
+stdout '^code=0$'
+! stderr .
+
+# Every command answers the same way, aliases included.
+exec sh -c 'for c in sync hook check test trust log mode on off import doctor survey version; do err=$(handrail $c -h 2>&1 >/dev/null) || echo "$c exited $?"; [ -z "$err" ] || echo "$c wrote to stderr"; handrail $c -h 2>/dev/null | grep -q Usage || echo "$c printed no usage"; done'
+! stdout .
+
+exec sh -c 'handrail version --help; echo code=$?'
+stdout '^Usage of version:'
+! stdout '^handrail dev$'
+stdout '^code=0$'
+! stderr .
+
+# hook and import take positionals, so their own usage answers.
+exec sh -c 'handrail hook -h; echo code=$?'
+stdout '^Usage: handrail hook <harness> <event>'
+stdout '^code=0$'
+! stderr .
+
+exec sh -c 'handrail import -h; echo code=$?'
+stdout '^Usage: handrail import hookify'
+stdout '^code=0$'
+! stderr .
+
+exec sh -c 'handrail import hookify --help; echo code=$?'
+stdout '^Usage: handrail import hookify'
+stdout '^code=0$'
+! stderr .
+
+# help names the command to explain, as git and go do.
+exec sh -c 'handrail help check; echo code=$?'
+stdout '^Usage of check:'
+stdout '-json'
+stdout '^code=0$'
+! stderr .
+
+# help asked about itself, or asked for help, answers once, without asking again.
+exec sh -c 'handrail help help; echo code=$?'
+stdout '^Usage: handrail <command>'
+stdout '^code=0$'
+! stderr .
+
+exec sh -c 'handrail help -h; echo code=$?'
+stdout '^Usage: handrail <command>'
+stdout '^code=0$'
+! stderr .
+
+# A flag help does not have is a usage error, as on any command.
+exec sh -c 'handrail help -nope; echo code=$?'
+stdout '^code=1$'
+! stdout 'Usage'
+stderr 'flag provided but not defined: -nope'
+stderr 'Usage: handrail'
+
+# Help about a command handrail does not have is still a usage error.
+exec sh -c 'handrail help nope; echo code=$?'
+stdout '^code=1$'
+! stdout 'Usage'
+stderr 'unknown command "nope"'
+stderr 'Usage: handrail'

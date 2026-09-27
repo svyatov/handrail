@@ -29,6 +29,12 @@ exec sh -c 'handrail import hookify -nope; echo code=$?'
 stdout '^code=1$'
 stderr 'flag provided but not defined: -nope'
 
+# A flag in the format's place is still a bad flag, not a format.
+exec sh -c 'handrail import -nope; echo code=$?'
+stdout '^code=1$'
+stderr 'flag provided but not defined: -nope'
+stderr 'Usage: handrail import hookify'
+
 # A leftover positional is a typo, not something to guess at.
 
 exec sh -c 'handrail trust /some/repo; echo code=$?'

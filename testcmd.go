@@ -85,7 +85,6 @@ type testOutput struct {
 
 func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("test", flag.ContinueOnError)
-	flags.SetOutput(stderr)
 	kind := flags.String("kind", "", "tool kind of the synthetic payload")
 
 	var fields fieldSet
@@ -99,8 +98,8 @@ func cmdTest(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		args = args[1:]
 	}
 
-	if !parseFlags(flags, args, stderr) {
-		return 1
+	if code, ok := parseFlags(flags, args, stdout, stderr); !ok {
+		return code
 	}
 
 	if event == "" {

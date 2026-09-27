@@ -14,7 +14,6 @@ import (
 // --global, machine-wide.
 func cmdMode(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("mode", flag.ContinueOnError)
-	flags.SetOutput(stderr)
 	global := flags.Bool("global", false, "the machine-wide state, which applies where no project sets one")
 
 	name := leadingArg(args)
@@ -22,8 +21,8 @@ func cmdMode(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 		args = args[1:]
 	}
 
-	if !parseFlags(flags, args, stderr) {
-		return 1
+	if code, ok := parseFlags(flags, args, stdout, stderr); !ok {
+		return code
 	}
 
 	root := ""

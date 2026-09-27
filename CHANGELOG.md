@@ -10,6 +10,18 @@ all of which [`docs/spec.md`](docs/spec.md) states.
 
 ## [Unreleased]
 
+### Added
+
+- `handrail --version` and `handrail -v` print what `handrail version` prints.
+- `handrail help`, `handrail --help` and `handrail -h` print the usage on
+  stdout and exit 0. `handrail help <command>` prints that command's own usage.
+
+### Changed
+
+- **Breaking**: `-h` or `--help` on any command prints its usage on stdout and
+  exits 0, where it printed on stderr and exited 1. `hook` and `import` answer
+  with their own usage in place of an empty flag list.
+
 ## [0.3.1] - 2026-09-27
 
 ### Fixed
