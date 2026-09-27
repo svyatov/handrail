@@ -10,6 +10,13 @@ all of which [`docs/spec.md`](docs/spec.md) states.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-27
+
+### Fixed
+
+- The Homebrew cask removes the quarantine attribute in a `postflight_steps`
+  block, so `brew` no longer warns that `postflight` is deprecated.
+
 ## [0.3.0] - 2026-09-27
 
 The v2 specification. A rule now reads the input an agent actually produces, and what
@@ -170,7 +177,8 @@ Prerelease that proved the release pipeline end to end: the GoReleaser build,
 the checksum manifest, and the tap cask. The Claude Code and Codex CLI plugins
 landed after it, in 0.1.0.
 
-[unreleased]: https://github.com/svyatov/handrail/compare/v0.3.0...HEAD
+[unreleased]: https://github.com/svyatov/handrail/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/svyatov/handrail/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/svyatov/handrail/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/svyatov/handrail/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/svyatov/handrail/compare/v0.1.0-rc.1...v0.1.0
