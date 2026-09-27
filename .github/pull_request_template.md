@@ -51,6 +51,6 @@ Delete the whole section otherwise.
 
 <!--
 handrail is pre-1.0, so breaking is allowed and has to be stated. Does this
-change the rule file format, the eight-command surface, an exit code, or the
+change the rule file format, the command set, an exit code, or the
 JSON contract of check or test? Say "no" if it does not.
 -->
