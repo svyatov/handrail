@@ -2,7 +2,7 @@
 # is the full file, never a fresh one a second rotation moved over it. A race
 # is not certain to show in one round, so this runs ten.
 exec handrail log on
-exec sh -c 'state=home/.local/state/handrail; for round in $(seq 10); do head -c 5242881 /dev/zero | tr "\0" x > $state/log.jsonl; for i in $(seq 16); do handrail hook claude PreToolUse < rm.json > /dev/null & done; wait; size=$(wc -c < $state/log.jsonl.1); if [ $size -lt 5242881 ]; then echo "round $round: the older generation holds $size bytes"; exit 1; fi; done'
+exec sh -c 'state=home/.local/state/handrail; head -c 5242881 /dev/zero | tr "\0" x > full; for round in $(seq 10); do cp full $state/log.jsonl; for i in $(seq 16); do handrail hook claude PreToolUse < rm.json > /dev/null & done; wait; size=$(wc -c < $state/log.jsonl.1); if [ $size -lt 5242881 ]; then echo "round $round: the older generation holds $size bytes"; exit 1; fi; done'
 ! stdout .
 
 -- .git/HEAD --
