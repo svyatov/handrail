@@ -8,12 +8,13 @@ read those lines alone. `GLOSSARY.md` defines the vocabulary.
 ## Commands
 
 ```bash
-mise run test    # go test -race -shuffle=on ./...
-mise run cover   # the same run with coverage, fails under 95%
-mise run lint    # go mod tidy -diff and verify, go fix -diff, golangci-lint run, then fmt --diff
-mise run vuln    # govulncheck through go run, so it stays out of go.mod
-mise run fuzz    # 30s per parser fuzz target; a crash input lands in testdata/fuzz/, commit it
-mise run build   # the release build
+mise run test           # go test -race -shuffle=on ./...
+mise run cover          # the same run with coverage, fails under 95%
+mise run lint           # go mod tidy -diff and verify, go fix -diff, golangci-lint run and fmt --diff, then scripts/check-{doc-paths,flag-sources,dashes}.sh
+mise run vuln           # govulncheck through go run, so it stays out of go.mod
+mise run fuzz           # 30s (FUZZTIME) per parser fuzz target; a crash input lands in testdata/fuzz/, commit it
+mise run build          # the release build
+mise run release-check  # goreleaser check, the version pin, and the CHANGELOG section the release body is cut from
 ```
 
 CI calls these same tasks, so a local pass means what a green check means.
