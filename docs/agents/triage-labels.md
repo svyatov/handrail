@@ -1,4 +1,4 @@
-# Triage Labels
+# Triage labels
 
 The skills speak in terms of seven canonical triage roles: two category roles and five state roles. This file maps those roles to the actual label strings used in this repo's issue tracker.
 
