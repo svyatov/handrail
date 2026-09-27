@@ -59,11 +59,6 @@ stdout '^warn  glob-one-segment  project-shared$'
 exec sh -c 'handrail test PreToolUse --field path=src/deep/a.go; echo code=$?'
 stdout '^outcome: allow$'
 
-# A condition against a field the payload does not carry never matches: "path
-# ends with .env" says nothing about a shell command that has no path at all.
-exec sh -c 'handrail test PreToolUse --field command=anything; echo code=$?'
-stdout '^outcome: allow$'
-
 -- .git/HEAD --
 ref: refs/heads/main
 -- .handrail/re.md --

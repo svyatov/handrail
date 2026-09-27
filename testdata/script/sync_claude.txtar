@@ -59,10 +59,6 @@ grep -count=1 '^\.handrail/local/$' .git/info/exclude
 # A moved binary replaces its old entry rather than stacking a second one.
 grep -count=1 'hook claude PreToolUse' home/.claude/settings.json
 
-# --harness scopes detection to one harness.
-exec handrail sync --harness claude
-stdout 'claude: 8 hook entries already current'
-
 # $CLAUDE_CONFIG_DIR moves the config Claude Code reads, so sync and doctor
 # follow it: ~/.claude there is a file the harness never opens, and may not
 # exist at all.

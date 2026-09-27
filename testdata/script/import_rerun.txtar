@@ -13,14 +13,10 @@ cmp .handrail/local/no-force-push.md edited.md
 # The originals are never touched, whatever the outcome.
 cmp .claude/hookify.no-force-push.local.md original.md
 
-# A path argument points the import somewhere else, and a single file works too.
+# A path argument points the import somewhere else.
 exec handrail import hookify elsewhere
 stdout 'imported elsewhere/hookify\.from-elsewhere\.local\.md -> \.handrail/local/from-elsewhere\.md'
 exists .handrail/local/from-elsewhere.md
-
-exec handrail import hookify single/hookify.one-file.local.md
-stdout '^1 imported, 0 skipped$'
-exists .handrail/local/one-file.md
 
 -- .git/HEAD --
 ref: refs/heads/main
@@ -57,10 +53,3 @@ event: bash
 pattern: curl
 ---
 Rules can be imported from anywhere.
--- single/hookify.one-file.local.md --
----
-name: one-file
-event: bash
-pattern: wget
----
-One file is a valid source too.

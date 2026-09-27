@@ -78,7 +78,8 @@ stdout 'claude: 8 hook entries already current'
 ! stdout 'codex:'
 
 # An unknown harness is a usage error, and names the ones that exist.
-! exec handrail sync --harness cursor
+exec sh -c 'handrail sync --harness cursor; echo code=$?'
+stdout '^code=1$'
 stderr 'unknown harness "cursor"; known: claude, codex'
 
 # With Codex uninstalled, sync scoped to it names the harness it wanted.

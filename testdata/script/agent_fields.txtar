@@ -7,6 +7,7 @@ exec handrail test PreToolUse --stdin --harness claude
 stdout '^warn  explorer  '
 stdout '^warn  deploy-task  '
 stdout '^warn  opus  '
+! stdout 'only-explorers'
 
 stdin codex-spawn.json
 exec handrail test PreToolUse --stdin --harness codex
@@ -30,10 +31,6 @@ exec handrail test PreToolUse --stdin --harness claude
 ! stdout 'only-explorers'
 ! stdout 'only-opus'
 stdout '^warn  every-spawn  '
-
-stdin claude-agent.json
-exec handrail test PreToolUse --stdin --harness claude
-! stdout 'only-explorers'
 
 -- .git/HEAD --
 ref: refs/heads/main
