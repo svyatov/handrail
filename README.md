@@ -155,7 +155,7 @@ Prebuilt binaries cover macOS and Linux on amd64 and arm64. There is no Windows 
 
 Both go to [GitHub issues](https://github.com/svyatov/handrail/issues).
 
-handrail is maintained and pre-1.0. The rule format and the nine-command surface are settled for v1; `docs/spec.md` records what was left out and why.
+handrail is maintained and pre-1.0. The rule format and the command set in the table above are settled for v1; `docs/spec.md` records what was left out and why.
 
 ## License
 
