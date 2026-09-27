@@ -11,3 +11,6 @@
 
 # Serena's per-project state, regenerated whenever it loads the project
 /.serena/
+
+# CodeGraph's local index, rebuilt by codegraph init
+/.codegraph/
