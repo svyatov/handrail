@@ -1,169 +1,111 @@
 # Each listed file program names the files it writes or reads by a fixed
-# grammar over its own arguments. Each case reports the file payloads through
-# rules: edit-env on a file_edit of .env, read-env on a file_read of it, and
-# gap-edit and gap-read on a file of either kind handrail could not read.
+# grammar over its own arguments. Each batch below is one shell call, one case
+# per line, and each case names its own file: r_ a file it reads, w_ one it
+# writes, n_ one that is no file at all. test lists every file payload, so a
+# case holds when its file is listed under the right kind, alone on its
+# payload, or not listed at all. The cases handrail cannot read report through
+# rules instead: gap-edit and gap-read on a file of either kind handrail could
+# not read, dash-file on a file named like a flag.
 exec handrail trust
 
-# Reads.
-exec handrail test PreToolUse --kind shell --field 'command=cat .env'
-stdout '^warn  read-env  project-shared$'
-! stdout 'edit-env'
+# Reads. sed reads its file operands, and writes them under -i; its first
+# operand is the script unless a flag supplied one.
+exec sh -c 'handrail test PreToolUse --kind shell --field "command=$(cat reads.sh)"'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_cat\n\n'
+! stdout 'file_edit\n  path\n    r_cat$'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_sed\n\n'
+! stdout 'file_edit\n  path\n    r_sed$'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_sed_i\n\n'
+! stdout '^    n_sed$'
 
-# sed reads its file operands, and writes them under -i; its first operand is
-# the script unless a flag supplied one.
-exec handrail test PreToolUse --kind shell --field 'command=sed s/a/b/ .env'
-stdout '^warn  read-env  project-shared$'
-! stdout 'edit-env'
-exec handrail test PreToolUse --kind shell --field 'command=sed -i s/a/b/ .env'
-stdout '^warn  edit-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=sed .env'
-! stdout '-env  project-shared'
-
-# Write: each operand.
-exec handrail test PreToolUse --kind shell --field 'command=rm -rf .env'
-stdout '^warn  edit-env  project-shared$'
-! stdout 'read-env'
-exec handrail test PreToolUse --kind shell --field 'command=rmdir -p .env'
-stdout '^warn  edit-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=mkdir -m 755 .env'
-stdout '^warn  edit-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=touch -r ref .env'
-stdout '^warn  edit-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=tee -a .env'
-stdout '^warn  edit-env  project-shared$'
-
-# A flag's argument is not an operand.
-exec handrail test PreToolUse --kind shell --field 'command=mkdir -m .env x'
-! stdout 'edit-env'
+# Write: each operand. A flag's argument is not an operand.
+exec sh -c 'handrail test PreToolUse --kind shell --field "command=$(cat writes.sh)"'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_rm\n\n'
+! stdout 'file_read\n  path\n    w_rm$'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_rmdir\n\n'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_mkdir\n\n'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_touch\n\n'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_tee\n\n'
+! stdout '^    n_mkdir_mode$'
 
 # cp and mv write the destination, the last operand or the target flag's, and read the rest.
-exec handrail test PreToolUse --kind shell --field 'command=cp x .env'
-stdout '^warn  edit-env  project-shared$'
-! stdout 'read-env'
-exec handrail test PreToolUse --kind shell --field 'command=cp .env x'
-stdout '^warn  read-env  project-shared$'
-! stdout 'edit-env'
-exec handrail test PreToolUse --kind shell --field 'command=cp -t .env x'
-stdout '^warn  edit-env  project-shared$'
-! stdout 'read-env'
-exec handrail test PreToolUse --kind shell --field 'command=cp --target-directory=.env x'
-stdout '^warn  edit-env  project-shared$'
-! stdout 'read-env'
-exec handrail test PreToolUse --kind shell --field 'command=cp --target-directory .env x'
-stdout '^warn  edit-env  project-shared$'
-! stdout 'read-env'
+exec sh -c 'handrail test PreToolUse --kind shell --field "command=$(cat copies.sh)"'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_cp\n\n'
+! stdout 'file_read\n  path\n    w_cp$'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_cp\n\n'
+! stdout 'file_edit\n  path\n    r_cp$'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_cp_t\n\n'
+! stdout 'file_read\n  path\n    w_cp_t$'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_cp_tdir_eq\n\n'
+! stdout 'file_read\n  path\n    w_cp_tdir_eq$'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_cp_tdir\n\n'
+! stdout 'file_read\n  path\n    w_cp_tdir$'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_cp_t\n\n'
+! stdout 'file_edit\n  path\n    r_cp_t$'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_mv\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_mv\n\n'
+! stdout 'file_edit\n  path\n    r_mv$'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_mv_t\n\n'
 exec handrail test PreToolUse --kind shell --field 'command=cp -t$D x'
 stdout '^warn  gap-edit  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=cp -t x .env'
-stdout '^warn  read-env  project-shared$'
-! stdout 'edit-env'
-exec handrail test PreToolUse --kind shell --field 'command=mv x .env'
-stdout '^warn  edit-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=mv .env x'
-stdout '^warn  read-env  project-shared$'
-! stdout 'edit-env'
-exec handrail test PreToolUse --kind shell --field 'command=mv -t .env x'
-stdout '^warn  edit-env  project-shared$'
 
 # sed reads, and writes under -i, wherever the flag stands; -e and -f supply the script, and -f reads its file.
-exec handrail test PreToolUse --kind shell --field 'command=sed -e s/a/b/ .env'
-stdout '^warn  read-env  project-shared$'
-! stdout 'edit-env'
-exec handrail test PreToolUse --kind shell --field 'command=sed s/a/b/ .env -i'
-stdout '^warn  edit-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=sed --in-place=.bak s/a/b/ .env'
-stdout '^warn  edit-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=sed -i.bak s/a/b/ .env'
-stdout '^warn  edit-env  project-shared$'
-! stdout 'gap-edit'
-exec handrail test PreToolUse --kind shell --field 'command=sed -f .env x'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=sed -n -- s/a/b/ .env'
-stdout '^warn  read-env  project-shared$'
+exec sh -c 'handrail test PreToolUse --kind shell --field "command=$(cat sed.sh)"'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_sed_e\n\n'
+! stdout 'file_edit\n  path\n    r_sed_e$'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_sed_i_last\n\n'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_sed_inplace\n\n'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_sed_i_bak\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_sed_f\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_sed_n\n\n'
 
 # Read: each operand.
-exec handrail test PreToolUse --kind shell --field 'command=head -n 5 .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=head -n .env x'
-! stdout 'read-env'
-exec handrail test PreToolUse --kind shell --field 'command=tail -5 .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=tail -f -n 20 .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=sort -k 2 -t , .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=uniq -c .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=wc -l .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=cut -d , -f 1 .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=paste -d : .env x'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=column -t -s , .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=tr -d .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=file -b .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=stat -c %s .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=diff -u x .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=diff -L lbl x .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=cmp -n 10 x .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=comm -12 x .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=awk ''{print}'' .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=awk -F : -f .env x'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=gawk -e 1 .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=mawk 1 .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=nawk -v a=1 1 .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=awk .env'
-! stdout 'read-env'
-exec handrail test PreToolUse --kind shell --field 'command=strings -n 8 .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=hexdump -C .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=od -A x -t x1 .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=base64 -w 0 .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=nl -b a .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=tac -s , .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=rev .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=fold -w 40 .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=expand -t 4 .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=unexpand -a .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=fmt -w 72 .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=pr -h title .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=numfmt --to=iec .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=tsort .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=sha256sum .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=sha1sum -c .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=md5sum --tag .env'
-stdout '^warn  read-env  project-shared$'
+exec sh -c 'handrail test PreToolUse --kind shell --field "command=$(cat operands.sh)"'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_head\n\n'
+! stdout '^    n_head$'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_tail\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_tail_f\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_sort\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_uniq\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_wc\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_cut\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_paste\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_column\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_tr\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_file\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_stat\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_diff\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_diff_L\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_cmp\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_comm\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_awk\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_awk_f\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_gawk\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_mawk\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_nawk\n\n'
+! stdout '^    n_awk$'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_strings\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_hexdump\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_od\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_base64\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_nl\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_tac\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_rev\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_fold\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_expand\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_unexpand\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_fmt\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_pr\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_numfmt\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_tsort\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_sha256sum\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_sha1sum\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_md5sum\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_ls\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_sudo\n\n'
 exec handrail test PreToolUse --kind shell --field 'command=cd .env'
 stdout '^warn  read-env  project-shared$'
+
 # A lone - is standard input to a program that reads, and a file to one that
 # writes.
 exec handrail test PreToolUse --kind shell --field 'command=rm -- -'
@@ -177,132 +119,73 @@ exec handrail test PreToolUse --kind shell --field 'command=cat -'
 exec handrail test PreToolUse --kind shell --field 'command=cd -'
 ! stdout 'read-env'
 ! stdout 'any-file'
-exec handrail test PreToolUse --kind shell --field 'command=ls -la .env'
-stdout '^warn  read-env  project-shared$'
 
-# Every reading of a flag of uncertain arity counts: BSD ls -D takes a format, GNU's none.
-exec handrail test PreToolUse --kind shell --field 'command=ls -D .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=ls -Dfmt .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=ls --group-directories .env'
-stdout '^warn  read-env  project-shared$'
-
-# find reads its starting points, before its expression.
-exec handrail test PreToolUse --kind shell --field 'command=find .env -name x'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=find -L -O3 .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=find -f .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=find -L -- .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=find -D .env x'
-! stdout 'read-env'
-exec handrail test PreToolUse --kind shell --field 'command=find . -newer .env'
-! stdout 'read-env'
+# Every reading of a flag of uncertain arity counts: BSD ls -D takes a format,
+# GNU's none. find reads its starting points, before its expression.
+exec sh -c 'handrail test PreToolUse --kind shell --field "command=$(cat starts.sh)"'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_ls_D\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_ls_Dfmt\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_ls_group\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_find\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_find_L\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_find_f\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_find_dd\n\n'
+! stdout '^    n_find_D$'
+! stdout '^    n_find_newer$'
 
 # jq, grep and rg: the first operand is the filter or pattern unless a flag supplied one.
-exec handrail test PreToolUse --kind shell --field 'command=jq . .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=jq .env'
-! stdout 'read-env'
-! stdout 'any-file'
-exec handrail test PreToolUse --kind shell --field 'command=jq --arg name .env . x'
-! stdout 'read-env'
-exec handrail test PreToolUse --kind shell --field 'command=jq -f .env x'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=grep foo .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=grep .env x'
-! stdout 'read-env'
-exec handrail test PreToolUse --kind shell --field 'command=grep -e foo .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=grep -efoo .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=grep -f .env x'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=grep -A 2 foo .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=egrep ''a|b'' .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=fgrep -x foo .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=rg -g ''*.rs'' foo .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=rg --regexp=foo .env'
-stdout '^warn  read-env  project-shared$'
+exec sh -c 'handrail test PreToolUse --kind shell --field "command=$(cat patterns.sh)"'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_jq\n\n'
+! stdout '^    n_jq$'
+! stdout '^    n_jq_arg$'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_jq_f\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_grep\n\n'
+! stdout '^    n_grep$'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_grep_e\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_grep_f\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_grep_A\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_egrep\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_fgrep\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_rg\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_rg_regexp\n\n'
 
 # A flag whose argument names a file the program reads or writes yields it.
-exec handrail test PreToolUse --kind shell --field 'command=jq -nr --rawfile s .env ''$s'''
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=jq -n --slurpfile s .env .'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=jq --run-tests .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=touch -r .env x'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=wc --files0-from=.env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=sort -o .env x'
-stdout '^warn  edit-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=sort --random-source .env x'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=base64 -o .env x'
-stdout '^warn  edit-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=base64 -i .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=diff --from-file=.env x'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=diff -X .env a b'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=git diff --output=.env'
-stdout '^warn  edit-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=git diff -O.env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=file -f .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=file -m .env x'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=hexdump -f .env x'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=gawk -i .env 1 x'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=rg --ignore-file .env foo'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=grep --exclude-from=.env -r foo'
-stdout '^warn  read-env  project-shared$'
-# After jq's --args or --jsonargs, the operands after the filter are values, not files.
-exec handrail test PreToolUse --kind shell --field 'command=jq -n --args ''$ARGS'' .env'
-! stdout 'read-env'
-exec handrail test PreToolUse --kind shell --field 'command=jq . .env --jsonargs x'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=jq . --jsonargs .env'
-! stdout 'read-env'
-
+# After jq's --args or --jsonargs, the operands after the filter are values,
+# not files.
+exec sh -c 'handrail test PreToolUse --kind shell --field "command=$(cat flag-files.sh)"'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_jq_rawfile\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_jq_slurpfile\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_jq_tests\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_touch_r\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_wc_files0\n\n'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_sort_o\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_sort_random\n\n'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_base64_o\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_base64_i\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_diff_from\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_diff_X\n\n'
+stdout '^payload \d+ of \d+: file_edit\n  path\n    w_git_output\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_git_O\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_file_f\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_file_m\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_hexdump_f\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_gawk_i\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_rg_ignore\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_grep_exclude\n\n'
+! stdout '^    n_jq_args$'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_jq_jsonargs\n\n'
+! stdout '^    n_jq_jsonargs$'
 
 # git: -C and --work-tree name a directory it reads, and grep and diff read their operands.
-exec handrail test PreToolUse --kind shell --field 'command=git -C .env status'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=git --work-tree=.env status'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=git --work-tree .env status'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=git -c a=b diff --stat .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=git diff HEAD -- .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=git grep -n foo .env'
-stdout '^warn  read-env  project-shared$'
-exec handrail test PreToolUse --kind shell --field 'command=git grep .env'
-! stdout 'read-env'
-exec handrail test PreToolUse --kind shell --field 'command=git log .env'
-! stdout 'read-env'
-! stdout 'any-file'
-
-# Through a Wrapper, and by path.
-exec handrail test PreToolUse --kind shell --field 'command=sudo /bin/cat .env'
-stdout '^warn  read-env  project-shared$'
+exec sh -c 'handrail test PreToolUse --kind shell --field "command=$(cat git.sh)"'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_git_C\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_git_wt_eq\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_git_wt\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_git_diff\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_git_diff_dd\n\n'
+stdout '^payload \d+ of \d+: file_read\n  path\n    r_git_grep\n\n'
+! stdout '^    n_git_grep$'
+! stdout '^    n_git_log$'
 
 # An unknown flag makes every operand its own payload, which handrail could not read: written if the program can write.
 exec handrail test PreToolUse --kind shell --field 'command=cat -Z .env'
@@ -331,17 +214,136 @@ stdout '^warn  read-env  project-shared$'
 exec handrail test PreToolUse --kind shell --field 'command=cat $F *.env'
 stdout '^warn  gap-read  project-shared$'
 
+-- reads.sh --
+cat r_cat
+sed s/a/b/ r_sed
+sed -i s/a/b/ w_sed_i
+sed n_sed
+-- writes.sh --
+rm -rf w_rm
+rmdir -p w_rmdir
+mkdir -m 755 w_mkdir
+touch -r ref w_touch
+tee -a w_tee
+mkdir -m n_mkdir_mode x
+-- copies.sh --
+cp x w_cp
+cp r_cp x
+cp -t w_cp_t x
+cp --target-directory=w_cp_tdir_eq x
+cp --target-directory w_cp_tdir x
+cp -t x r_cp_t
+mv x w_mv
+mv r_mv x
+mv -t w_mv_t x
+-- sed.sh --
+sed -e s/a/b/ r_sed_e
+sed s/a/b/ w_sed_i_last -i
+sed --in-place=.bak s/a/b/ w_sed_inplace
+sed -i.bak s/a/b/ w_sed_i_bak
+sed -f r_sed_f x
+sed -n -- s/a/b/ r_sed_n
+-- operands.sh --
+head -n 5 r_head
+head -n n_head x
+tail -5 r_tail
+tail -f -n 20 r_tail_f
+sort -k 2 -t , r_sort
+uniq -c r_uniq
+wc -l r_wc
+cut -d , -f 1 r_cut
+paste -d : r_paste x
+column -t -s , r_column
+tr -d r_tr
+file -b r_file
+stat -c %s r_stat
+diff -u x r_diff
+diff -L lbl x r_diff_L
+cmp -n 10 x r_cmp
+comm -12 x r_comm
+awk '{print}' r_awk
+awk -F : -f r_awk_f x
+gawk -e 1 r_gawk
+mawk 1 r_mawk
+nawk -v a=1 1 r_nawk
+awk n_awk
+strings -n 8 r_strings
+hexdump -C r_hexdump
+od -A x -t x1 r_od
+base64 -w 0 r_base64
+nl -b a r_nl
+tac -s , r_tac
+rev r_rev
+fold -w 40 r_fold
+expand -t 4 r_expand
+unexpand -a r_unexpand
+fmt -w 72 r_fmt
+pr -h title r_pr
+numfmt --to=iec r_numfmt
+tsort r_tsort
+sha256sum r_sha256sum
+sha1sum -c r_sha1sum
+md5sum --tag r_md5sum
+ls -la r_ls
+sudo /bin/cat r_sudo
+-- starts.sh --
+ls -D r_ls_D
+ls -Dfmt r_ls_Dfmt
+ls --group-directories r_ls_group
+find r_find -name x
+find -L -O3 r_find_L
+find -f r_find_f
+find -L -- r_find_dd
+find -D n_find_D x
+find . -newer n_find_newer
+-- patterns.sh --
+jq . r_jq
+jq n_jq
+jq --arg name n_jq_arg . x
+jq -f r_jq_f x
+grep foo r_grep
+grep n_grep x
+grep -e foo r_grep_e
+grep -f r_grep_f x
+grep -A 2 foo r_grep_A
+egrep 'a|b' r_egrep
+fgrep -x foo r_fgrep
+rg -g '*.rs' foo r_rg
+rg --regexp=foo r_rg_regexp
+-- flag-files.sh --
+jq -nr --rawfile s r_jq_rawfile '$s'
+jq -n --slurpfile s r_jq_slurpfile .
+jq --run-tests r_jq_tests
+touch -r r_touch_r x
+wc --files0-from=r_wc_files0
+sort -o w_sort_o x
+sort --random-source r_sort_random x
+base64 -o w_base64_o x
+base64 -i r_base64_i
+diff --from-file=r_diff_from x
+diff -X r_diff_X a b
+git diff --output=w_git_output
+git diff -Or_git_O
+file -f r_file_f
+file -m r_file_m x
+hexdump -f r_hexdump_f x
+gawk -i r_gawk_i 1 x
+rg --ignore-file r_rg_ignore foo
+grep --exclude-from=r_grep_exclude -r foo
+jq -n --args '$ARGS' n_jq_args
+jq . r_jq_jsonargs --jsonargs x
+jq . --jsonargs n_jq_jsonargs
+-- git.sh --
+git -C r_git_C status
+git --work-tree=r_git_wt_eq status
+git --work-tree r_git_wt status
+git -c a=b diff --stat r_git_diff
+git diff HEAD -- r_git_diff_dd
+git grep -n foo r_git_grep
+git grep n_git_grep
+git log n_git_log
 -- .git/HEAD --
 ref: refs/heads/main
--- .handrail/edit-env.md --
----
-event: PreToolUse
-kind: file_edit
-conditions:
-  - field: path
-    equals: .env
----
-Writes .env.
 -- .handrail/read-env.md --
 ---
 event: PreToolUse
