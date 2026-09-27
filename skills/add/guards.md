@@ -119,7 +119,9 @@ generic high-entropy one: that is a scanner's job, in pre-commit or CI.
 
 Write the shell rule first. Its Examples hold key shapes with no `EXAMPLE` in
 them, so once the file rule is on it blocks any write of the shell rule; to
-change the shell rule later, the user edits it by hand.
+change the shell rule later, the user edits it by hand. Keep each
+`# gitleaks:allow` comment: it stops gitleaks and betterleaks from failing a
+commit of the rule on a fake token.
 
 ```markdown
 ---
@@ -131,9 +133,9 @@ conditions:
     matches: \b(AKIA|ASIA)[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{36}\b|\bghs_[0-9]+_eyJ[A-Za-z0-9._-]+|\bgithub_pat_[A-Za-z0-9_]{82}\b|\bsk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{80,}|\bxox[abposr]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY
 examples:
   match:
-    - command: export AWS_ACCESS_KEY_ID=ASIAZ7QJ4HRD2KX5LMNB
-    - command: export GITHUB_TOKEN=ghs_123_eyJhbGciOiJub25lIn0.e30.AAAA
-    - command: "cat <<'EOF' > .env\nAWS_ACCESS_KEY_ID=AKIAZ7QJ4HRD2KX5LMNB\nEOF"
+    - command: export AWS_ACCESS_KEY_ID=ASIAZ7QJ4HRD2KX5LMNB # gitleaks:allow
+    - command: export GITHUB_TOKEN=ghs_123_eyJhbGciOiJub25lIn0.e30.AAAA # gitleaks:allow
+    - command: "cat <<'EOF' > .env\nAWS_ACCESS_KEY_ID=AKIAZ7QJ4HRD2KX5LMNB\nEOF" # gitleaks:allow
   no_match:
     - command: git commit -m "rotate the AKIA keys"
 ---
@@ -153,10 +155,10 @@ conditions:
     not_contains: EXAMPLE
 examples:
   match:
-    - content: "aws_access_key_id = AKIAZ7QJ4HRD2KX5LMNB"
-    - content: "aws_access_key_id = ASIAZ7QJ4HRD2KX5LMNB"
+    - content: "aws_access_key_id = AKIAZ7QJ4HRD2KX5LMNB" # gitleaks:allow
+    - content: "aws_access_key_id = ASIAZ7QJ4HRD2KX5LMNB" # gitleaks:allow
     - content: "token: ghp_000000000000000000000000000000000000"
-    - content: "token: ghs_123_eyJhbGciOiJub25lIn0.e30.AAAA"
+    - content: "token: ghs_123_eyJhbGciOiJub25lIn0.e30.AAAA" # gitleaks:allow
     - content: "token: github_pat_0000000000000000000000000000000000000000000000000000000000000000000000000000000000"
     - content: "key: sk-ant-api03-00000000000000000000000000000000000000000000000000000000000000000000000000000000"
     - content: "token: xoxb-0000000000-0000000000"

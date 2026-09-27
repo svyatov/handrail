@@ -180,8 +180,8 @@ the next, and nothing is written before its own approval.
    sentence allows, must not:
 
    ```sh
-   "$HANDRAIL" test PreToolUse --kind file_edit --field path=package-lock.json
-   "$HANDRAIL" test PreToolUse --kind file_edit --field path=package.json
+   "$HANDRAIL" test PreToolUse --kind file_edit --field "path=$PWD/package-lock.json"
+   "$HANDRAIL" test PreToolUse --kind file_edit --field "path=$PWD/package.json"
    ```
 
    A `shell` rule's replay command carries its own payload, so once the rule
@@ -191,7 +191,8 @@ the next, and nothing is written before its own approval.
    `"$HANDRAIL" test PreToolUse --stdin < <file>`.
 
    Tell the user both payloads are synthetic. Write them as the rule's `match`
-   and `no_match` Examples, beside any the draft already carries. A Global
+   and `no_match` Examples, beside any the draft already carries. A `file_edit`
+   or `file_read` pair uses the absolute path, as a harness sends it. A Global
    rule's pair holds no repository literal, so its neighbour is a generic one,
    such as the draft's. A guard keeps the Examples guards.md gives. A replay
    that fails means the matcher is wrong: fix it and replay again. Never leave

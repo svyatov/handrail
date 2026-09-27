@@ -14,6 +14,16 @@ its replacement and the earliest version that removes it. The removal of
 
 ## [Unreleased]
 
+### Fixed
+
+- The secret guard pair `/handrail:add` offers marks each fake key in its
+  Examples `# gitleaks:allow`, so gitleaks and betterleaks no longer fail a
+  commit of the rule.
+- `/handrail:add` says that a harness sends the absolute path, and
+  `/handrail:survey` replays and records `path` Examples in that form, so a rule
+  that names a relative path no longer passes its replay and then misses every
+  real call.
+
 ## [0.4.1] - 2026-09-27
 
 ### Changed

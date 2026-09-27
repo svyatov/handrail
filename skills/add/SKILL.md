@@ -195,7 +195,10 @@ the repo root, and a trailing `**` matches every depth below. In `[...]` classes
 a leading `^` negates and `!` is an ordinary member, unlike gitignore; `\` makes
 the next character literal. A `path` is cleaned before matching (`src/../.env`
 is `.env`), so never write `./`, `//` or an inner `..` in a `path` glob or
-`equals`: `check` rejects it.
+`equals`: `check` rejects it. Both harnesses send the absolute path
+(`/home/u/repo/src/a.ts`), and handrail matches it as sent. Start a repository
+`path` glob with `**/` (`**/src/a.ts`), and use `equals` only with an absolute
+path.
 
 **Message**: the markdown body, addressed to the agent, in prose. Say what is
 forbidden and what to do instead. No templating; `{{` stays literal. On a
