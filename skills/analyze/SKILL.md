@@ -57,6 +57,12 @@ user describes the incident in words to the handrail `add` skill
 from a plain-language description. The Decision log jobs (steps 5 and 6) still
 run. Do not guess at a transcript path.
 
+**Nothing before this request** (a fresh session, or one just `/clear`ed):
+treat it like no transcript. `/clear` starts a new transcript file, so the
+earlier conversation is not in this one; do not inspect the file to confirm it.
+Skip step 4, tell the user to `/resume` the earlier session and run analyze
+there, or use the `add` fallback, and still run steps 5 and 6.
+
 Never read the harness's own record of hook results: it is not handrail's, and
 its format is not stable.
 
