@@ -54,6 +54,9 @@ a call.
 
 ## 3. Write the Matcher
 
+When the request matches a guard in [guards.md](guards.md), such as keeping
+secrets out of what the agent writes, start from its draft.
+
 ```markdown
 ---
 event: PreToolUse

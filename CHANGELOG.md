@@ -19,6 +19,10 @@ its replacement and the earliest version that removes it. The removal of
 - `handrail --version` and `handrail -v` print what `handrail version` prints.
 - `handrail help`, `handrail --help` and `handrail -h` print the usage on
   stdout and exit 0. `handrail help <command>` prints that command's own usage.
+- `/handrail:add` offers a pair of rules that block an agent writing a secret
+  with a known prefix (AWS, GitHub, Anthropic, Slack, private key headers) into a
+  file or a command. handrail still ships no rules: the pair is written only on
+  request.
 
 ### Changed
 
