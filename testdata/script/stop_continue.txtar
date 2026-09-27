@@ -34,10 +34,15 @@ stdout '"reason": "handrail block: cite-sources \(global\)\\nName the files you 
 ! stdout hookSpecificOutput
 
 # Codex continues the same way, and sends null for a stop with no text, which
-# on this key alone is absent rather than unreadable.
+# on this key alone is absent rather than unreadable. Its Stop output rejects
+# hookSpecificOutput, so a warn there is systemMessage alone.
 stdin stop.json
 exec handrail hook codex Stop
 stdout '"reason": "handrail block: not-done \(global\)\\nRun the tests before you stop\."'
+stdin stop-again.json
+exec handrail hook codex Stop
+stdout '"systemMessage": "handrail warn: claims-done \(global\)"'
+! stdout hookSpecificOutput
 stdin stop-null.json
 exec handrail hook codex Stop
 ! stdout 'unread-response'
