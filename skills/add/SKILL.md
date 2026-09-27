@@ -46,7 +46,11 @@ the tier.
   `agent_only: true`, which withholds the human line. Never on `block` or `ask`.
 
 When action or tier is still open, ask them as one multiple-choice question
-(`AskUserQuestion` in Claude Code), with the default listed first.
+(`AskUserQuestion` in Claude Code). List the recommended answer first, label it
+`(Recommended)`, and say in one sentence why it is the best answer for this
+rule, from the user's words and what the matcher reaches, by the action guide
+above and the tier table in step 4. The recommendation is advice: the user's
+pick is the answer.
 
 When the user asks for a substitution ("use `trash` instead of `rm`"), write a
 `block` whose message names the command to run instead. handrail never rewrites

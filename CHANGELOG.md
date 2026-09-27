@@ -14,6 +14,19 @@ its replacement and the earliest version that removes it. The removal of
 
 ## [Unreleased]
 
+### Changed
+
+- `/handrail:survey`, `/handrail:add` and `/handrail:analyze` recommend an
+  answer to each question they ask about a rule and say in one sentence why
+  that answer fits.
+
+### Fixed
+
+- `/handrail:survey` replays a `shell` rule from a payload file, since a replay
+  command naming the payload tripped the rule it tested. Its Grade 2 question
+  fits the four options `AskUserQuestion` takes, and a root-anchored
+  `.gitignore` line such as `/dist/` is lifted as `dist/`.
+
 ## [0.4.0] - 2026-09-27
 
 ### Added

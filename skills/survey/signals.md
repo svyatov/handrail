@@ -66,7 +66,8 @@ command instead.
 
 Reads: `.gitignore`, for a bare directory-name line (`node_modules/`, `dist/`,
 `target/`, `vendor/`, `_build/`). Never lift a line holding `*`, `!` or an inner
-`/`. Grade 2. One rule per directory.
+`/`. A leading `/` only anchors the line at the root: lift `/dist/` as `dist/`.
+Grade 2. One rule per directory.
 
 The same read also proposes `env-file`, `key-material` and `terraform-state`
 when `.gitignore` names their files: an ignored file is absent from the index, so
