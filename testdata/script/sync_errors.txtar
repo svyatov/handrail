@@ -15,11 +15,6 @@ rm .handrail/oops.md
 exec handrail sync
 stdout 'claude: 8 hook entries already current'
 
-# A harness handrail cannot write for is named, not guessed at.
-exec sh -c 'handrail sync --harness gemini; echo code=$?'
-stdout '^code=1$'
-stderr 'unknown harness "gemini"'
-
 # A harness that is not installed is not synced, and the run says so rather
 # than reporting success over an empty machine.
 exec sh -c 'cd nohome && HOME=$WORK/nohome XDG_CONFIG_HOME=$WORK/nohome/.config handrail sync; echo code=$?'

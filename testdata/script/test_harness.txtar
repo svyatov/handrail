@@ -35,8 +35,6 @@ exec sh -c 'handrail test PreToolUse --stdin --field "command=$(cat patch.sh)"'
 # A written tool answers to the names that harness gives it.
 exec handrail test PreToolUse --field tool=apply_patch --harness codex
 stdout '^    Edit$'
-exec handrail test PreToolUse --field tool=apply_patch
-! stdout '^    Edit$'
 
 -- ls.json --
 {

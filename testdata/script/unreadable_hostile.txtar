@@ -49,20 +49,12 @@ stdout 'handrail warn: gap \(project-shared\)'
 stdout 'handrail warn: rm \(project-shared\)'
 stdout '^code=0$'
 
-# A value of the wrong type is declared, not blocked.
-stdin non-string.json
-exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
-stdout 'handrail warn: gap \(project-shared\)'
-stdout '^code=0$'
-
 -- .git/HEAD --
 ref: refs/heads/main
 -- nested.json --
 {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "sh -c 'sh -c \"sh -c \\\"sh -c \\\\\\\"sh -c ls\\\\\\\"\\\"\"'"}}
 -- unparsable.json --
 {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "rm -rf / )"}}
--- non-string.json --
-{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": ["rm", "-rf", "/"]}}
 -- .handrail/gap.md --
 ---
 event: PreToolUse

@@ -4,9 +4,7 @@
 exec handrail test PreToolUse --field 'command=FOO=1 sudo timeout 30 rm -rf /'
 stdout '^warn  rm-root  global$'
 ! stdout 'fail-closed'
-
 # A rule can still name the Wrapper.
-exec handrail test PreToolUse --field 'command=FOO=1 sudo timeout 30 rm -rf /'
 stdout '^warn  sudo  global$'
 stdout '^warn  timeout  global$'
 

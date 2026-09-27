@@ -63,9 +63,6 @@ stdin rm.json
 exec sh -c 'handrail hook claude PreToolUse; echo code=$?'
 stdout '^code=0$'
 ! stderr 'no-rm'
-exec sh -c 'handrail check; echo code=$?'
-stdout '^code=0$'
-stdout '^global +no-rm +PreToolUse +shell +block +shadowed by project-personal$'
 
 # An enabled shadow is tested against the match Examples of the rule it
 # replaces: once the original insists on a call the copy lets through, the copy

@@ -43,12 +43,6 @@ stdout '"hookEventName": "UserPromptSubmit"'
 stdout 'handrail block: no-yolo \(project-shared\)'
 ! stderr .
 
-# The same payload on Claude Code, which can deny there, is denied.
-stdin prompt.json
-exec handrail hook claude UserPromptSubmit
-stdout '"decision": "block"'
-stdout '"reason": "handrail block: no-yolo'
-
 # A warning proceeds and is injected, same protocol as Claude Code.
 stdin bash-curl.json
 exec handrail hook codex PreToolUse

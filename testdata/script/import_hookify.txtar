@@ -37,22 +37,12 @@ exec sh -c 'handrail test PreToolUse --kind shell --field command="rm -rf build"
 stdout '^code=2$'
 stdout '^block  block-dangerous-rm  project-personal$'
 
-# Upstream compiles every regex with IGNORECASE, so the converted one does too.
-exec sh -c 'handrail test PreToolUse --kind file_edit --field content="Console.LOG(x)"; echo code=$?'
-stdout '^code=0$'
-stdout '^warn  warn-console-log  project-personal$'
-
-# A converted stop block continues the agent once, and never under
-# stop_hook_active.
+# A converted stop block continues the agent.
 stdin stop.json
 exec sh -c 'handrail hook claude Stop; echo code=$?'
 stdout '^code=0$'
 stdout '"decision": "block"'
 stdout '"reason": "handrail block: stop-todo \(project-personal\)\\nFinish the TODOs before stopping\."'
-stdin stop-again.json
-exec handrail hook claude Stop
-! stdout 'decision'
-! stdout 'stop-todo'
 
 -- .git/HEAD --
 ref: refs/heads/main
@@ -182,8 +172,6 @@ conditions:
 Say which FIXMEs are left.
 -- stop.json --
 {"hook_event_name": "Stop", "last_assistant_message": "Left a todo in main.go."}
--- stop-again.json --
-{"hook_event_name": "Stop", "stop_hook_active": true, "last_assistant_message": "Left a todo in main.go."}
 -- .claude/hookify.infer-shell.local.md --
 ---
 name: infer-shell

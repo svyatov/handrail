@@ -22,7 +22,6 @@ stdout '^warn  rm-root  global$'
 # A leading assignment is its own level: the command reads with and without it.
 exec handrail test PreToolUse --field 'command=FOO=1 rm -rf /'
 stdout '^warn  rm-root  global$'
-exec handrail test PreToolUse --field 'command=FOO=1 rm -rf /'
 stdout '^warn  foo-prefix  global$'
 
 exec handrail test PreToolUse --field 'command=a[0]=x; a+="x" rm -rf /'

@@ -64,7 +64,6 @@ stdout '"path": "docs/local-import.md",\n +"class": "repo"'
 ! stdout 'codex-import.md'
 
 # Each file is listed once, however many files import it.
-exec handrail survey
 ! stdout '"docs/one.md",[\s\S]*"docs/one.md"'
 
 # A rules directory holds instruction files only where they end in .md.

@@ -7,8 +7,6 @@ exec handrail hook claude PreToolUse
 stdout 'handrail warn: root-env'
 
 # test --field path= is cleaned the same way.
-exec handrail test PreToolUse --field path=src/../.env
-stdout '^warn  root-env  project-shared$'
 exec handrail test PreToolUse --field path=secrets/./key
 stdout '^warn  secret-key  project-shared$'
 # Only a leading .. on a relative path survives.

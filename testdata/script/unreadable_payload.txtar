@@ -7,6 +7,9 @@ stdin garbage
 exec handrail hook claude PreToolUse
 stdout 'handrail warn: gap-payload \(project-shared\)'
 stdout 'could not parse the PreToolUse payload'
+# The payload arrived and it is the JSON that is wrong, so the message does not
+# send the reader to look at stdin.
+! stdout 'could not read the PreToolUse payload'
 ! stdout 'handrail warn: any-shell'
 ! stderr .
 

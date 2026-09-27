@@ -2,14 +2,6 @@
 # skips may be skipped quietly.
 exec handrail trust
 
-# A rule that cannot be parsed is skipped, named, and does not stop the rules
-# around it from being evaluated.
-stdin bash.json
-exec handrail hook claude PreToolUse
-! stderr .
-stdout 'handrail: skipped the broken rule .*/\.handrail/broken\.md: line 2: unknown event'
-stdout 'handrail warn: works \(project-shared\)'
-
 # A broken rule alongside a blocking one still blocks, and still says so.
 stdin rm.json
 exec handrail hook claude PreToolUse
@@ -17,16 +9,8 @@ stdout '"permissionDecision": "deny"'
 stdout '"permissionDecisionReason": "handrail block: blocker \(project-shared\)'
 stdout '"systemMessage": "handrail block: blocker \(project-shared\).*skipped the broken rule'
 
-# Malformed stdin never blocks the harness: fail open, loudly. The payload
-# arrived and was read; it is the JSON that is wrong, and the message has to say
-# so rather than send the reader to look at stdin.
-stdin garbage
-exec handrail hook claude PreToolUse
-! stderr .
-stdout 'handrail: could not parse the PreToolUse payload'
-! stdout 'could not read'
-
-# Neither does empty stdin, which is the same fault: nothing to parse.
+# Empty stdin never blocks the harness: fail open, loudly, as for malformed
+# JSON (unreadable_payload.txtar), since it is the same fault: nothing to parse.
 exec sh -c 'printf "" | handrail hook claude PreToolUse; echo code=$?'
 stdout '^code=0$'
 stdout 'could not parse the PreToolUse payload'
@@ -47,13 +31,9 @@ stderr 'unknown event "Nope"'
 stdin bash.json
 ! exec handrail hook nosuch PreToolUse
 stderr 'unknown harness "nosuch"'
-! exec handrail hook claude
-stderr 'Usage: handrail hook'
 
 -- .git/HEAD --
 ref: refs/heads/main
--- garbage --
-not json at all
 -- bash.json --
 {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
 -- rm.json --

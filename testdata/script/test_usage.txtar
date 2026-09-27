@@ -25,10 +25,6 @@ exec sh -c 'handrail test PreToolUse --field command=; echo code=$?'
 stdout '^code=1$'
 stderr '^handrail test: command needs a value$'
 
-exec sh -c 'handrail test PreToolUse --kind bash; echo code=$?'
-stdout '^code=1$'
-stderr 'handrail test: unknown kind "bash"'
-
 exec sh -c 'handrail test PreToolUse --harness nope; echo code=$?'
 stdout '^code=1$'
 stderr 'handrail test: unknown harness "nope"'

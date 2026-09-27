@@ -11,15 +11,12 @@ exec handrail test PreToolUse --kind shell --field 'command=cat .env'
 stdout '^payload 2 of 2: file_read$'
 stdout '^  path\n    \.env$'
 
-# What handrail could not read is named on its payload.
-exec handrail test PreToolUse --kind shell --field 'command=bash -c "$X"'
-stdout '^  unreadable: command$'
-
 # A line that runs no command is a Candidate with no Spelling.
 exec handrail test PreToolUse --kind shell --field 'command=# ls'
 stdout '^  command \(runs no command\)$'
 
-# --json carries the same reading, with unreadable pulled out of the fields.
+# What handrail could not read is named on its payload, and --json pulls it out
+# of the fields.
 exec handrail test PreToolUse --kind shell --field 'command=bash -c "$X"' --json
 cmp stdout unreadable.json
 

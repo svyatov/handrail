@@ -16,6 +16,10 @@ exec handrail test PreToolUse --field 'command=if git status; then (git log) && 
 # the rule found, not any command in the same program.
 exec handrail test PreToolUse --field 'command=git status'
 stdout '^warn  git-but-not-push  global$'
+# A condition on a field the payload does not carry never matches, in either
+# polarity, and an any group still reads its other terms.
+! stdout 'no-gap'
+stdout '^warn  path-or-git  global$'
 exec handrail test PreToolUse --field 'command=git push; ls'
 ! stdout 'git-but-not-push'
 
@@ -63,12 +67,6 @@ stdout '^warn  git-only  global$'
 # unreadable is a condition field on every event.
 exec handrail test UserPromptSubmit --field prompt=hi --field unreadable=rules
 stdout '^warn  prompt-gap  global$'
-
-# A condition on a field the payload does not carry never matches, in either
-# polarity, and an any group still reads its other terms.
-exec handrail test PreToolUse --field 'command=git status'
-! stdout 'no-gap'
-stdout '^warn  path-or-git  global$'
 
 # The reader never expands, reads a file or runs anything.
 exec handrail test PreToolUse --field 'command=echo "$HOME" * $(touch ran)'
