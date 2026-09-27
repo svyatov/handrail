@@ -218,16 +218,17 @@ func payloads(adapter Adapter, event string, decoded envelope) []rule.Payload {
 	payload.Kind = classify(name)
 	tools := adapter.toolNames(name)
 	setTool(&payload, tools)
-	// Read by key presence, on any tool, so a tool handrail does not classify
-	// still contributes them, and from the tool input alone: the envelope's
-	// model is the session's, and its agent_type on a tool event names the
-	// subagent calling rather than one the call asks for. A file edit's
-	// command is apply_patch's envelope, which fills no command.
+	// The canonical fields below are read by key presence, on any tool, so a
+	// tool handrail does not classify still contributes the ones its input
+	// carries. They come from the tool input alone: the envelope's model is
+	// the session's, and its agent_type on a tool event names the subagent
+	// calling rather than one the call asks for.
 	set(&payload, "agent_type", input, adapter.agentTypeKey)
 	set(&payload, "agent_prompt", input, adapter.agentPromptKey)
 	set(&payload, "model", input, "model")
 	set(&payload, "url", input, "url")
 
+	// A file edit's command is apply_patch's envelope, which fills no command.
 	if payload.Kind != kindFileEdit {
 		set(&payload, "command", input, "command")
 	}
