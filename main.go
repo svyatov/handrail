@@ -87,11 +87,18 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 // cmdHelp prints the usage on stdout: asked for, it is an answer, not an error.
-// Given a command, it asks that command for its own. A flag in its place is no
-// command, so help asked about itself, which sends it -h, answers once.
+// Given a command, it asks that command for its own; help asked about itself
+// is sent -h, which its own flags answer, so it answers once.
 func cmdHelp(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if name := leadingArg(args); name != "" {
-		return run([]string{name, "-h"}, stdin, stdout, stderr)
+	flags := flag.NewFlagSet("help", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprint(flags.Output(), usage) }
+
+	if code, ok := parseFlagSet(flags, args, stdout, stderr); !ok {
+		return code
+	}
+
+	if flags.NArg() > 0 {
+		return run([]string{flags.Arg(0), "-h"}, stdin, stdout, stderr)
 	}
 
 	fmt.Fprint(stdout, usage)
@@ -99,10 +106,11 @@ func cmdHelp(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// parseArgs parses a command's flags, reporting whether the command may go on
-// and, when it may not, its exit code. A help request is answered on stdout
-// with 0; a bad flag is a usage error on stderr with 1.
-func parseArgs(flags *flag.FlagSet, args []string, stdout, stderr io.Writer) (int, bool) {
+// parseFlagSet parses a command's flags and leaves its positionals to the
+// caller, reporting whether the command may go on and, when it may not, its
+// exit code. A help request is answered on stdout with 0; a bad flag is a
+// usage error on stderr with 1.
+func parseFlagSet(flags *flag.FlagSet, args []string, stdout, stderr io.Writer) (int, bool) {
 	// Which stream the usage belongs on is only known once Parse has written it.
 	var out bytes.Buffer
 	flags.SetOutput(&out)
@@ -122,9 +130,9 @@ func parseArgs(flags *flag.FlagSet, args []string, stdout, stderr io.Writer) (in
 	return 0, true
 }
 
-// parseFlags is parseArgs for a command that takes no positional argument.
+// parseFlags is parseFlagSet for a command that takes no positional argument.
 func parseFlags(flags *flag.FlagSet, args []string, stdout, stderr io.Writer) (int, bool) {
-	if code, ok := parseArgs(flags, args, stdout, stderr); !ok {
+	if code, ok := parseFlagSet(flags, args, stdout, stderr); !ok {
 		return code, false
 	}
 

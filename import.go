@@ -66,7 +66,7 @@ func parseImportArgs(flags *flag.FlagSet, args []string, stdout, stderr io.Write
 	// The format leads, so a flag in its place is a request for the usage rather
 	// than the name of something to convert: asked for with -h, it is an answer.
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		if code, ok := parseArgs(flags, args, stdout, stderr); !ok {
+		if code, ok := parseFlagSet(flags, args, stdout, stderr); !ok {
 			return code, false
 		}
 
@@ -81,7 +81,7 @@ func parseImportArgs(flags *flag.FlagSet, args []string, stdout, stderr io.Write
 		return 1, false
 	}
 
-	if code, ok := parseArgs(flags, args[1:], stdout, stderr); !ok {
+	if code, ok := parseFlagSet(flags, args[1:], stdout, stderr); !ok {
 		return code, false
 	}
 

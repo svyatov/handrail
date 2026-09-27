@@ -32,7 +32,7 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("hook", flag.ContinueOnError)
 	flags.Usage = func() { fmt.Fprint(flags.Output(), hookUsage) }
 
-	if code, ok := parseArgs(flags, args, stdout, stderr); !ok {
+	if code, ok := parseFlagSet(flags, args, stdout, stderr); !ok {
 		return code
 	}
 

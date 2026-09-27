@@ -25,7 +25,7 @@ stdout '^code=0$'
 ! stderr .
 
 # Every command answers the same way, aliases included.
-exec sh -c 'for c in sync hook check test trust log mode on off import doctor survey version; do out=$(handrail $c -h 2>&1 >/dev/null) || echo "$c exited $?"; [ -z "$out" ] || echo "$c wrote to stderr"; done'
+exec sh -c 'for c in sync hook check test trust log mode on off import doctor survey version; do err=$(handrail $c -h 2>&1 >/dev/null) || echo "$c exited $?"; [ -z "$err" ] || echo "$c wrote to stderr"; handrail $c -h 2>/dev/null | grep -q Usage || echo "$c printed no usage"; done'
 ! stdout .
 
 exec sh -c 'handrail version --help; echo code=$?'
@@ -57,11 +57,23 @@ stdout '-json'
 stdout '^code=0$'
 ! stderr .
 
-# help asked about itself, or given a flag, answers once, without asking again.
+# help asked about itself, or asked for help, answers once, without asking again.
 exec sh -c 'handrail help help; echo code=$?'
 stdout '^Usage: handrail <command>'
 stdout '^code=0$'
 ! stderr .
+
+exec sh -c 'handrail help -h; echo code=$?'
+stdout '^Usage: handrail <command>'
+stdout '^code=0$'
+! stderr .
+
+# A flag help does not have is a usage error, as on any command.
+exec sh -c 'handrail help -nope; echo code=$?'
+stdout '^code=1$'
+! stdout 'Usage'
+stderr 'flag provided but not defined: -nope'
+stderr 'Usage: handrail'
 
 # Help about a command handrail does not have is still a usage error.
 exec sh -c 'handrail help nope; echo code=$?'

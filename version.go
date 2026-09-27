@@ -8,7 +8,7 @@ import (
 
 func cmdVersion(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("version", flag.ContinueOnError)
-	if code, ok := parseArgs(fs, args, stdout, stderr); !ok {
+	if code, ok := parseFlagSet(fs, args, stdout, stderr); !ok {
 		return code
 	}
 
