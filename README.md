@@ -24,9 +24,16 @@ action: block
 conditions:
   - field: command
     matches: git push .*--force
+examples:
+  match:
+    - command: git push --force origin main
+  no_match:
+    - command: git push origin main
 ---
 Never force-push a shared branch. Rewrite locally and open a new pull request.
 ```
+
+The `examples:` are optional. `check`, `sync`, `doctor`, and every session start run them, so a rule that stops matching what you meant is reported.
 
 Fire a synthetic event at it to prove it matches:
 
@@ -79,22 +86,43 @@ Starting from nothing, the sequence is:
 
 Later, `/handrail:analyze` turns a session's corrections into rules, tunes a rule the log shows you overriding, and concludes rules on trial.
 
+## Rule format
+
+The filename without `.md` is the rule's name. The body is the message, static markdown sent to the agent as written.
+
+| Key | Values |
+|---|---|
+| `event` | Required: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `SessionEnd`, `Stop`, `SubagentStart`, or `SubagentStop`. |
+| `kind` | Tool events only: `shell`, `file_edit`, `file_read`, `mcp`, `agent`, `network`, or `other`. Omit it to match every kind. |
+| `action` | `warn`, the default, gives the agent the message and you one line. `ask` puts the call to you, on `PreToolUse` only. `block` refuses the call, and on `Stop` sends the agent back to work once. |
+| `conditions` | A list that must all hold. Each entry names one field and one operator. An `any:` entry holds a list where one must hold. |
+| `examples` | `match:` and `no_match:` lists of calls, as in the rule above. |
+| `trial` | `true` matches and logs the action the rule would take, and delivers nothing. Use it to watch a new rule before it enforces. |
+| `agent_only` | `true` on a `warn` sends you no line. Use it for coaching rules that fire often. |
+| `enabled` | `false` switches the rule off. See [Rule tiers](#rule-tiers). |
+
+The operators are `matches` (RE2), `contains`, `equals`, `starts_with`, `ends_with`, and `glob` (with `**`). A `not_` prefix negates any of them. Matching is case-sensitive, and a regex opts out with `(?i)`. The fields include `command`, `path`, `content`, `prompt`, `tool`, `url`, and `domain`.
+
+A `command` is parsed as a shell program, and a condition tests every command the program runs. So `starts_with: rm -rf /` also fires on `cd /tmp && rm -rf /`, `echo $(rm -rf /)`, `FOO=1 sudo timeout 30 rm -rf /`, and `bash -lc 'rm -rf /'`. When handrail cannot read the code a call runs, as in `bash -c "$X"` or `curl ... | sh`, it sets the `unreadable` field, and a rule can block on that.
+
+[`docs/spec.md`](docs/spec.md) lists every field and the events that carry it.
+
 ## Commands
 
 | Command | Does |
 |---|---|
-| `check` | Validate every tier, run each rule's Examples, and print the effective ruleset, annotated with tier, shadowing, disabling, and trial. `--stats` adds each rule's history from the Decision log. |
-| `test <event>` | Dry-run one event against the rules. Exit 2 when the outcome is block. |
-| `sync` | Write handrail's hook entries into every detected harness. The plugin runs this for you after a fresh install. |
+| `check` | Validate every tier, run each rule's Examples, and print the effective ruleset, annotated with tier, shadowing, disabling, and trial. `--stats` adds each rule's history from the Decision log, and `--json` prints the ruleset as JSON. |
+| `test <event>` | Dry-run one event against the rules. Build the call with `--kind` and `--field key=value`, repeated once per field, or pipe a captured harness payload with `--stdin`. `--harness` picks the harness to simulate, and `--json` prints the result as JSON. Exit 2 when the outcome is block, 3 when it is ask. |
+| `sync` | Write handrail's hook entries into every detected harness, or one with `--harness claude\|codex`. The plugin runs this for you after a fresh install. |
 | `trust` | Grant this repo's committed `.handrail/` rules permission to take effect. |
 | `mode [enforce\|trial\|off] [--global]` | Read or set whether handrail enforces in this project, or machine-wide with `--global`. `on` and `off` are short for `mode enforce` and `mode off`. Every session in a project that is not enforcing opens by saying so. |
 | `log [on\|off]` | Record which rules matched in this project, and read that record back: `--rule NAME`, `--all`, `-n N`, `--json`. Off until you turn it on, and a trial rule's matches are recorded either way. |
-| `import hookify` | Convert upstream hookify rule files into personal rules, reporting anything the format cannot express. |
+| `import hookify [dir]` | Convert upstream hookify rule files into personal rules, reporting anything the format cannot express. Reads `.claude/` unless you name another directory. |
 | `doctor` | Diagnose the install offline. The first thing to run when nothing fires. |
 | `survey` | Print, as JSON, the facts this repo states that a rule could guard (lockfiles, CI workflows, `.env` files, key material and more), and the instruction files either harness loads. Reads nothing but the git index and those files. |
 | `version` | Version, commit, and build date. |
 
-`handrail hook` also exists. Sync installs it, harnesses call it, and you never type it.
+`handrail help <command>` prints a command's flags. `handrail hook` also exists. Sync installs it, harnesses call it, and you never type it.
 
 ## Rule tiers
 
@@ -102,7 +130,7 @@ Rules live in three places, and the most specific one wins.
 
 | Tier | Location | Applies to |
 |---|---|---|
-| Global | `~/.config/handrail/` | Every project on this machine. |
+| Global | `~/.config/handrail/`, or `$XDG_CONFIG_HOME/handrail/` when set | Every project on this machine. |
 | Project-shared | `.handrail/` | The repo, committed for the team. Needs `handrail trust`. |
 | Project-personal | `.handrail/local/` | Just you, kept out of version control. |
 
