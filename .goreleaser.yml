@@ -56,12 +56,15 @@ homebrew_casks:
     skip_upload: auto
     # Gatekeeper quarantines anything curl'd, and an unsigned binary that dies
     # on first run reads as a broken install rather than a signing decision.
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/handrail"]
-          end
+    # hooks.post.install would emit a Ruby postflight block, which Homebrew
+    # deprecates for postflight_steps, so the stanza is written whole. The Go
+    # template escape leaves Homebrew's own {{staged_path}} token literal.
+    custom_block: |
+      postflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/handrail"]
+        end
+      end
     repository:
       owner: svyatov
       name: homebrew-tap
