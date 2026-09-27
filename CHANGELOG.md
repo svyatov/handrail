@@ -14,6 +14,8 @@ its replacement and the earliest version that removes it. The removal of
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-27
+
 ### Changed
 
 - `/handrail:survey`, `/handrail:add` and `/handrail:analyze` recommend an
@@ -212,7 +214,8 @@ Prerelease that proved the release pipeline end to end: the GoReleaser build,
 the checksum manifest, and the tap cask. The Claude Code and Codex CLI plugins
 landed after it, in 0.1.0.
 
-[unreleased]: https://github.com/svyatov/handrail/compare/v0.4.0...HEAD
+[unreleased]: https://github.com/svyatov/handrail/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/svyatov/handrail/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/svyatov/handrail/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/svyatov/handrail/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/svyatov/handrail/compare/v0.2.0...v0.3.0
