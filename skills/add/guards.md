@@ -1,7 +1,8 @@
 # Guard rules to offer
 
 handrail ships no rules. These are rules you offer when the user asks to protect
-handrail itself, their agent setup, or calls handrail cannot read. Write each
+handrail itself, their agent setup, their credentials, or calls handrail cannot
+read. Write each
 only on request, into the Global tier unless the user says otherwise. Where
 `$XDG_CONFIG_HOME` or `$XDG_STATE_HOME` is set, write the resolved directory in
 place of the default glob.
@@ -108,6 +109,59 @@ Subagent definitions decide what a spawned agent may do, including permissions
 the parent session does not have. Change them yourself rather than having the
 agent change them.
 ```
+
+## Secrets in what the agent writes
+
+A pair, because a file write carries `content` and a shell call carries
+`command`. The pattern holds only prefixed shapes that rarely match anything but
+a credential: AWS access key ids, GitHub tokens, Anthropic keys, Slack tokens and
+private key headers. Add a shape the user names, and never a generic
+high-entropy one: that is a scanner's job, in pre-commit or CI.
+
+```markdown
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: content
+    matches: \bAKIA[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{36}\b|\bgithub_pat_[A-Za-z0-9_]{82}\b|\bsk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{80,}|\bxox[abposr]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY
+  - field: content
+    not_contains: EXAMPLE
+examples:
+  match:
+    - content: "aws_access_key_id = AKIAZ7QJ4HRD2KX5LMNB"
+  no_match:
+    - content: "aws_access_key_id = AKIAIOSFODNN7EXAMPLE"
+---
+This call writes what looks like a live credential. Read it from the environment
+or a secrets manager at run time instead of writing it into a file.
+```
+
+```markdown
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    matches: \bAKIA[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{36}\b|\bgithub_pat_[A-Za-z0-9_]{82}\b|\bsk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{80,}|\bxox[abposr]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY
+  - field: command
+    not_contains: EXAMPLE
+examples:
+  match:
+    - command: export AWS_ACCESS_KEY_ID=AKIAZ7QJ4HRD2KX5LMNB
+  no_match:
+    - command: export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+---
+This command holds what looks like a live credential. Read it from the
+environment or a secrets manager instead of putting it in the command line.
+```
+
+State two limits when you offer it. `not_contains: EXAMPLE` keeps the AWS
+documentation key in fixtures from firing, and so also lets through a real key
+in a write or command that holds the word. And the rule reads only what the call
+writes: a secret copied by `cp` or produced by a program is invisible to it.
 
 ## Calls handrail cannot read
 

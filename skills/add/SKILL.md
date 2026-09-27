@@ -54,6 +54,10 @@ a call.
 
 ## 3. Write the Matcher
 
+When the user asks to guard rule directories, handrail's state, subagent
+definitions, secrets the agent writes, or calls handrail cannot read, start from
+the draft in [guards.md](guards.md).
+
 ```markdown
 ---
 event: PreToolUse
