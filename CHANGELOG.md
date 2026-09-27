@@ -10,6 +10,16 @@ all of which [`docs/spec.md`](docs/spec.md) states.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking**: `command`, `path`, `content` and `removed_content` are read by
+  key presence on any tool, so a tool handrail does not classify, such as one a
+  harness adds after a release, now carries them. A kind-less rule on those
+  fields now fires on such a call, and a non-string `command` on it sets
+  `unreadable`. The call keeps `kind: other` and yields no file payloads. A
+  `file_read` call now reads `path` from `notebook_path` when it has no
+  `file_path`.
+
 ## [0.3.0] - 2026-09-26
 
 The v2 specification. A rule now reads the input an agent actually produces, and what
