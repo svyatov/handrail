@@ -54,7 +54,8 @@ A fuzz target that finds a crash writes the input under the package's
 CI runs these same tasks, so a local pass means what a green check means.
 
 To run them without remembering to, run `lefthook install` once: every commit
-then runs the formatter and `mise run lint`, and every push runs `mise run test`.
+then runs the formatter and `mise run lint`, and every push runs `mise run test`
+without the cold-start timing test, which CI enforces.
 
 ## Tests
 
