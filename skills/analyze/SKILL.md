@@ -153,9 +153,10 @@ Nothing else proposes a change:
 For each rule with `trial: true`, report its matches from `stats` and its log
 lines with `trial` `"rule"`, and make one proposal with two answers: **promote**
 it (remove `trial: true`, so it enforces) or **drop** it (delete the file). Both
-edit or delete a rule file, so step 7 applies. Say which the evidence favors: a
-trial whose matches are all acts the user wanted stopped is ready; one that
-fired on legitimate work needs tuning first, and step 5 applies.
+edit or delete a rule file, so step 7 applies. Recommend the answer the evidence
+favors, as step 8 describes: a trial whose matches are all acts the user wanted
+stopped is ready; one that fired on legitimate work needs tuning first, and
+step 5 applies.
 
 ## 7. The heavier bar for a weakening proposal
 
@@ -198,7 +199,11 @@ For each proposal, show:
    matcher broader than the incident is a decision the user makes.
 
 Then ask for approval on that rule alone (with `AskUserQuestion` where the
-harness has it). Approving one is not approving the next, and nothing is written
+harness has it). List the recommended answer first, label it `(Recommended)`,
+and say in one sentence why it is the best answer, from the evidence and what
+the rule catches. Recommend trial where the matcher reaches acts the session
+shows the user allowing. The recommendation is advice: the user's pick is the
+answer. Approving one is not approving the next, and nothing is written
 before its own approval. Zero proposals is a valid result: say the session and
 the log showed nothing worth a durable rule, and stop.
 

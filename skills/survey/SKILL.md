@@ -147,10 +147,21 @@ Order: repo prose (Grade 1), then Grade 2, then Grade 3, as
 Then ask, per rule, with `AskUserQuestion` where the harness has it:
 
 - Grade 1: approve, trial, or drop.
-- Grade 2: `block`, `ask`, `warn`, trial, or drop. The pick is the draft's
-  `action:`.
+- Grade 2: `block`, `ask`, `warn`, or drop, as four options; name trial in the
+  question as a typed answer, since `AskUserQuestion` takes four options. The
+  pick is the draft's `action:`.
 - Grade 3: first the policy question [signals.md](signals.md) gives, with no
   draft shown. On a yes, show the draft and ask approve, trial, or drop.
+
+Recommend one answer to every question, the policy question included: list it
+first, label it `(Recommended)`, and say in one sentence why it is the best
+answer here, from this repository's facts and the rule's blast radius. `block`
+fits a call with no legitimate form (a hand edit of a generated file, a skipped
+hook); `ask` fits a legitimate call that needs a human look (a CI change, a
+release); `warn` fits a habit worth a notice. Recommend trial where the blast
+radius reaches acts the user plausibly allows, and drop where the rule
+duplicates a check that already runs earlier. The recommendation is advice: the
+user's pick is the answer.
 
 Trial adds `trial: true`; the rule then matches and logs without enforcing. A
 rule lands enforcing unless the user picks trial. Approving one is not approving
@@ -172,6 +183,12 @@ the next, and nothing is written before its own approval.
    "$HANDRAIL" test PreToolUse --kind file_edit --field path=package-lock.json
    "$HANDRAIL" test PreToolUse --kind file_edit --field path=package.json
    ```
+
+   A `shell` rule's replay command carries its own payload, so once the rule
+   lands, the replay call trips it. Write each `shell` payload as harness JSON
+   (`{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"..."}}`)
+   into a fresh `mktemp -d` directory and replay it with
+   `"$HANDRAIL" test PreToolUse --stdin < <file>`.
 
    Tell the user both payloads are synthetic. Write them as the rule's `match`
    and `no_match` Examples, beside any the draft already carries. A Global
