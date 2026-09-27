@@ -262,9 +262,9 @@ func testReport(
 	}
 	ruleset.State = rule.StateEnforce
 	// The same call the hook path makes, so what test reports is what hook does.
-	matched, _ := ruleset.Evaluate(payloads)
+	delivery := adapter.Delivery(ruleset, payloads)
 
-	for _, p := range ruleset.Yield(payloads) {
+	for _, p := range delivery.Payloads {
 		view := testPayload{Kind: p.Kind, Fields: p.Fields(), Unreadable: []string{}}
 		for _, c := range view.Fields["unreadable"] {
 			view.Unreadable = append(view.Unreadable, c.Spellings[0])
@@ -274,28 +274,24 @@ func testReport(
 		out.Payloads = append(out.Payloads, view)
 	}
 
-	for _, found := range matched {
-		action := adapter.Action(found.Rule)
-
+	for _, found := range delivery.Matches {
 		match := testMatch{
-			Rule: found.Name, Tier: found.Tier, Action: action.String(), DegradedFrom: nil, Message: found.Message,
+			Rule: found.Name, Tier: found.Tier, Action: found.As.String(), DegradedFrom: nil, Message: found.Message,
 			Trial: found.Trial,
 		}
-		if action != found.Action {
+		if found.As != found.Action {
 			match.DegradedFrom = new(found.Action.String())
 		}
 
 		out.Matched = append(out.Matched, match)
 	}
-	// The Outcome reported is the one the harness delivers, since that is what
-	// hook does with the evaluated one.
-	outcome := adapter.Delivered(matched)
-	out.Outcome = outcome.String()
+
+	out.Outcome = delivery.Outcome.String()
 
 	failures = append(failures, loadNotices(ruleset)...)
-	out.Human = messages(adapter, ruleset, event, matched, failures).human
+	out.Human = messages(adapter, ruleset, event, delivery.Matches, failures).human
 
-	return out, outcome
+	return out, delivery.Outcome
 }
 
 // printTest is test's human report: each payload, each matched rule, the

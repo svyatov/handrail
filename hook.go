@@ -85,16 +85,16 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return deliverOff(adapter, ruleset, event, stdout, stderr)
 	}
 
-	matched, outcome := ruleset.Evaluate(payloads)
+	delivery := adapter.Delivery(ruleset, payloads)
 	failures = append(failures, loadNotices(ruleset)...)
 	// A line the log could not write is reported like any failure of
 	// handrail's own, and the Outcome stands.
 	logged := logEvent{ruleset: ruleset, event: event, cwd: cwd, session: call.Session, adapter: adapter}
-	failures = append(failures, logged.record(payloads, matched)...)
+	failures = append(failures, logged.record(delivery)...)
 
-	text := messages(adapter, ruleset, event, matched, failures)
+	text := messages(adapter, ruleset, event, delivery.Matches, failures)
 
-	return adapter.Deliver(event, text.agent, text.human, outcome, stdout, stderr)
+	return adapter.Deliver(event, text.agent, text.human, delivery, stdout, stderr)
 }
 
 // deliverOff is what hook delivers under the off state: the state notice at
@@ -105,7 +105,9 @@ func deliverOff(adapter harness.Adapter, ruleset *rule.Ruleset, event string, st
 		notice = ruleset.StateNotice()
 	}
 
-	return adapter.Deliver(event, notice, notice, rule.Allow, stdout, stderr)
+	allow := harness.Delivery{Payloads: nil, Matches: nil, Outcome: rule.Allow}
+
+	return adapter.Deliver(event, notice, notice, allow, stdout, stderr)
 }
 
 // eventDir is the directory the event happened in, and "" with the reason when
@@ -290,18 +292,20 @@ const listedFiles = 10
 // and every notice goes to the human alone, since any text would continue it.
 // It stays in the CLI because it is the hook command's own output format.
 func messages(
-	adapter harness.Adapter, ruleset *rule.Ruleset, event string, matched []rule.Match, failures []string,
+	adapter harness.Adapter, ruleset *rule.Ruleset, event string, matched []harness.Delivered, failures []string,
 ) audiences {
 	sections := standingNotices(ruleset, event)
 	heard := slices.Clone(sections)
 
 	// A match on trial delivers nothing, so it has no section.
-	for _, match := range slices.DeleteFunc(slices.Clone(matched), func(m rule.Match) bool { return !m.Delivers() }) {
+	for _, match := range slices.DeleteFunc(slices.Clone(matched), func(m harness.Delivered) bool {
+		return !m.Delivers()
+	}) {
 		label := fmt.Sprintf("handrail %s: %s (%s)", match.Action, match.Name, match.Tier)
 
 		section := label + "\n" + match.Message
-		if note := adapter.Note(match.Rule); note != "" {
-			section += "\n" + note
+		if match.Note != "" {
+			section += "\n" + match.Note
 		}
 
 		if len(match.Files) > 0 {
@@ -311,7 +315,7 @@ func messages(
 			}
 		}
 
-		if adapter.Injects(event) || adapter.Action(match.Rule) == rule.Block {
+		if adapter.Injects(event) || match.As == rule.Block {
 			sections = append(sections, section)
 		}
 

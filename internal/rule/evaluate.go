@@ -330,21 +330,14 @@ func (rs *Ruleset) Yield(payloads []Payload) []Payload {
 }
 
 // Evaluate runs an event's payloads against the Effective ruleset and answers
-// with both halves of what the event produces: the rules that matched any of
-// its payloads, once each and in delivery order (tier order, then alphabetical
-// within a tier), and the Outcome, the strongest Action among those not on
-// trial, or allow when none matched. A caller deriving the Outcome for itself
-// would be a second answer to the same question, free to disagree with this
-// one, and test exists to say what hook will do. What a harness delivers of it
-// is the Adapter's answer, not a second one to this.
+// with the rules that matched any of its payloads, once each and in delivery
+// order (tier order, then alphabetical within a tier). The Outcome is what a
+// harness delivers of them, so it is the Adapter's answer, not this one's.
 //
 // Liveness is checked inline rather than over rs.Effective(), because this is
 // the hot path and the selector would allocate a second slice per event.
-func (rs *Ruleset) Evaluate(payloads []Payload) ([]Match, Outcome) {
-	var (
-		matched []Match
-		outcome Outcome
-	)
+func (rs *Ruleset) Evaluate(payloads []Payload) []Match {
+	var matched []Match
 
 	continued := slices.ContainsFunc(payloads, func(p Payload) bool { return p.StopHookActive })
 
@@ -362,12 +355,9 @@ func (rs *Ruleset) Evaluate(payloads []Payload) ([]Match, Outcome) {
 		match.Trial = live.Trial || rs.State == StateTrial
 
 		matched = append(matched, match)
-		if match.Delivers() {
-			outcome = max(outcome, live.Action)
-		}
 	}
 
-	return matched, outcome
+	return matched
 }
 
 // matchAll is this rule's Match over an event's payloads, and whether it

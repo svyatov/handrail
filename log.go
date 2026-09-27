@@ -69,7 +69,7 @@ type logEvent struct {
 // which a rule matched or unreadable was set. The grant is read only once there
 // is a line to write, so a no-match event performs no I/O. It returns the
 // failure to report, none when the lines were written: the log never enforces.
-func (rec logEvent) record(payloads []rule.Payload, matched []rule.Match) []string {
+func (rec logEvent) record(delivery harness.Delivery) []string {
 	var (
 		lines   [][]byte
 		granted *bool
@@ -77,11 +77,9 @@ func (rec logEvent) record(payloads []rule.Payload, matched []rule.Match) []stri
 
 	stamp := time.Now().UTC().Format(logTime)
 
-	for index, payload := range rec.ruleset.Yield(payloads) {
-		hits := slices.DeleteFunc(slices.Clone(matched), func(m rule.Match) bool {
-			return !slices.Contains(m.PayloadIndices, index)
-		})
-		if len(hits) == 0 && !payload.Has("unreadable") {
+	for index, payload := range delivery.Payloads {
+		here := delivery.Payload(index)
+		if len(here.Matches) == 0 && !payload.Has("unreadable") {
 			continue
 		}
 
@@ -89,18 +87,18 @@ func (rec logEvent) record(payloads []rule.Payload, matched []rule.Match) []stri
 			granted = new(rule.Logging(rec.ruleset.Root))
 		}
 
-		outcome := rec.adapter.Delivered(hits)
+		hits := here.Matches
 		// Without a grant, only a trial match earns a line, and the line names
 		// the trial entries alone: putting a rule on trial is the request the
 		// grant otherwise stands in for.
 		if !*granted {
-			hits = slices.DeleteFunc(hits, func(m rule.Match) bool { return m.Delivers() })
+			hits = slices.DeleteFunc(hits, func(m harness.Delivered) bool { return m.Delivers() })
 			if len(hits) == 0 {
 				continue
 			}
 		}
 
-		lines = append(lines, encodeLine(rec.line(stamp, payload, outcome, hits)))
+		lines = append(lines, encodeLine(rec.line(stamp, payload, here.Outcome, hits)))
 	}
 
 	if lines == nil {
@@ -117,7 +115,7 @@ func (rec logEvent) record(payloads []rule.Payload, matched []rule.Match) []stri
 
 // line is the Decision log line for one payload, the Outcome the harness
 // delivers for it, and the rules it names.
-func (rec logEvent) line(stamp string, payload rule.Payload, outcome rule.Outcome, hits []rule.Match) logLine {
+func (rec logEvent) line(stamp string, payload rule.Payload, outcome rule.Outcome, hits []harness.Delivered) logLine {
 	fields := payload.Fields()
 	line := logLine{
 		Time: stamp, Version: version, Harness: rec.adapter.Name, Event: rec.event, SessionID: clip(rec.session),
@@ -153,16 +151,9 @@ func (rec logEvent) line(stamp string, payload rule.Payload, outcome rule.Outcom
 
 // entry is one matched rule as its line names it: the action the harness
 // delivers, the one degradation replaced, and the route to its trial.
-func (rec logEvent) entry(hit rule.Match) logEntry {
-	// A trial rule is never degraded, and the Adapter sees only the rule's own
-	// trial: true, not the enforcement state's.
-	action := hit.Action
-	if !hit.Trial {
-		action = rec.adapter.Action(hit.Rule)
-	}
-
-	entry := logEntry{Rule: clip(hit.Name), Tier: hit.Tier, Action: action.String(), DegradedFrom: nil, Trial: ""}
-	if action != hit.Action {
+func (rec logEvent) entry(hit harness.Delivered) logEntry {
+	entry := logEntry{Rule: clip(hit.Name), Tier: hit.Tier, Action: hit.As.String(), DegradedFrom: nil, Trial: ""}
+	if hit.As != hit.Action {
 		entry.DegradedFrom = new(hit.Action.String())
 	}
 
