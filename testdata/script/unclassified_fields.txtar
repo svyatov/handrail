@@ -75,6 +75,11 @@ stdin frobnicate-argv.json
 exec handrail test PreToolUse --stdin --harness claude
 stdout '^  unreadable: command$'
 
+# So is an MCP tool's content held as blocks rather than text.
+stdin mcp-content-blocks.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^  unreadable: content$'
+
 -- .git/HEAD --
 ref: refs/heads/main
 -- frobnicate-command.json --
@@ -135,6 +140,8 @@ conditions:
     contains: Begin Patch
 ---
 A patch envelope as a command.
+-- mcp-content-blocks.json --
+{"tool_name": "mcp__notion__create_page", "tool_input": {"content": [{"type": "text", "text": "hi"}]}}
 -- frobnicate-argv.json --
 {"tool_name": "Frobnicate", "tool_input": {"command": ["rm", "-rf", "/"]}}
 -- .handrail/env-writes.md --
