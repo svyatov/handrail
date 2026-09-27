@@ -10,19 +10,7 @@ all of which [`docs/spec.md`](docs/spec.md) states.
 
 ## [Unreleased]
 
-### Changed
-
-- **Breaking**: `command`, `path`, `content` and `removed_content` are read by
-  key presence on any tool, MCP tools included, so a tool handrail does not
-  classify, such as one a harness adds after a release, now carries them. A
-  kind-less rule on those fields now fires on such a call, and a call that
-  carries one of their keys with a non-string value, such as an MCP tool's
-  `content` blocks, sets `unreadable`. An unclassified call keeps `kind: other`
-  and yields no file payloads, and a file edit's `command` is still read as
-  `apply_patch`'s envelope alone. A `file_read` call now reads `path` from
-  `notebook_path` when it has no `file_path`.
-
-## [0.3.0] - 2026-09-26
+## [0.3.0] - 2026-09-27
 
 The v2 specification. A rule now reads the input an agent actually produces, and what
 handrail cannot read is a value a rule can match. Rule files and scripts written
@@ -98,6 +86,15 @@ Run `handrail check` and `handrail sync` after upgrading.
   spawn tools, `WebFetch`, `WebSearch` and `Monitor` left `kind: other` for
   `agent`, `network` and `shell`, so a `kind: other` rule no longer fires on
   them.
+- **Breaking**: `command`, `path`, `content` and `removed_content` are read by
+  key presence on any tool, MCP tools included, so a tool handrail does not
+  classify, such as one a harness adds after a release, now carries them. A
+  kind-less rule on those fields now fires on such a call, and a call that
+  carries one of their keys with a non-string value, such as an MCP tool's
+  `content` blocks, sets `unreadable`. An unclassified call keeps `kind: other`
+  and yields no file payloads, and a file edit's `command` is still read as
+  `apply_patch`'s envelope alone. A `file_read` call now reads `path` from
+  `notebook_path` when it has no `file_path`.
 - `block` on `Stop` and `SubagentStop` continues the agent once, with the rule's
   message as its next instruction, and never loops.
 - A failure of handrail's own now sets `unreadable`, so a rule can fail closed
