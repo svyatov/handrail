@@ -298,5 +298,10 @@ func sandbox(env *testscript.Env) error {
 	env.Setenv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
 	env.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
 
+	// Under -race every handrail a script runs would sleep a second at exit,
+	// waiting on goroutines handrail never starts. A later flag wins, so the
+	// caller's own GORACE options survive.
+	env.Setenv("GORACE", os.Getenv("GORACE")+" atexit_sleep_ms=0")
+
 	return nil
 }
