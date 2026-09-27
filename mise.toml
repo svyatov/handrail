@@ -10,6 +10,8 @@
 # there. It cannot bump a pin in this file.
 
 [tools]
+# The pre-commit secret scan.
+betterleaks = "1.8.1"
 golangci-lint = "2.13.2"
 goreleaser = "2.18.2"
 lefthook = "2.1.14"

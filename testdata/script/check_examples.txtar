@@ -45,6 +45,10 @@ stderr 'list-fails\.md: line 8: no_match example fails: url=\["https://docs.exam
 # after a key's colon still opens a mapping.
 ! stderr 'quoted-rename\.md'
 
+# A trailing comment is no part of an Example's value, quoted or plain, so a
+# fixture can carry a secret scanner's gitleaks:allow.
+! stderr 'comments\.md'
+
 # --json carries each rule's passed count and every failing Example's fields.
 exec sh -c 'handrail check --json; echo code=$?'
 stdout '^code=1$'
@@ -206,3 +210,18 @@ examples:
         - final.md
 ---
 A quoted entry is one value, colon and all.
+-- .handrail/comments.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    contains: TOKEN
+examples:
+  match:
+    - command: export TOKEN=x # gitleaks:allow
+  no_match:
+    - command: echo hi # TOKEN
+    - command: "echo hi" # TOKEN
+---
+A comment after a value is dropped.

@@ -303,5 +303,40 @@ func sandbox(env *testscript.Env) error {
 	// caller's own GORACE options survive.
 	env.Setenv("GORACE", os.Getenv("GORACE")+" atexit_sleep_ms=0")
 
+	if shared := os.Getenv("GOCOVERDIR"); shared != "" {
+		return ownCoverDir(env, shared)
+	}
+
+	return nil
+}
+
+// ownCoverDir gives a script its own GOCOVERDIR and moves what it collects into
+// the shared one when the script ends. Every handrail rewrites the coverage
+// meta-data file through a temp file Go names by the clock alone, which ticks
+// in microseconds on macOS: two scripts starting handrail in the same one
+// collide, and the loser prints an error to the stderr the script asserts on.
+func ownCoverDir(env *testscript.Env, shared string) error {
+	own := filepath.Join(env.WorkDir, "gocoverdir")
+
+	err := os.Mkdir(own, 0o755)
+	if err != nil {
+		return fmt.Errorf("creating the script's coverage directory: %w", err)
+	}
+
+	env.Setenv("GOCOVERDIR", own)
+	env.Defer(func() {
+		entries, err := os.ReadDir(own)
+		if err != nil {
+			env.T().Fatal(err)
+		}
+
+		for _, entry := range entries {
+			err := os.Rename(filepath.Join(own, entry.Name()), filepath.Join(shared, entry.Name()))
+			if err != nil {
+				env.T().Fatal(err)
+			}
+		}
+	})
+
 	return nil
 }
