@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://json.schemastore.org/lefthook.json
 # What CI runs, before it leaves the machine. Install once with
 # `lefthook install`; `mise install` puts lefthook on the PATH.
 
@@ -5,6 +6,11 @@ pre-commit:
   # In order, so lint sees the files fmt just fixed.
   piped: true
   jobs:
+    - name: secrets
+      run: mise x -- betterleaks git --pre-commit --staged --redact --verbose
+    # Trailing whitespace and conflict markers in the files no formatter covers.
+    - name: whitespace
+      run: git diff --cached --check
     - name: fmt
       glob: "*.go"
       # mise x, so the formatter is the version mise.toml pins even in a shell
@@ -14,10 +20,24 @@ pre-commit:
     - name: lint
       run: mise run lint
 
+# Squash merges make the PR title the commit on main; this keeps branch commits
+# in the same form.
+commit-msg:
+  jobs:
+    - name: conventional
+      skip: [merge]
+      run: |
+        head -1 {1} | grep -qE '^(feat|fix|docs|chore|refactor|test|ci|build)(\(.+\))?!?: .+' || { echo "Use Conventional Commits: type(scope): description"; exit 1; }
+
 # The suite takes half a minute, too long to wait on at every commit. -short skips
 # the cold-start test, whose 20ms median a machine busy with other work cannot
 # hold; the ubuntu CI job enforces it.
 pre-push:
   jobs:
+    - name: release-check
+      run: mise run release-check
+    - name: vuln
+      glob: "go.{mod,sum}"
+      run: mise run vuln
     - name: test
       run: SHORT=-short mise run test
