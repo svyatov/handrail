@@ -8,11 +8,8 @@ import (
 
 func cmdVersion(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("version", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-
-	err := fs.Parse(args)
-	if err != nil {
-		return 1
+	if code, ok := parseArgs(fs, args, stdout, stderr); !ok {
+		return code
 	}
 
 	fmt.Fprintf(stdout, "handrail %s\ncommit: %s\ndate: %s\n", version, commit, date)

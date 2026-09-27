@@ -18,10 +18,8 @@ import (
 // wrong, so the answer is actionable without reading the report.
 func cmdDoctor(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-
-	if !parseFlags(fs, args, stderr) {
-		return 1
+	if code, ok := parseFlags(fs, args, stdout, stderr); !ok {
+		return code
 	}
 
 	out := &report{w: stdout, problems: 0}

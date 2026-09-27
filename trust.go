@@ -11,10 +11,8 @@ import (
 
 func cmdTrust(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("trust", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-
-	if !parseFlags(fs, args, stderr) {
-		return 1
+	if code, ok := parseFlags(fs, args, stdout, stderr); !ok {
+		return code
 	}
 
 	cwd, err := os.Getwd()

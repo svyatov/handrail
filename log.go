@@ -223,7 +223,6 @@ const defaultLogCount = 20
 // cmdLog grants, revokes or reads the Decision log.
 func cmdLog(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("log", flag.ContinueOnError)
-	flags.SetOutput(stderr)
 	count := flags.Int("n", defaultLogCount, "print at most this many lines")
 	all := flags.Bool("all", false, "every project in the log, not only this one")
 	name := flags.String("rule", "", "only the lines where this rule matched")
@@ -234,8 +233,8 @@ func cmdLog(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 		args = args[1:]
 	}
 
-	if !parseFlags(flags, args, stderr) {
-		return 1
+	if code, ok := parseFlags(flags, args, stdout, stderr); !ok {
+		return code
 	}
 
 	if *count < 1 {

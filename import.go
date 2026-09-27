@@ -22,32 +22,9 @@ format cannot express is skipped and reported, never written.
 // until their new owner has read them: nothing lands in a committed tier, and
 // nothing that cannot be expressed lands at all.
 func cmdImport(args []string, _ io.Reader, stdout, stderr io.Writer) int {
-	// The format leads, so a flag in its place is a request for the usage rather
-	// than the name of something to convert.
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		fmt.Fprint(stderr, importUsage)
-
-		return 1
-	}
-
-	if args[0] != "hookify" {
-		fmt.Fprintf(stderr, "handrail import: unknown format %q; known: hookify\n", args[0])
-
-		return 1
-	}
-
 	flags := flag.NewFlagSet("import", flag.ContinueOnError)
-	flags.SetOutput(stderr)
-
-	err := flags.Parse(args[1:])
-	if err != nil {
-		return 1
-	}
-
-	if flags.NArg() > 1 {
-		fmt.Fprintf(stderr, "handrail import: unexpected argument %q\n", flags.Arg(1))
-
-		return 1
+	if code, ok := parseImportArgs(flags, args, stdout, stderr); !ok {
+		return code
 	}
 
 	cwd, err := os.Getwd()
@@ -78,6 +55,43 @@ func cmdImport(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	reportImport(stdout, root, results)
 
 	return 0
+}
+
+// parseImportArgs checks the format that leads import's arguments and parses
+// the flags after it into flags, reporting whether import may go on and, when
+// it may not, its exit code.
+func parseImportArgs(flags *flag.FlagSet, args []string, stdout, stderr io.Writer) (int, bool) {
+	flags.Usage = func() { fmt.Fprint(flags.Output(), importUsage) }
+
+	// The format leads, so a flag in its place is a request for the usage rather
+	// than the name of something to convert: asked for with -h, it is an answer.
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		if code, ok := parseArgs(flags, args, stdout, stderr); !ok {
+			return code, false
+		}
+
+		fmt.Fprint(stderr, importUsage)
+
+		return 1, false
+	}
+
+	if args[0] != "hookify" {
+		fmt.Fprintf(stderr, "handrail import: unknown format %q; known: hookify\n", args[0])
+
+		return 1, false
+	}
+
+	if code, ok := parseArgs(flags, args[1:], stdout, stderr); !ok {
+		return code, false
+	}
+
+	if flags.NArg() > 1 {
+		fmt.Fprintf(stderr, "handrail import: unexpected argument %q\n", flags.Arg(1))
+
+		return 1, false
+	}
+
+	return 0, true
 }
 
 // reportImport names each converted rule's source and target, and each skipped

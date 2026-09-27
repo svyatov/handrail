@@ -30,11 +30,10 @@ var errNotDir = errors.New("is not a directory")
 // that wedges the harness is worse than the harness without it.
 func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("hook", flag.ContinueOnError)
-	flags.SetOutput(stderr)
+	flags.Usage = func() { fmt.Fprint(flags.Output(), hookUsage) }
 
-	err := flags.Parse(args)
-	if err != nil {
-		return 1
+	if code, ok := parseArgs(flags, args, stdout, stderr); !ok {
+		return code
 	}
 
 	if flags.NArg() != hookArgs {
