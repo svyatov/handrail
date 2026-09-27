@@ -14,8 +14,10 @@ pre-commit:
     - name: lint
       run: mise run lint
 
-# The suite takes minutes, too long to wait on at every commit.
+# The suite takes minutes, too long to wait on at every commit. -short skips
+# the cold-start test, whose 20ms median a machine busy with other work cannot
+# hold; the ubuntu CI job enforces it.
 pre-push:
   jobs:
     - name: test
-      run: mise run test
+      run: SHORT=-short mise run test
