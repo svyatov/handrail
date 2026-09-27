@@ -1,6 +1,26 @@
-# handrail
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.png">
+    <img alt="handrail" src="docs/assets/logo-light.png" width="300">
+  </picture>
+</p>
 
-Declare an agent guardrail once, in one neutral format, and enforce it through every harness's native hooks.
+<p align="center"><strong>Declare an agent guardrail once, in one neutral format, and enforce it through every harness's native hooks.</strong></p>
+
+<p align="center">
+  <a href="https://github.com/svyatov/handrail/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/svyatov/handrail/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/svyatov/handrail/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/svyatov/handrail"></a>
+  <a href="go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/svyatov/handrail"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/svyatov/handrail"></a>
+</p>
+
+<p align="center">
+  <a href="#where-to-start">Quick start</a> ·
+  <a href="#rule-format">Rule format</a> ·
+  <a href="#commands">Commands</a> ·
+  <a href="docs/spec.md">Spec</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
 
 - **Both harnesses.** One rule file is enforced in Claude Code and in Codex CLI, through each one's own hook mechanism.
 - **One binary, nothing else.** One third-party runtime dependency, the `mvdan.cc/sh/v3/syntax` shell parser. A lint allow-list keeps it that way.
