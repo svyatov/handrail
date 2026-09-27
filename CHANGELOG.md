@@ -10,6 +10,18 @@ all of which [`docs/spec.md`](docs/spec.md) states.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking**: `command`, `path`, `content` and `removed_content` are read by
+  key presence on any tool, MCP tools included, so a tool handrail does not
+  classify, such as one a harness adds after a release, now carries them. A
+  kind-less rule on those fields now fires on such a call, and a call that
+  carries one of their keys with a non-string value, such as an MCP tool's
+  `content` blocks, sets `unreadable`. An unclassified call keeps `kind: other`
+  and yields no file payloads, and a file edit's `command` is still read as
+  `apply_patch`'s envelope alone. A `file_read` call now reads `path` from
+  `notebook_path` when it has no `file_path`.
+
 ## [0.3.0] - 2026-09-26
 
 The v2 specification. A rule now reads the input an agent actually produces, and what

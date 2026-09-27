@@ -1,0 +1,171 @@
+# A tool handrail does not classify still contributes the canonical fields its
+# tool input carries: a field is read by key presence rather than by kind.
+exec handrail trust
+
+# Its command is parsed as every command is, so a nested command is a
+# Candidate; its kind stays other, so a kind: shell rule does not reach it.
+stdin frobnicate-command.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: rm-rf'
+! stdout 'shell-rm-rf'
+
+# Only a kind: shell call yields file payloads, so the file that command
+# redirects to is not written as far as a path rule knows; through Bash it is.
+! stdout 'env-writes'
+stdin bash-command.json
+exec handrail hook claude PreToolUse
+stdout 'handrail warn: env-writes'
+
+# path reads file_path, else notebook_path, on any tool.
+stdin frobnicate-file-path.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  env-writes  '
+! stdout 'notebooks'
+stdin frobnicate-notebook.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  notebooks  '
+
+# A file read reads it the same way.
+stdin read-notebook.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  notebooks  '
+
+# A key spelled path (Grep, Glob) is not a source.
+stdin grep-path.json
+exec handrail test PreToolUse --stdin --harness claude
+! stdout 'env-writes'
+stdout '^outcome: allow$'
+
+# content reads content, else new_string, else new_source.
+stdin frobnicate-content.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  secret-content  '
+stdin frobnicate-content-last.json
+exec handrail test PreToolUse --stdin --harness claude
+! stdout 'secret-content'
+stdin frobnicate-new-string.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  secret-content  '
+stdin frobnicate-new-source.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  secret-content  '
+
+# removed_content reads old_string.
+stdin frobnicate-old-string.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^warn  removes-guard  '
+! stdout 'secret-content'
+
+# Codex's apply_patch carries its envelope under command, which fills no
+# command; its files and their text still do.
+stdin codex-patch.json
+exec handrail test PreToolUse --stdin --harness codex
+! stdout 'patch-command'
+stdout '^warn  env-writes  '
+stdout '^warn  secret-content  '
+
+# Nor does it when the call names a path of its own, so no patch is read.
+stdin codex-patch-path.json
+exec handrail test PreToolUse --stdin --harness codex
+! stdout 'patch-command'
+stdout '^warn  env-writes  '
+
+# A command key holding a non-string is unreadable, as on a shell call.
+stdin frobnicate-argv.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^  unreadable: command$'
+
+# So is an MCP tool's content held as blocks rather than text.
+stdin mcp-content-blocks.json
+exec handrail test PreToolUse --stdin --harness claude
+stdout '^  unreadable: content$'
+
+-- .git/HEAD --
+ref: refs/heads/main
+-- frobnicate-command.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Frobnicate", "tool_input": {"command": "cd /tmp && rm -rf / > out.env"}}
+-- bash-command.json --
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "cd /tmp && rm -rf / > out.env"}}
+-- frobnicate-file-path.json --
+{"tool_name": "Frobnicate", "tool_input": {"file_path": "a.env", "notebook_path": "b.ipynb"}}
+-- frobnicate-notebook.json --
+{"tool_name": "Frobnicate", "tool_input": {"notebook_path": "b.ipynb"}}
+-- read-notebook.json --
+{"tool_name": "Read", "tool_input": {"notebook_path": "b.ipynb"}}
+-- grep-path.json --
+{"tool_name": "Grep", "tool_input": {"pattern": "x", "path": "a.env"}}
+-- .handrail/notebooks.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: "*.ipynb"
+---
+A notebook.
+-- frobnicate-content.json --
+{"tool_name": "Frobnicate", "tool_input": {"content": "SECRET=1", "new_string": "x"}}
+-- frobnicate-content-last.json --
+{"tool_name": "Frobnicate", "tool_input": {"content": "x", "new_string": "SECRET=1", "new_source": "SECRET=1"}}
+-- frobnicate-new-source.json --
+{"tool_name": "Frobnicate", "tool_input": {"new_source": "SECRET=1"}}
+-- frobnicate-new-string.json --
+{"tool_name": "Frobnicate", "tool_input": {"new_string": "SECRET=1", "new_source": "print()"}}
+-- .handrail/secret-content.md --
+---
+event: PreToolUse
+conditions:
+  - field: content
+    contains: SECRET
+---
+Writes a secret.
+-- frobnicate-old-string.json --
+{"tool_name": "Frobnicate", "tool_input": {"old_string": "guard SECRET", "new_string": "x"}}
+-- .handrail/removes-guard.md --
+---
+event: PreToolUse
+conditions:
+  - field: removed_content
+    contains: guard
+---
+Removes a guard.
+-- codex-patch.json --
+{"tool_name": "apply_patch", "tool_input": {"command": "*** Begin Patch\n*** Add File: a.env\n+SECRET=1\n*** End Patch\n"}}
+-- codex-patch-path.json --
+{"tool_name": "apply_patch", "tool_input": {"file_path": "a.env", "command": "*** Begin Patch\n*** Add File: b.txt\n+x\n*** End Patch\n"}}
+-- .handrail/patch-command.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    contains: Begin Patch
+---
+A patch envelope as a command.
+-- mcp-content-blocks.json --
+{"tool_name": "mcp__notion__create_page", "tool_input": {"content": [{"type": "text", "text": "hi"}]}}
+-- frobnicate-argv.json --
+{"tool_name": "Frobnicate", "tool_input": {"command": ["rm", "-rf", "/"]}}
+-- .handrail/env-writes.md --
+---
+event: PreToolUse
+conditions:
+  - field: path
+    glob: "*.env"
+---
+Writes a .env file.
+-- .handrail/rm-rf.md --
+---
+event: PreToolUse
+conditions:
+  - field: command
+    starts_with: rm -rf
+---
+Removes recursively.
+-- .handrail/shell-rm-rf.md --
+---
+event: PreToolUse
+kind: shell
+conditions:
+  - field: command
+    starts_with: rm -rf
+---
+A shell rm -rf.
