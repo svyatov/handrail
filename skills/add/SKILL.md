@@ -54,9 +54,8 @@ a call.
 
 ## 3. Write the Matcher
 
-When the user asks to protect handrail itself, their agent setup, their
-credentials, or calls handrail cannot read, start from the draft in
-[guards.md](guards.md).
+When the request matches a guard in [guards.md](guards.md), such as keeping
+secrets out of what the agent writes, start from its draft.
 
 ```markdown
 ---

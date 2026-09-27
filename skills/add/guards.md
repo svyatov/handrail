@@ -117,26 +117,9 @@ a credential: AWS access key ids, GitHub tokens, Anthropic keys, Slack tokens an
 private key headers. Add a shape the user names to both patterns, and never a
 generic high-entropy one: that is a scanner's job, in pre-commit or CI.
 
-```markdown
----
-event: PreToolUse
-kind: file_edit
-action: block
-conditions:
-  - field: content
-    matches: \b(AKIA|ASIA)[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{36}\b|\bgithub_pat_[A-Za-z0-9_]{82}\b|\bsk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{80,}|\bxox[abposr]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY
-  - field: content
-    not_contains: EXAMPLE
-examples:
-  match:
-    - content: "aws_access_key_id = AKIAZ7QJ4HRD2KX5LMNB"
-    - content: "aws_access_key_id = ASIAZ7QJ4HRD2KX5LMNB"
-  no_match:
-    - content: "aws_access_key_id = AKIAIOSFODNN7EXAMPLE"
----
-This call writes what looks like a live credential. Read it from the environment
-or a secrets manager at run time instead of writing it into a file.
-```
+Write the shell rule first. Its Examples hold key shapes with no `EXAMPLE` in
+them, so once the file rule is on it blocks any write of the shell rule; to
+change the shell rule later, the user edits it by hand.
 
 ```markdown
 ---
@@ -145,10 +128,11 @@ kind: shell
 action: block
 conditions:
   - field: command
-    matches: \b(AKIA|ASIA)[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{36}\b|\bgithub_pat_[A-Za-z0-9_]{82}\b|\bsk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{80,}|\bxox[abposr]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY
+    matches: \b(AKIA|ASIA)[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{36}\b|\bghs_[0-9]+_eyJ[A-Za-z0-9._-]+|\bgithub_pat_[A-Za-z0-9_]{82}\b|\bsk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{80,}|\bxox[abposr]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY
 examples:
   match:
     - command: export AWS_ACCESS_KEY_ID=ASIAZ7QJ4HRD2KX5LMNB
+    - command: export GITHUB_TOKEN=ghs_123_eyJhbGciOiJub25lIn0.e30.AAAA
     - command: "cat <<'EOF' > .env\nAWS_ACCESS_KEY_ID=AKIAZ7QJ4HRD2KX5LMNB\nEOF"
   no_match:
     - command: git commit -m "rotate the AKIA keys"
@@ -157,12 +141,41 @@ This command holds what looks like a live credential. Read it from the
 environment or a secrets manager instead of putting it in the command line.
 ```
 
+```markdown
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: content
+    matches: \b(AKIA|ASIA)[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{36}\b|\bghs_[0-9]+_eyJ[A-Za-z0-9._-]+|\bgithub_pat_[A-Za-z0-9_]{82}\b|\bsk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{80,}|\bxox[abposr]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY
+  - field: content
+    not_contains: EXAMPLE
+examples:
+  match:
+    - content: "aws_access_key_id = AKIAZ7QJ4HRD2KX5LMNB"
+    - content: "aws_access_key_id = ASIAZ7QJ4HRD2KX5LMNB"
+    - content: "token: ghp_000000000000000000000000000000000000"
+    - content: "token: ghs_123_eyJhbGciOiJub25lIn0.e30.AAAA"
+    - content: "token: github_pat_0000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    - content: "key: sk-ant-api03-00000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    - content: "token: xoxb-0000000000-0000000000"
+    - content: "-----BEGIN RSA PRIVATE KEY-----"
+  no_match:
+    - content: "aws_access_key_id = AKIAIOSFODNN7EXAMPLE"
+---
+This call writes what looks like a live credential. Read it from the environment
+or a secrets manager at run time instead of writing it into a file.
+```
+
 State two limits when you offer it. `not_contains: EXAMPLE` keeps the AWS
 documentation key in fixtures from firing, and so also lets through a real key
 in a write that holds the word. The shell rule has no such exception: a `not_`
-term never reads the whole command line, and a heredoc body is only there. And
-the pair reads only what the call writes: a secret copied by `cp` or produced by
-a program is invisible to it.
+term never reads the whole command line, and a heredoc body is only there, so
+it also blocks a command that only names a key shape, such as a search for a
+private key header or a `sed` that deletes one. And the pair sees only the
+call's own text: a secret copied by `cp` or produced by a program is invisible
+to it.
 
 ## Calls handrail cannot read
 
