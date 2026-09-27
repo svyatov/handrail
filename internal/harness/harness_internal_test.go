@@ -117,12 +117,46 @@ func TestAMissingEventDegradesToSkip(t *testing.T) {
 		Conditions: nil, Examples: nil, Message: "", Trial: false,
 	}
 
-	if got := adapter.Action(notDone); got != rule.Allow {
-		t.Errorf("Action() = %s, want allow", got)
+	if got := adapter.action(notDone); got != rule.Allow {
+		t.Errorf("action() = %s, want allow", got)
 	}
 
 	want := "block degraded to skip for not-done: Partial has no Stop event"
 	if got := adapter.Report([]*rule.Rule{notDone}); len(got) != 1 || got[0] != want {
 		t.Errorf("Report() = %q, want [%q]", got, want)
+	}
+}
+
+// No harness has an event that can ask but cannot deny, so only this adapter
+// shows that a Delivery's Outcome is the strongest action each rule delivers,
+// not the strongest rule's action delivered: an ask and a block there deliver
+// an ask, where degrading the block alone would deliver a warn.
+func TestDeliveryOutcomeIsTheStrongestDeliveredAction(t *testing.T) {
+	t.Parallel()
+
+	adapter := Adapter{
+		Name: "asking", quirks: nil, title: "Asking", dir: "", homeEnv: "", file: "", sessionEnv: "",
+		aliases: nil, agentTypeKey: "", agentPromptKey: "", patchInShell: false, bypass: nil, conditions: false,
+		events: []eventCaps{{name: "PreToolUse", deny: noDenial, inject: true, ask: true, silent: false}},
+	}
+
+	rules := make([]*rule.Rule, 0, 2)
+
+	for _, action := range []rule.Outcome{rule.Ask, rule.Block} {
+		rules = append(rules, &rule.Rule{
+			Name: action.String(), Path: "", Tier: "", ShadowedBy: nil, Replaces: nil, DroppedBy: nil,
+			DemotedFrom: "", Event: "PreToolUse", Kind: "", Action: action, Enabled: true, AgentOnly: false,
+			LostAgentOnly: false, Conditions: nil, Examples: nil, Message: "", Trial: false,
+		})
+	}
+
+	ruleset := &rule.Ruleset{
+		Root: "", Demoted: "", Rules: rules, Untrusted: nil, Tiers: nil, Problems: nil,
+		State: rule.StateEnforce, StateScope: rule.ScopeDefault,
+	}
+	payloads := []rule.Payload{{Event: "PreToolUse", Kind: "shell", StopHookActive: false}}
+
+	if got := adapter.Delivery(ruleset, payloads).Outcome; got != rule.Ask {
+		t.Errorf("Delivery().Outcome = %s, want ask", got)
 	}
 }

@@ -363,29 +363,15 @@ func shellUnquote(s string) string {
 	return strings.ReplaceAll(s[1:len(s)-1], `'\''`, "'")
 }
 
-// Action is the action the harness delivers for r: the rule's own, or the
+// action is the action the harness delivers for r: the rule's own, or the
 // nearest one it can deliver where it cannot deliver that. A trial rule keeps
 // its own: it asks the harness for nothing, so it has no capability to lose.
-func (a Adapter) Action(r *rule.Rule) rule.Outcome {
+func (a Adapter) action(r *rule.Rule) rule.Outcome {
 	if r.Trial {
 		return r.Action
 	}
 
 	return a.degrade(r.Event, r.Action)
-}
-
-// Delivered is the Outcome the harness delivers for the matched rules: the
-// strongest action it delivers among them. A trial match delivers none.
-func (a Adapter) Delivered(matched []rule.Match) rule.Outcome {
-	var outcome rule.Outcome
-
-	for _, m := range matched {
-		if m.Delivers() {
-			outcome = max(outcome, a.Action(m.Rule))
-		}
-	}
-
-	return outcome
 }
 
 // Report is what the harness cannot do, for sync to print and doctor to
@@ -396,7 +382,7 @@ func (a Adapter) Report(rules []*rule.Rule) []string {
 	var out []string
 
 	for _, effective := range rules {
-		delivered := a.Action(effective)
+		delivered := a.action(effective)
 		if delivered == effective.Action {
 			continue
 		}

@@ -627,17 +627,6 @@ func set(payload *rule.Payload, name string, input map[string]any, keys ...strin
 	}
 }
 
-// Note is what an ask this harness turns into a block adds to its message,
-// and "" for any other rule. The one substitution that tightens says so at
-// event time; the others are reported at sync alone.
-func (a Adapter) Note(r *rule.Rule) string {
-	if r.Action == rule.Ask && a.Action(r) == rule.Block {
-		return "handrail: " + a.reason(r.Event, rule.Block) + "."
-	}
-
-	return ""
-}
-
 type hookOutput struct {
 	Decision           string        `json:"decision,omitempty"`
 	Reason             string        `json:"reason,omitempty"`
@@ -652,6 +641,86 @@ type hookSpecific struct {
 	PermissionDecision       string `json:"permissionDecision,omitempty"`
 	PermissionDecisionReason string `json:"permissionDecisionReason,omitempty"`
 	AdditionalContext        string `json:"additionalContext,omitempty"`
+}
+
+// Delivery is one evaluated event as this harness delivers it, the one answer
+// hook delivers, test reports and the Decision log records.
+type Delivery struct {
+	// Payloads are the payloads the ruleset yields, which Match.PayloadIndices
+	// index.
+	Payloads []rule.Payload
+	// Matches are the matched rules in delivery order, trial ones included.
+	Matches []Delivered
+	// Outcome is the strongest action delivered among the matches that
+	// deliver: each rule's own degraded, not the strongest rule's.
+	Outcome rule.Outcome
+}
+
+// Delivered is one matched rule and what the harness delivers for it.
+type Delivered struct {
+	rule.Match
+
+	// As is the action delivered. A match on trial keeps the rule's own, since
+	// it asks the harness for nothing, whether the rule's trial: true or the
+	// Enforcement state put it there; action sees only the rule's own.
+	As rule.Outcome
+	// Note is what an ask this harness turns into a block adds to its
+	// message, and "" otherwise. The one substitution that tightens says so
+	// at event time; the others are reported at sync alone.
+	Note string
+}
+
+// Delivery evaluates payloads against rs, under the Enforcement state rs
+// carries, and says what the harness delivers for them.
+func (a Adapter) Delivery(rs *rule.Ruleset, payloads []rule.Payload) Delivery {
+	matched := rs.Evaluate(payloads)
+	delivery := Delivery{Payloads: rs.Yield(payloads), Matches: make([]Delivered, 0, len(matched)), Outcome: rule.Allow}
+
+	for _, match := range matched {
+		found := Delivered{Match: match, As: match.Action, Note: ""}
+		if !match.Trial {
+			found.As = a.degrade(match.Event, match.Action)
+		}
+
+		if match.Action == rule.Ask && found.As == rule.Block {
+			found.Note = "handrail: " + a.reason(match.Event, rule.Block) + "."
+		}
+
+		delivery.Matches = append(delivery.Matches, found)
+	}
+
+	delivery.Outcome = outcome(delivery.Matches)
+
+	return delivery
+}
+
+// Payload narrows d to the yielded payload at index: the matches on it and
+// the Outcome they deliver, for the Decision log's line per payload.
+func (d Delivery) Payload(index int) Delivery {
+	here := Delivery{Payloads: nil, Matches: nil, Outcome: rule.Allow}
+
+	for _, m := range d.Matches {
+		if slices.Contains(m.PayloadIndices, index) {
+			here.Matches = append(here.Matches, m)
+		}
+	}
+
+	here.Outcome = outcome(here.Matches)
+
+	return here
+}
+
+// outcome is the strongest action delivered among the matches that deliver.
+func outcome(matches []Delivered) rule.Outcome {
+	var strongest rule.Outcome
+
+	for _, m := range matches {
+		if m.Delivers() {
+			strongest = max(strongest, m.As)
+		}
+	}
+
+	return strongest
 }
 
 // Injects reports whether the agent hears a message on event that is not a
@@ -670,8 +739,9 @@ const stderrExit = 2
 // SubagentStop is a decision whose reason is the agent's next instruction, and
 // anything else proceeds. Where the harness injects, the agent reads message
 // as context. Both harnesses document the same channels, so one
-// implementation serves. human is what the user sees on systemMessage.
-func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, stdout, stderr io.Writer) int {
+// implementation serves. human is what the user sees on systemMessage, and
+// delivery's Outcome is the one delivered, already this harness's.
+func (a Adapter) Deliver(event, message, human string, delivery Delivery, stdout, stderr io.Writer) int {
 	if message == "" && human == "" {
 		return 0
 	}
@@ -684,7 +754,7 @@ func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, std
 		return stderrExit
 	}
 
-	out := a.output(event, message, human, outcome)
+	out := a.output(event, message, human, delivery.Outcome)
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
 	// Rule messages are prose, so HTML escaping would only mangle them.
@@ -694,7 +764,7 @@ func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, std
 	// is the exception, since it is the rule's outcome rather than handrail's
 	// trouble: exit 2 still denies on both harnesses.
 	err := enc.Encode(out)
-	if err != nil && a.degrade(event, outcome) == rule.Block {
+	if err != nil && delivery.Outcome == rule.Block {
 		_, _ = io.WriteString(stderr, message+"\n")
 
 		return stderrExit
@@ -704,7 +774,7 @@ func (a Adapter) Deliver(event, message, human string, outcome rule.Outcome, std
 }
 
 // output is the hook output Deliver writes on stdout.
-func (a Adapter) output(event, message, human string, outcome rule.Outcome) hookOutput {
+func (a Adapter) output(event, message, human string, delivered rule.Outcome) hookOutput {
 	out := hookOutput{Decision: "", Reason: "", SystemMessage: human, HookSpecificOutput: nil}
 	if a.Injects(event) {
 		out.HookSpecificOutput = &hookSpecific{
@@ -712,7 +782,7 @@ func (a Adapter) output(event, message, human string, outcome rule.Outcome) hook
 		}
 	}
 
-	switch delivered := a.degrade(event, outcome); {
+	switch {
 	case delivered == rule.Ask:
 		// The human's message rides in the approval prompt, not beside it.
 		out.SystemMessage = ""
