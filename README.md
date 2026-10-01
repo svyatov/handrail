@@ -169,7 +169,7 @@ codex plugin add handrail@handrail
 
 Codex holds every non-managed hook until you approve it in its hooks screen, so expect that review before anything fires.
 
-Where a harness cannot do what a rule asks, sync substitutes the strongest action that harness does support and reports the substitution. It never degrades a rule silently.
+Where a harness cannot do what a rule asks, sync substitutes an available action and reports the substitution. On Codex, `ask` becomes `warn`, so the call proceeds without hook-enforced approval; use `block` when the call must be denied. It never degrades a rule silently.
 
 ## Installing the binary yourself
 

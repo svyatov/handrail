@@ -34,6 +34,13 @@ stdout '"permissionDecisionReason": "handrail ask: ask-push \(global\)\\nPushes 
 stdout '"additionalContext": "handrail ask: ask-push \(global\)\\nPushes need a yes\.\\n\\nhandrail warn: push-note \(global\)\\nPushes publish\."'
 ! stdout systemMessage
 
+# Codex turns that ask into a warn and delivers both warnings normally.
+stdin push.json
+exec handrail hook codex PreToolUse
+! stdout permissionDecision
+stdout '"systemMessage": "handrail warn: ask-push \(global\)\\nhandrail warn: push-note \(global\)"'
+stdout '"additionalContext": "handrail warn: ask-push \(global\)\\nPushes need a yes\.\\n\\nhandrail warn: push-note \(global\)\\nPushes publish\."'
+
 # agent_only coaches the agent alone: its warn sends the human nothing.
 stdin ls.json
 exec handrail hook claude PreToolUse

@@ -36,7 +36,8 @@ the tier.
   line naming the rule. Default to `warn`; use `block` when the user says never
   or the act is destructive, and `ask` when they say "ask me first" or the act is
   only sometimes wrong. `ask` is valid only on `PreToolUse`; on Codex it becomes
-  `block`.
+  `warn`, so the call proceeds without hook-enforced approval. Use `block`
+  when the call must be denied on Codex.
 - **Tier**: see step 4.
 - **Trial**: for a rule the user hesitates over, offer `trial: true`. The rule
   matches and every hit is logged, and it delivers nothing, so the agent's
@@ -202,7 +203,8 @@ path.
 
 **Message**: the markdown body, addressed to the agent, in prose. Say what is
 forbidden and what to do instead. No templating; `{{` stays literal. On a
-`block` or `ask` the human reads this body too.
+`block` or a native `ask` the human reads this body too; an `ask` degraded to
+`warn` on Codex tells the human only the rule's name.
 
 **Housekeeping**: `action:` defaults to `warn`, `enabled:` to true, `trial:` and
 `agent_only:` to false. There is no `name:` field and no `pattern:` shorthand.
@@ -240,8 +242,9 @@ name of its own. A Project-shared rule may not set `agent_only`.
 
 Writing into a rule directory may raise an approval prompt: that is the user's
 guard rule doing its job ([guards.md](guards.md)), and the approval is the
-consent. On Codex the prompt becomes a block; there, print the file and its path
-for the user to save, and continue once they say it is saved.
+consent. On Codex the `ask` guard warns: show the complete rule and its path,
+obtain per-rule approval in chat, then write it and continue with validation.
+That approval is a skill instruction, not a hook-enforced gate.
 
 ## 5. Prove it matches, and keep the proof
 
@@ -311,7 +314,7 @@ blocked a call that is legitimate here.
 5. Before writing, state what the shadow stops blocking. This is a weakening, and
    the user approves it on its own.
 6. The write lands under the rule-directory guard's `ask`; that prompt is the
-   user's grant. On Codex, print the file and its path instead.
+   user's grant. On Codex the guard warns; write the shadow approved in step 5.
 7. Run `"$HANDRAIL" check`, which also tests the shadow against the original's
    `match:` Examples, so a later change to the Global rule that the copy misses is
    reported.

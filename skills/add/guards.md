@@ -10,7 +10,9 @@ resolved directory in place of the default glob.
 
 A pair, because a `path` rule never sees a file an interpreter writes. Both use
 `ask`: handrail's own skills write rules through the same tool calls, and the
-human's approval of each write is the consent.
+human's approval of each write is the consent. On Codex these guards warn;
+the skills require per-rule approval in chat before writing, which the hook
+does not enforce.
 
 ```markdown
 ---
@@ -53,7 +55,7 @@ This command touches a handrail rule directory. Rule changes need the human's ap
 
 The shell rule also asks on reads (`ls .handrail`). It stays beside the path
 rule because it also reads `cd` and interpreter routes that a shell `path` never
-sees. On Codex both become blocks.
+sees. On Codex both become warns, so calls proceed with the rule's message.
 
 ## handrail's state directory
 
@@ -182,7 +184,8 @@ to it.
 ## Calls handrail cannot read
 
 handrail never invents a block: it reports its own failure and lets a rule
-decide. `ask` is the usual action; offer `block` as the stricter choice.
+decide. `ask` requests approval on Claude Code and warns on Codex; offer
+`block` when the call must fail closed on both harnesses.
 
 ```markdown
 ---
@@ -201,4 +204,4 @@ no `kind`, so the rule must not have one. And a rule cannot fail closed on its
 own tier being unlocatable: `rules` reaches a Project-tier rule when the Global
 tier is missing, and reaches nothing when every tier is. An untrusted
 Project-shared tier is not a failure and sets nothing. On Codex `ask` becomes a
-block.
+warn and the call proceeds.

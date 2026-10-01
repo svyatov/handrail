@@ -664,10 +664,6 @@ type Delivered struct {
 	// it asks the harness for nothing, whether the rule's trial: true or the
 	// Enforcement state put it there; action sees only the rule's own.
 	As rule.Outcome
-	// Note is what an ask this harness turns into a block adds to its
-	// message, and "" otherwise. The one substitution that tightens says so
-	// at event time; the others are reported at sync alone.
-	Note string
 }
 
 // Delivery evaluates payloads against rs, under the Enforcement state rs
@@ -677,13 +673,9 @@ func (a Adapter) Delivery(rs *rule.Ruleset, payloads []rule.Payload) Delivery {
 	delivery := Delivery{Payloads: rs.Yield(payloads), Matches: make([]Delivered, 0, len(matched)), Outcome: rule.Allow}
 
 	for _, match := range matched {
-		found := Delivered{Match: match, As: match.Action, Note: ""}
+		found := Delivered{Match: match, As: match.Action}
 		if !match.Trial {
 			found.As = a.degrade(match.Event, match.Action)
-		}
-
-		if match.Action == rule.Ask && found.As == rule.Block {
-			found.Note = "handrail: " + a.reason(match.Event, rule.Block) + "."
 		}
 
 		delivery.Matches = append(delivery.Matches, found)
@@ -854,10 +846,8 @@ func (a Adapter) caps(event string) eventCaps {
 }
 
 // degrade is the Outcome the harness delivers for outcome on event: outcome
-// itself, or the nearest one keeping its promise where the harness cannot
-// deliver it. An ask rises to block, since only a denial keeps a call from
-// proceeding without a human yes; a block falls to warn. On an event the
-// harness lacks, every rule is skipped.
+// itself, or an available one where the harness cannot deliver it. An ask or
+// block falls to warn. On an event the harness lacks, every rule is skipped.
 func (a Adapter) degrade(event string, outcome rule.Outcome) rule.Outcome {
 	row := a.caps(event)
 	if row.name == "" {
@@ -865,7 +855,7 @@ func (a Adapter) degrade(event string, outcome rule.Outcome) rule.Outcome {
 	}
 
 	if outcome == rule.Ask && !row.ask {
-		outcome = rule.Block
+		outcome = rule.Warn
 	}
 
 	if outcome == rule.Block && row.deny == noDenial {
@@ -875,15 +865,14 @@ func (a Adapter) degrade(event string, outcome rule.Outcome) rule.Outcome {
 	return outcome
 }
 
-// reason says why the harness delivers to on event in place of the rule's own
-// action, for the degradation report. Only a block is ever reached by rising,
-// from an ask; every other substitution is a denial the harness cannot honour.
-func (a Adapter) reason(event string, to rule.Outcome) string {
+// reason says why the harness delivers to on event in place of from, for the
+// degradation report.
+func (a Adapter) reason(event string, from, to rule.Outcome) string {
 	switch {
 	case to == rule.Allow:
 		return a.title + " has no " + event + " event"
-	case to == rule.Block:
-		return "the rule asks for approval, and " + a.title + " cannot ask for it, so the call is denied"
+	case from == rule.Ask:
+		return a.title + " cannot ask for approval, so the call proceeds with a warning"
 	case event == eventUserPromptSubmit:
 		return a.title + " cannot fail closed on UserPromptSubmit before the model request (upstream #33630)"
 	}

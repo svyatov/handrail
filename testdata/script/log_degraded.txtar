@@ -1,13 +1,13 @@
 # An entry whose action degradation replaced names the one the rule file
-# holds: Codex cannot ask, so the ask is delivered as a block.
+# holds: Codex cannot ask, so the ask is delivered as a warn.
 exec handrail log on
 stdin ls.json
 exec handrail hook codex PreToolUse
-stdout 'deny'
+! stdout 'permissionDecision'
 exec cat home/.local/state/handrail/log.jsonl
-stdout '"harness":"codex",.*"outcome":"block","matched":\[\{"rule":"ask-first","tier":"project-personal","action":"block","degraded_from":"ask"\}\]'
+stdout '"harness":"codex",.*"outcome":"warn","matched":\[\{"rule":"ask-first","tier":"project-personal","action":"warn","degraded_from":"ask"\}\]'
 exec handrail log
-stdout '  ask-first \(project-personal, block, degraded from ask\)$'
+stdout '  ask-first \(project-personal, warn, degraded from ask\)$'
 
 # A rule on trial is never degraded, whichever route put it there: under the
 # trial state the entry names the ask the rule file holds.

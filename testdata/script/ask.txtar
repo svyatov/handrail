@@ -1,5 +1,5 @@
-# ask hands a PreToolUse call to the human, and where a harness cannot ask it
-# blocks, so the call never proceeds without a human yes.
+# ask hands a PreToolUse call to the human on Claude Code and warns on Codex,
+# which has no hook approval path.
 
 # ask is an Action on PreToolUse.
 exec handrail check
@@ -28,18 +28,22 @@ stdout '"permissionDecisionReason": "handrail ask: .*skipped the broken rule .*a
 ! stdout 'systemMessage'
 rm home/.config/handrail/ask-later.md
 
-# Codex cannot ask, and fails open when told to, so there the ask blocks, and
-# its reason says the rule wanted approval.
+# Codex delivers a normal warning: full context for the agent, one label for
+# the human, and no permission decision to stop the call.
 stdin push.json
 exec handrail hook codex PreToolUse
-stdout '"permissionDecision": "deny"'
-stdout '"permissionDecisionReason": "handrail ask: ask-push \(global\)\\nPushes publish work; the human approves each one\.\\nhandrail: the rule asks for approval, and Codex CLI cannot ask for it, so the call is denied\."'
-stdout '"systemMessage": "handrail ask: ask-push \(global\)\\nPushes publish work; the human approves each one\.\\nhandrail: the rule asks for approval, and Codex CLI cannot ask for it, so the call is denied\."'
+! stderr .
+! stdout 'permissionDecision'
+stdout '"additionalContext": "handrail warn: ask-push \(global\)\\nPushes publish work; the human approves each one\."'
+stdout '"systemMessage": "handrail warn: ask-push \(global\)"'
 
 # sync reports that substitution, on Codex alone, with the same reason.
 exec handrail sync
-stdout '^codex: ask degraded to block for ask-push: the rule asks for approval, and Codex CLI cannot ask for it, so the call is denied$'
+stdout '^codex: ask degraded to warn for ask-push: Codex CLI cannot ask for approval, so the call proceeds with a warning$'
 ! stdout 'claude: ask degraded'
+
+exec handrail doctor
+stdout 'codex: ask degraded to warn for ask-push: Codex CLI cannot ask for approval, so the call proceeds with a warning'
 
 # test exits 3 on ask, and the human line is the approval prompt's text.
 exec sh -c 'handrail test PreToolUse --kind shell --field "command=git push"; echo code=$?'
@@ -48,14 +52,22 @@ stdout '^outcome: ask$'
 stdout '^human:\n  handrail ask: ask-push \(global\)\n  Pushes publish work; the human approves each one\.$'
 stdout '^code=3$'
 
-# --harness codex reports what hook does there: a block, degraded from ask,
-# whose reason says so.
-exec sh -c 'handrail test PreToolUse --kind shell --field "command=git push" --harness codex --json; echo code=$?'
-stdout '"action": "block"'
+# --harness codex reports the delivered warn while retaining the original ask,
+# and exits 0 because the call proceeds.
+exec handrail test PreToolUse --kind shell --field 'command=git push' --harness codex --json
+stdout '"action": "warn"'
 stdout '"degraded_from": "ask"'
+stdout '"outcome": "warn"'
+stdout '"human": "handrail warn: ask-push \(global\)"'
+
+# A separate block still denies the call after each ask has degraded to warn.
+cp block-push.md home/.config/handrail/block-push.md
+stdin push.json
+exec handrail hook codex PreToolUse
+stdout '"permissionDecision": "deny"'
+stdout '"systemMessage": "handrail warn: ask-push \(global\)\\nhandrail block: block-push \(global\)\\nDo not push from this session\."'
+! exec handrail test PreToolUse --kind shell --field 'command=git push' --harness codex --json
 stdout '"outcome": "block"'
-stdout '"human": "handrail ask: ask-push \(global\)\\nPushes publish work; the human approves each one\.\\nhandrail: the rule asks for approval, and Codex CLI cannot ask for it, so the call is denied\."'
-stdout '^code=2$'
 
 -- push.json --
 {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git push"}}
@@ -71,6 +83,16 @@ event: PostToolUse
 action: ask
 ---
 Too late to approve anything.
+-- block-push.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    starts_with: git push
+---
+Do not push from this session.
 -- home/.config/handrail/ask-push.md --
 ---
 event: PreToolUse
