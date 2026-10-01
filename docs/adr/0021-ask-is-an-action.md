@@ -1,5 +1,7 @@
 # ask is an Action, defer is not, and ask degrades up
 
+The Codex degradation choice below is superseded by [ADR 0025](0025-codex-ask-degrades-to-warn.md): an `ask` becomes `warn` on Codex so calls have a usable path forward. The remaining decisions stand.
+
 A rule may hand a tool call to the human: `ask` joins `warn` and `block`, and the Outcome order is `block > ask > warn > allow`. It is the only Action whose decision is not the agent's. `warn` is advice an injected agent reads and ignores; `block` is total, so users either block what is only sometimes wrong and watch the agent route around it, or let it through with a note. `ask` is the gate between them, and the only one besides `block` that a hostile agent cannot argue past. Claude Code prompts on a hook `ask` in every permission mode, `bypassPermissions` and `dontAsk` included.
 
 The order ranks the gate, not the volume. An `ask` a human approves can look weaker than a `warn` that always injects, but messages already travel separately from the Outcome, so a `warn` matched beside an `ask` still delivers, and on the question the Outcome answers, whether the call proceeds, `ask` is the stricter.

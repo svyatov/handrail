@@ -301,12 +301,14 @@ func messages(
 	for _, match := range slices.DeleteFunc(slices.Clone(matched), func(m harness.Delivered) bool {
 		return !m.Delivers()
 	}) {
-		label := fmt.Sprintf("handrail %s: %s (%s)", match.Action, match.Name, match.Tier)
+		action := match.Action
+		if action == rule.Ask {
+			action = match.As
+		}
+
+		label := fmt.Sprintf("handrail %s: %s (%s)", action, match.Name, match.Tier)
 
 		section := label + "\n" + match.Message
-		if match.Note != "" {
-			section += "\n" + match.Note
-		}
 
 		if len(match.Files) > 0 {
 			section += "\nMatched files:\n  " + strings.Join(match.Files[:min(len(match.Files), listedFiles)], "\n  ")
@@ -322,7 +324,7 @@ func messages(
 		switch {
 		case match.AgentOnly:
 			continue
-		case match.Action == rule.Warn:
+		case action == rule.Warn:
 			section = label
 		}
 

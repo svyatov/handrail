@@ -393,7 +393,7 @@ func (a Adapter) Report(rules []*rule.Rule) []string {
 		}
 
 		out = append(out, fmt.Sprintf("%s degraded to %s for %s: %s",
-			effective.Action, name, effective.Name, a.reason(effective.Event, delivered)))
+			effective.Action, name, effective.Name, a.reason(effective.Event, effective.Action, delivered)))
 	}
 	// An audience is not an action: the rule still enforces, and only the
 	// human loses the line.

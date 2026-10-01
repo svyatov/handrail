@@ -14,6 +14,11 @@ its replacement and the earliest version that removes it. The removal of
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `ask` rules on Codex now degrade to `warn`, so matching calls proceed without hook-enforced approval. Use `block` for calls that must be denied. `sync` and `doctor` report the conversion, and the Decision log retains the original `ask` action as degradation metadata.
+- Codex's rule-editing skills write files after per-rule approval in chat instead of requiring manual copying when an `ask` rule protects the rule directory.
+
 ## [0.4.2] - 2026-09-28
 
 ### Fixed

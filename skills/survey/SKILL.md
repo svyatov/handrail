@@ -52,9 +52,9 @@ G=${XDG_CONFIG_HOME:-$HOME/.config}/handrail
 
 The call names a rule directory, so where the `shell` guard already stands it
 raises that guard's approval prompt: ask the user to approve it. On Codex the
-guard blocks the call instead; the block shows the `shell` guard is in place,
-so ask the user to run the same commands in their own terminal and paste the
-output.
+`ask` guard warns and the probe runs normally. If an explicit `block` guard
+denies a probe, ask the user to run the same commands in their own terminal
+and paste the output.
 
 A guard is in place when `matched[]` holds an entry with `action` `ask` or
 `block` whose rule is not on trial by its own file (`trial` false in its
@@ -62,8 +62,10 @@ A guard is in place when `matched[]` holds an entry with `action` `ask` or
 `file_edit` guard as `guard-rule-files.md`; where the last two do not both,
 the `shell` one as `guard-rule-commands.md`. Propose each as "Rule directories" in
 [../add/guards.md](../add/guards.md) writes it, Examples included, at the Global
-tier with `action: ask`, and say why: without it, anything the agent runs can
-rewrite the rules. Where `$XDG_CONFIG_HOME` is set, apply the note at the top of
+tier with `action: ask`, and say why: rule-directory calls need an approval
+prompt on Claude Code or a warning on Codex. Codex's warning permits the call;
+per-rule approval in chat is required by the skill before any write, not
+enforced by the hook. Where `$XDG_CONFIG_HOME` is set, apply the note at the top of
 guards.md: the `file_edit` guard's second glob becomes `"$G/**"`, its Example
 under `.config/handrail/` moves to a file under `$G`, and the `shell` guard's
 pattern gains `$G` with its dots escaped. These proposals come first and follow
