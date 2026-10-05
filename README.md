@@ -22,7 +22,7 @@
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
-- **Both harnesses.** One rule file is enforced in Claude Code and in Codex CLI, through each one's own hook mechanism.
+- **Three harnesses.** One rule file is enforced in Claude Code, Codex CLI, and oh-my-pi, through each one's native interception mechanism.
 - **One binary, nothing else.** One third-party runtime dependency, the `mvdan.cc/sh/v3/syntax` shell parser. A lint allow-list keeps it that way.
 - **hookify rules come with you.** hookify runs on Claude Code alone; `handrail import hookify` converts what you already wrote.
 - **Single-digit milliseconds.** An event costs a few ms end to end, whether it matches no rule, matches one and logs it, or starts a session and runs every rule's Examples. A test fails CI if any of those medians crosses 20ms.
@@ -133,7 +133,7 @@ A `command` is parsed as a shell program, and a condition tests every command th
 |---|---|
 | `check` | Validate every tier, run each rule's Examples, and print the effective ruleset, annotated with tier, shadowing, disabling, and trial. `--stats` adds each rule's history from the Decision log, and `--json` prints the ruleset as JSON. |
 | `test <event>` | Dry-run one event against the rules. Build the call with `--kind` and `--field key=value`, repeated once per field, or pipe a captured harness payload with `--stdin`. `--harness` picks the harness to simulate, and `--json` prints the result as JSON. Exit 2 when the outcome is block, 3 when it is ask. |
-| `sync` | Write handrail's hook entries into every detected harness, or one with `--harness claude\|codex`. The plugin runs this for you after a fresh install. |
+| `sync` | Write handrail's hooks or native extension into every detected harness, or one with `--harness claude\|codex\|omp`. Claude/Codex plugins run this after a fresh install. |
 | `trust` | Grant this repo's committed `.handrail/` rules permission to take effect. |
 | `mode [enforce\|trial\|off] [--global]` | Read or set whether handrail enforces in this project, or machine-wide with `--global`. `on` and `off` are short for `mode enforce` and `mode off`. Every session in a project that is not enforcing opens by saying so. |
 | `log [on\|off]` | Record which rules matched in this project, and read that record back: `--rule NAME`, `--all`, `-n N`, `--json`. Off until you turn it on, and a trial rule's matches are recorded either way. |
@@ -170,6 +170,23 @@ codex plugin add handrail@handrail
 Codex holds every non-managed hook until you approve it in its hooks screen, so expect that review before anything fires.
 
 Where a harness cannot do what a rule asks, sync substitutes an available action and reports the substitution. On Codex, `ask` becomes `warn`, so the call proceeds without hook-enforced approval; use `block` when the call must be denied. It never degrades a rule silently.
+
+## oh-my-pi
+
+With the handrail binary installed and omp run at least once:
+
+```bash
+handrail sync --harness omp
+handrail doctor
+```
+
+Sync owns `<agentDir>/extensions/handrail.js` (normally `~/.omp/agent/extensions/handrail.js`). For a named profile use `OMP_PROFILE=<name> handrail sync --harness omp`; the default profile follows `PI_CODING_AGENT_DIR`. No project files, user settings, package manager, bootstrap downloader, or skills are installed. Existing foreign extension files are preserved.
+
+The extension delegates evaluation to the Go engine. Native tool calls can be blocked before execution; `ask` requires affirmative native confirmation and denies without a UI. Main-session Stop can continue once. Child-stop blocks become human warnings; `UserPromptSubmit` is unsupported and its rules skip. Tool guidance reaches the agent only after successful execution.
+
+Doctor checks module integrity and the recorded executable, not effective discovery or enablement. `--no-extensions`, `--trusted-extension`, `disabledExtensions`, project shadows, and live source suspension can prevent enforcement. Eval internals, user shell escapes, and direct host bridges are not separately intercepted. See the [native event and field contract](docs/spec.md#omp-native-extension) for ambiguous-path and tool limits.
+
+The source-reviewed API baseline is omp 18.6.2. Upstream Pi is a different harness, not an alias. The full add/analyze/survey plugin packages remain Claude/Codex-only.
 
 ## Installing the binary yourself
 

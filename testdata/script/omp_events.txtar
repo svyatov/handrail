@@ -1,0 +1,310 @@
+# The seven canonical mappings share the established hook delivery protocol.
+stdin bash.json
+exec handrail hook omp PreToolUse
+stdout '"permissionDecision": "deny"'
+stdout '"hookEventName": "PreToolUse"'
+stdout '"systemMessage": "handrail block: pre-block'
+
+stdin ask.json
+exec handrail hook omp PreToolUse
+stdout '"permissionDecision": "ask"'
+stdout '"additionalContext": "handrail ask: pre-ask'
+! stdout systemMessage
+
+# The installed native handler must turn the real Go decision into a denial.
+mkdir home/.omp/agent
+exec handrail sync --harness omp
+exec bun --no-env-file test bridge.test.js
+! stderr 'failed open'
+
+# An unwritable denial retains the exit-2 transport fallback.
+stdin bash.json
+exec sh -c 'handrail hook omp PreToolUse 1</dev/null; echo code=$?'
+stdout '^code=2$'
+stderr 'handrail block: pre-block'
+
+# Post-tool guidance is context, not a retrospective denial.
+stdin bash.json
+exec handrail hook omp PostToolUse
+stdout '"hookEventName": "PostToolUse"'
+stdout '"additionalContext": "handrail warn: post-warn'
+stdout '"systemMessage": "handrail warn: post-warn'
+! stdout permissionDecision
+! stdout '"decision"'
+
+stdin empty.json
+exec handrail hook omp SessionStart
+stdout '"hookEventName": "SessionStart"'
+stdout '"additionalContext": "handrail warn: start-context'
+stdout '"systemMessage": "handrail warn: start-context'
+
+stdin child.json
+exec handrail hook omp SubagentStart
+stdout '"hookEventName": "SubagentStart"'
+stdout '"additionalContext": "handrail warn: child-context'
+stdout 'child-reviewer'
+
+# Native children are not Claude internal agents: absent names still evaluate.
+stdin empty.json
+exec handrail hook omp SubagentStart
+stdout child-context
+! stdout child-reviewer
+stdin child-invalid.json
+exec handrail hook omp SubagentStart
+stdout unread-child
+
+# Main Stop blocks once, using the existing stop_hook_active guard.
+stdin stop.json
+exec handrail hook omp Stop
+stdout '"decision": "block"'
+stdout '"reason": "handrail block: stop-block'
+! stdout additionalContext
+stdin stop-active.json
+exec handrail hook omp Stop
+! stdout '"decision"'
+! stdout stop-block
+
+stdin stop-warn.json
+exec handrail hook omp Stop
+stdout '"systemMessage": "handrail warn: stop-warn'
+! stdout additionalContext
+! stdout '"decision"'
+
+# Child stop has no continuation decision: a block is a human warning only.
+stdin child-stop.json
+exec handrail hook omp SubagentStop
+stdout '"systemMessage":'
+stdout 'child-stop'
+! stdout additionalContext
+! stdout '"decision"'
+! stdout hookSpecificOutput
+
+# SessionEnd has only a human notice, encoded through the exit-2 fallback.
+stdin empty.json
+exec sh -c 'handrail hook omp SessionEnd; echo code=$?'
+stdout '^code=2$'
+stderr 'handrail warn: end-notice'
+! stdout additionalContext
+! stdout hookSpecificOutput
+
+# There is deliberately no UserPromptSubmit mapping; authoring agrees.
+stdin prompt.json
+exec handrail hook omp UserPromptSubmit
+! stdout .
+! stderr .
+exec handrail test UserPromptSubmit --harness omp --field prompt=FORBIDDEN
+stdout 'outcome: allow'
+! stdout '^block '
+
+# Off announces state at session start without delivering standing rules.
+exec handrail mode off --global
+stdin empty.json
+exec handrail hook omp SessionStart
+stdout '"systemMessage": "handrail: the enforcement state is off'
+stdout '"additionalContext": "handrail: the enforcement state is off'
+! stdout start-context
+exec handrail mode enforce --global
+
+# A rule on trial records its match under the native session, but never denies.
+stdin trial.json
+exec handrail hook omp PreToolUse
+! stdout .
+exec cat home/.local/state/handrail/log.jsonl
+stdout '"session_id":"omp-child-session"'
+stdout '"outcome":"allow"'
+stdout '"rule":"trial-block"'
+stdout '"trial":"rule"'
+
+# The factory's presence marker protects mode changes, not session identity.
+env HANDRAIL_OMP_SESSION=1
+! exec handrail mode off --global
+stderr 'HANDRAIL_OMP_SESSION is set'
+exec handrail mode --global
+stdout '^enforce'
+env HANDRAIL_OMP_SESSION=
+
+-- empty.json --
+{}
+-- bash.json --
+{"session_id":"omp-main-session","tool_name":"bash","tool_input":{"command":"echo BLOCK"}}
+-- ask.json --
+{"tool_name":"write","tool_input":{"path":"approval.txt","content":"new"}}
+-- child.json --
+{"agent_type":"reviewer"}
+-- child-invalid.json --
+{"agent_type":7}
+-- child-stop.json --
+{"agent_type":"reviewer","last_assistant_message":"CHILD DONE","stop_hook_active":false}
+-- stop.json --
+{"last_assistant_message":"MAIN DONE","stop_hook_active":false}
+-- stop-active.json --
+{"last_assistant_message":"MAIN DONE","stop_hook_active":true}
+-- stop-warn.json --
+{"last_assistant_message":"WARNING"}
+-- prompt.json --
+{"prompt":"FORBIDDEN"}
+-- trial.json --
+{"session_id":"omp-child-session","tool_name":"bash","tool_input":{"command":"echo TRIAL"}}
+-- home/.config/handrail/pre-block.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    contains: BLOCK
+---
+Do not execute this command.
+-- home/.config/handrail/pre-ask.md --
+---
+event: PreToolUse
+kind: file_edit
+action: ask
+conditions:
+  - field: path
+    equals: approval.txt
+---
+Approve this write explicitly.
+-- home/.config/handrail/post-warn.md --
+---
+event: PostToolUse
+action: warn
+---
+Review the successful result.
+-- home/.config/handrail/start-context.md --
+---
+event: SessionStart
+action: warn
+---
+Keep the project conventions in mind.
+-- home/.config/handrail/child-context.md --
+---
+event: SubagentStart
+action: warn
+---
+Use project conventions in this child too.
+-- home/.config/handrail/child-reviewer.md --
+---
+event: SubagentStart
+action: warn
+conditions:
+  - field: agent_type
+    equals: reviewer
+---
+Check every claim.
+-- home/.config/handrail/unread-child.md --
+---
+event: SubagentStart
+action: warn
+conditions:
+  - field: unreadable
+    equals: agent_type
+---
+The child's type was unreadable.
+-- home/.config/handrail/stop-block.md --
+---
+event: Stop
+action: block
+conditions:
+  - field: response
+    equals: MAIN DONE
+---
+Check once more before stopping.
+-- home/.config/handrail/stop-warn.md --
+---
+event: Stop
+action: warn
+conditions:
+  - field: response
+    equals: WARNING
+---
+This is only a notice.
+-- home/.config/handrail/child-stop.md --
+---
+event: SubagentStop
+action: block
+conditions:
+  - field: agent_type
+    equals: reviewer
+  - field: response
+    equals: CHILD DONE
+---
+The completed child cannot be continued here.
+-- home/.config/handrail/end-notice.md --
+---
+event: SessionEnd
+action: warn
+---
+The session is over.
+-- home/.config/handrail/no-prompt.md --
+---
+event: UserPromptSubmit
+action: block
+conditions:
+  - field: prompt
+    equals: FORBIDDEN
+---
+This event is unsupported on omp.
+-- home/.config/handrail/trial-block.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+trial: true
+conditions:
+  - field: command
+    contains: TRIAL
+---
+Trial this policy without a denial.
+-- bridge.test.js --
+import { expect, test } from "bun:test";
+import install from "./home/.omp/agent/extensions/handrail.js";
+
+const handlers = new Map();
+install({ on: (name, handler) => handlers.set(name, handler) });
+
+test("native tool handler denies a blocked command", async () => {
+  const notices = [];
+  const ctx = {
+    cwd: process.cwd(),
+    mode: "tui",
+    sessionManager: { getSessionId: () => "bridge-test" },
+    ui: { notify: text => notices.push(text) },
+  };
+  const result = await handlers.get("tool_call")({
+    toolName: "bash", input: { command: "echo BLOCK" },
+  }, ctx);
+  expect(result).toEqual({
+    block: true,
+    reason: "handrail block: pre-block (global)\nDo not execute this command.",
+  });
+  expect(notices).toEqual([result.reason]);
+});
+
+const askReason = "handrail ask: pre-ask (global)\nApprove this write explicitly.";
+const denied = { block: true, reason: askReason + "\nApproval was not granted." };
+
+test.each([
+  ["approval", true, () => true, { additionalContext: askReason }],
+  ["rejection", true, () => false, denied],
+  ["missing UI", false, () => true, denied],
+  ["dialog failure", true, () => { throw new Error("dialog closed"); }, denied],
+])("native ask handles %s", async (_, hasUI, confirm, expected) => {
+  const ctx = {
+    cwd: process.cwd(),
+    mode: "tui",
+    hasUI,
+    sessionManager: { getSessionId: () => "bridge-approval" },
+    ui: {
+      confirm: (title, reason) => {
+        expect(title).toBe("handrail approval");
+        expect(reason).toBe(askReason);
+        return confirm();
+      },
+    },
+  };
+  const result = await handlers.get("tool_call")({
+    toolName: "write", input: { path: "approval.txt", content: "hello" },
+  }, ctx);
+  expect(result).toEqual(expected);
+});

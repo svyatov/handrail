@@ -33,10 +33,12 @@ mise trust && mise install
 mise run build
 ```
 
-`mise install` fetches golangci-lint, GoReleaser, syft and lefthook at the
+`mise install` fetches Bun, golangci-lint, GoReleaser, syft and lefthook at the
 versions `mise.toml` pins. None of them is in `go.mod` on purpose: a tool
 directive would put roughly 200 modules into a `go.sum` whose first promise is
 one third-party runtime dependency.
+Bun runs the native omp bridge tests through the installed extension and the
+real Go subprocess.
 
 ## Before you push
 

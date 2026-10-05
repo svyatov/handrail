@@ -18,6 +18,10 @@ import (
 // that directory is followed there, since config written anywhere else is
 // config it will never read.
 func (a Adapter) UserDir() string {
+	if a.Name == nameOMP {
+		return ompUserDir()
+	}
+
 	if a.homeEnv != "" {
 		if dir := os.Getenv(a.homeEnv); dir != "" {
 			return dir
@@ -76,6 +80,10 @@ type Installation struct {
 // as it was: these are the user's settings, and handrail is one tenant among
 // several.
 func (a Adapter) Install(bin string) (Installation, error) {
+	if a.Name == nameOMP {
+		return a.installOMP(bin)
+	}
+
 	var none Installation
 
 	path := a.ConfigPath()
@@ -193,6 +201,10 @@ func (a Adapter) entryBinary(command, event string) (string, bool) {
 // invokes, in the order sync wrote them. An event handrail has no entry for
 // comes back empty, which is what doctor calls a missing entry.
 func (a Adapter) Entries() ([]Entry, error) {
+	if a.Name == nameOMP {
+		return a.ompEntries()
+	}
+
 	cfg, err := a.read()
 	if err != nil {
 		return nil, err

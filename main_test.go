@@ -147,6 +147,11 @@ func hookFixture(t *testing.T, bin, home, repo string) func(stdin string, args .
 		"XDG_STATE_HOME="+filepath.Join(home, ".local", "state"),
 		"XDG_CACHE_HOME="+filepath.Join(home, ".cache"),
 		"GIT_CONFIG_NOSYSTEM=1",
+		"OMP_PROFILE=",
+		"PI_PROFILE=",
+		"PI_CONFIG_DIR=",
+		"PI_CODING_AGENT_DIR=",
+		"HANDRAIL_OMP_SESSION=",
 	)
 	populateTiers(t, home, repo)
 	gitIndex(t, repo, env)
@@ -297,6 +302,12 @@ func sandbox(env *testscript.Env) error {
 	env.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
 	env.Setenv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
 	env.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+
+	for _, key := range []string{
+		"OMP_PROFILE", "PI_PROFILE", "PI_CONFIG_DIR", "PI_CODING_AGENT_DIR", "HANDRAIL_OMP_SESSION",
+	} {
+		env.Setenv(key, "")
+	}
 
 	// Under -race every handrail a script runs would sleep a second at exit,
 	// waiting on goroutines handrail never starts. A later flag wins, so the

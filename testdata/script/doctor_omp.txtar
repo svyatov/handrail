@@ -1,0 +1,130 @@
+# Discovery absence is a fact, not an installation or an enforcement claim.
+exec handrail doctor
+stdout '^note +omp: not installed$'
+! exists home/.omp
+mkdir home/.omp/agent
+! exec handrail doctor
+stdout '^problem +omp: no hook entry for PreToolUse; run handrail sync$'
+stdout '^problem +omp: no hook entry for PostToolUse; run handrail sync$'
+stdout '^problem +omp: no hook entry for SessionStart; run handrail sync$'
+stdout '^problem +omp: no hook entry for SessionEnd; run handrail sync$'
+stdout '^problem +omp: no hook entry for Stop; run handrail sync$'
+stdout '^problem +omp: no hook entry for SubagentStart; run handrail sync$'
+stdout '^problem +omp: no hook entry for SubagentStop; run handrail sync$'
+! stdout 'omp: no hook entry for UserPromptSubmit'
+
+# Integrity success means seven native event mappings, not eight hook commands.
+exec handrail sync --harness omp
+exec handrail doctor
+stdout '^ok +omp: config at .*/home/\.omp/agent/extensions/handrail\.js$'
+stdout '^ok +omp: extension current \(7 event mappings\)$'
+! stdout 'problem'
+! stdout 'omp: .*hook entries current'
+stdout '^note +omp: extension integrity is checked; effective omp discovery and enablement are not verified$'
+stdout '--no-extensions'
+stdout '--trusted-extension'
+stdout 'disabledExtensions'
+stdout 'live source suspension'
+cp home/.omp/agent/extensions/handrail.js current.js
+
+# A foreign module or damaged ownership metadata is never reported as managed.
+cp foreign.js home/.omp/agent/extensions/handrail.js
+! exec handrail doctor
+stdout '^problem +omp: .*managed extension is missing ownership, modified, or outdated; run handrail sync$'
+! stdout 'omp: extension current'
+cp invalid-metadata.js home/.omp/agent/extensions/handrail.js
+! exec handrail doctor
+stdout 'omp: .*missing ownership, modified, or outdated'
+
+# Valid ownership is insufficient for doctor: stale and altered implementations fail.
+cp old-module.js home/.omp/agent/extensions/handrail.js
+! exec handrail doctor
+stdout 'omp: .*missing ownership, modified, or outdated'
+exec handrail sync --harness omp
+cmp home/.omp/agent/extensions/handrail.js current.js
+exec sh -c 'printf "\n// local modification\n" >> "$WORK/home/.omp/agent/extensions/handrail.js"'
+! exec handrail doctor
+stdout 'omp: .*missing ownership, modified, or outdated'
+exec handrail sync --harness omp
+exec handrail doctor
+stdout 'omp: extension current \(7 event mappings\)'
+
+# Binary metadata is checked against the actual executable and file existence.
+mkdir moved
+exec sh -c 'cp "$(command -v handrail)" "$WORK/moved/handrail"'
+exec $WORK/moved/handrail sync --harness omp
+exec $WORK/moved/handrail doctor
+stdout 'omp: extension current \(7 event mappings\)'
+! exec handrail doctor
+stdout '^problem +omp: the PreToolUse entry names .*/moved/handrail, and this binary is /.*; run handrail sync$'
+! stdout 'omp: extension current'
+chmod 0644 moved/handrail
+! exec handrail doctor
+stdout '^problem +omp: the PreToolUse entry names .*/moved/handrail, which is not a runnable file; run handrail sync$'
+rm moved/handrail
+! exec handrail doctor
+stdout '^problem +omp: the PreToolUse entry names .*/moved/handrail, which is not a runnable file; run handrail sync$'
+exec handrail sync --harness omp
+exec handrail doctor
+stdout 'omp: extension current \(7 event mappings\)'
+
+# Symlink and directory targets do not count as a current managed extension.
+rm home/.omp/agent/extensions/handrail.js
+[symlink] symlink home/.omp/agent/extensions/handrail.js -> $WORK/current.js
+[symlink] ! exec handrail doctor
+[symlink] stdout 'omp: .*extension conflict.*not a regular file'
+[symlink] rm home/.omp/agent/extensions/handrail.js
+mkdir home/.omp/agent/extensions/handrail.js
+! exec handrail doctor
+stdout 'omp: .*extension conflict.*not a regular file'
+rm home/.omp/agent/extensions/handrail.js
+exec handrail sync --harness omp
+
+# A cwd-local extension can shadow the owned user module. Doctor changes neither.
+mkdir .omp/extensions
+cp foreign.js .omp/extensions/handrail.js
+! exec handrail doctor
+stdout '^problem +omp: project extension at .*/\.omp/extensions/handrail\.js can shadow the user-level handrail module$'
+cmp .omp/extensions/handrail.js foreign.js
+cmp home/.omp/agent/extensions/handrail.js current.js
+mv .omp/extensions/handrail.js .omp/extensions/handrail.ts
+! exec handrail doctor
+stdout 'omp: project extension at .*/\.omp/extensions/handrail\.ts can shadow the user-level handrail module'
+rm .omp/extensions/handrail.ts
+mkdir .omp/extensions/handrail
+! exec handrail doctor
+stdout 'omp: project extension at .*/\.omp/extensions/handrail can shadow the user-level handrail module'
+
+# Collision discovery is cwd-local, not an invented recursive ancestor search.
+mkdir subdir
+cd subdir
+exec handrail doctor
+! stdout 'can shadow'
+stdout 'omp: extension current \(7 event mappings\)'
+cd ..
+rm .omp/extensions/handrail
+exec handrail doctor
+! stdout 'problem'
+
+# Unexpected filesystem access failures are diagnoses, not silently missing collisions.
+[!root] chmod 0000 .omp/extensions
+[!root] ! exec handrail doctor
+[!root] stdout 'omp: .*permission denied'
+[!root] chmod 0700 .omp/extensions
+[!root] chmod 0000 home/.omp/agent/extensions/handrail.js
+[!root] ! exec handrail doctor
+[!root] stdout 'omp: .*permission denied'
+[!root] chmod 0600 home/.omp/agent/extensions/handrail.js
+exec handrail doctor
+stdout 'omp: extension current \(7 event mappings\)'
+! stdout 'problem'
+
+-- foreign.js --
+export default function anotherExtension(pi) {}
+-- invalid-metadata.js --
+// handrail-managed: omp-v1
+const handrailBinary = null;
+-- old-module.js --
+// handrail-managed: omp-v1
+const handrailBinary = "/old/handrail";
+// The previous implementation is not the currently embedded source.

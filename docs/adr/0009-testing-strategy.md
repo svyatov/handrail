@@ -2,6 +2,8 @@
 
 handrail's product is a process a harness spawns: it reads argv and stdin, writes stdout and stderr, and exits with a code the harness reads. So that is the seam the tests use. `testdata/script/*.txtar` drives the real binary through testscript, in a sandbox where `HOME` and every XDG variable point into the script's own work directory, and `testscript.Main` runs `main` itself rather than a closure around `run`, so the entry point is covered by every script. A test written at this seam asserts the thing a user gets: the exact message, the exact exit code, the file that did or did not appear.
 
+Native omp bridge cases run the installed extension with Bun from testscript and call the real Go subprocess. Only the external host's event registration and approval UI are simulated.
+
 Unit tests are the exception. Each one is named `*_internal_test.go`, the one name the testpackage linter lets stay white-box, and each is there because no invocation of the binary can produce the input:
 
 - `main_internal_test.go` covers a stdout that fails every write, because testscript always hands the command a real file for stdout.

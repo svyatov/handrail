@@ -43,6 +43,9 @@ func TestAdapterWithoutAHomeDirectory(t *testing.T) {
 // detection and sync go to ~/<dir> while the harness reads elsewhere. Only a
 // walk of the table can catch that, which the compiled binary cannot do.
 func TestEveryAdapterFollowsItsRelocationVariable(t *testing.T) {
+	t.Setenv("OMP_PROFILE", "")
+	t.Setenv("PI_PROFILE", "")
+
 	for _, adapter := range Adapters() {
 		t.Run(adapter.Name, func(t *testing.T) {
 			if adapter.homeEnv == "" {
@@ -100,8 +103,7 @@ func TestShellQuote(t *testing.T) {
 	}
 }
 
-// Both harnesses have all eight events today, so a harness lacking one exists
-// only here: a rule on an event it lacks degrades to skip, reported rather
+// A rule on an event its adapter lacks degrades to skip, reported rather
 // than delivered as whatever its missing row would read as.
 func TestAMissingEventDegradesToSkip(t *testing.T) {
 	t.Parallel()

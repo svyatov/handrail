@@ -1,0 +1,166 @@
+# Detection requires an existing agent directory: sync does not create an omp install.
+! exec handrail sync --harness omp
+stderr 'omp not found; install it and run it once'
+! exists home/.omp
+mkdir home/.omp/agent
+cp user-config.yml home/.omp/agent/config.yml
+exec handrail sync --harness omp
+stdout 'omp: wrote extension to .*/home/\.omp/agent/extensions/handrail\.js'
+grep '^// handrail-managed: omp-v1$' home/.omp/agent/extensions/handrail.js
+grep '^const handrailBinary = "/.*";$' home/.omp/agent/extensions/handrail.js
+grep '^export default function handrail\(pi\)' home/.omp/agent/extensions/handrail.js
+cmp home/.omp/agent/config.yml user-config.yml
+! exists .omp
+! exists home/.omp/agent/hooks.json
+
+# Resync is byte-for-byte stable, with truthful offline-discovery limits.
+cp home/.omp/agent/extensions/handrail.js first.js
+exec handrail sync --harness omp
+stdout 'omp: extension already current in .*/home/\.omp/agent/extensions/handrail\.js'
+stdout 'omp: extension integrity is checked; effective omp discovery and enablement are not verified'
+stdout '--no-extensions'
+stdout '--trusted-extension'
+stdout 'disabledExtensions'
+stdout 'live source suspension'
+cmp home/.omp/agent/extensions/handrail.js first.js
+
+# Executable metadata uses a JSON literal, not shell quoting, and relocation replaces it.
+exec sh -c 'mkdir -p "$WORK/bin space \"quote\""; cp "$(command -v handrail)" "$WORK/bin space \"quote\"/handrail"'
+exec sh -c '"$WORK/bin space \"quote\"/handrail" sync --harness omp'
+stdout 'omp: wrote extension to '
+grep 'bin space \\"quote\\"/handrail";$' home/.omp/agent/extensions/handrail.js
+exec sh -c '"$WORK/bin space \"quote\"/handrail" doctor'
+stdout 'omp: extension current \(7 event mappings\)'
+exec handrail sync --harness omp
+stdout 'omp: wrote extension to '
+cmp home/.omp/agent/extensions/handrail.js first.js
+
+# A valid ownership header permits upgrades; malformed metadata and foreign files do not.
+cp old-module.js home/.omp/agent/extensions/handrail.js
+chmod 0400 home/.omp/agent/extensions/handrail.js
+exec handrail sync --harness omp
+stdout 'omp: wrote extension to '
+cmp home/.omp/agent/extensions/handrail.js first.js
+[!root] exec sh -c 'test ! -w "$WORK/home/.omp/agent/extensions/handrail.js"'
+chmod 0600 home/.omp/agent/extensions/handrail.js
+cp invalid-metadata.js home/.omp/agent/extensions/handrail.js
+! exec handrail sync --harness omp
+stderr 'extension conflict.*missing or invalid handrail ownership metadata'
+cmp home/.omp/agent/extensions/handrail.js invalid-metadata.js
+cp foreign.js home/.omp/agent/extensions/handrail.js
+! exec handrail sync --harness omp
+stderr 'extension conflict'
+cmp home/.omp/agent/extensions/handrail.js foreign.js
+
+# Neither directories nor target symlinks (including dangling links) can be replaced.
+rm home/.omp/agent/extensions/handrail.js
+mkdir home/.omp/agent/extensions/handrail.js
+! exec handrail sync --harness omp
+stderr 'extension conflict.*not a regular file'
+exists home/.omp/agent/extensions/handrail.js
+rm home/.omp/agent/extensions/handrail.js
+[symlink] symlink home/.omp/agent/extensions/handrail.js -> $WORK/foreign.js
+[symlink] ! exec handrail sync --harness omp
+[symlink] stderr 'extension conflict.*not a regular file'
+[symlink] cmp home/.omp/agent/extensions/handrail.js foreign.js
+[symlink] rm home/.omp/agent/extensions/handrail.js
+[symlink] symlink home/.omp/agent/extensions/handrail.js -> $WORK/missing.js
+[symlink] ! exec handrail sync --harness omp
+[symlink] stderr 'extension conflict.*not a regular file'
+[symlink] ! exists missing.js
+[symlink] rm home/.omp/agent/extensions/handrail.js
+exec handrail sync --harness omp
+
+# Directory overrides are cwd-relative; an override never manufactures an install.
+env PI_CODING_AGENT_DIR=elsewhere/agent
+! exec handrail sync --harness omp
+! exists elsewhere/agent
+mkdir elsewhere/agent
+exec handrail sync --harness omp
+stdout 'omp: wrote extension to .*/elsewhere/agent/extensions/handrail\.js'
+exists elsewhere/agent/extensions/handrail.js
+env PI_CODING_AGENT_DIR=
+
+# PI_CONFIG_DIR joins HOME even when it begins with a slash, just like node path.join.
+env PI_CONFIG_DIR=/alternate-omp
+mkdir home/alternate-omp/agent
+exec handrail sync --harness omp
+stdout 'omp: wrote extension to .*/home/alternate-omp/agent/extensions/handrail\.js'
+env PI_CONFIG_DIR=custom-omp
+mkdir home/custom-omp/agent
+exec handrail sync --harness omp
+exists home/custom-omp/agent/extensions/handrail.js
+
+# Named profiles ignore the direct override, and trim the selected name.
+env OMP_PROFILE=' work '
+env PI_CODING_AGENT_DIR=$WORK/elsewhere/agent
+mkdir home/custom-omp/profiles/work/agent
+exec handrail sync --harness omp
+stdout 'omp: wrote extension to .*/home/custom-omp/profiles/work/agent/extensions/handrail\.js'
+
+# OMP_PROFILE has presence precedence over PI_PROFILE, even explicitly empty.
+env PI_PROFILE=legacy
+mkdir home/custom-omp/profiles/legacy/agent
+env OMP_PROFILE=
+env PI_CODING_AGENT_DIR=
+exec handrail sync --harness omp
+stdout 'omp: extension already current in .*/home/custom-omp/agent/extensions/handrail\.js'
+! exists home/custom-omp/profiles/legacy/agent/extensions
+exec sh -c 'unset OMP_PROFILE; handrail sync --harness omp'
+stdout 'omp: wrote extension to .*/home/custom-omp/profiles/legacy/agent/extensions/handrail\.js'
+
+# Explicit default ignores an inherited override equal to the legacy profile's directory.
+env OMP_PROFILE=default
+env PI_CODING_AGENT_DIR=$WORK/home/custom-omp/profiles/legacy/agent
+exec handrail sync --harness omp
+stdout 'omp: extension already current in .*/home/custom-omp/agent/extensions/handrail\.js'
+env OMP_PROFILE=
+exec handrail sync --harness omp
+stdout 'omp: extension already current in .*/home/custom-omp/agent/extensions/handrail\.js'
+# An unrelated override still wins; an invalid legacy profile is not inherited.
+env PI_CODING_AGENT_DIR=$WORK/elsewhere/agent
+exec handrail sync --harness omp
+stdout 'omp: extension already current in .*/elsewhere/agent/extensions/handrail\.js'
+env PI_PROFILE=INVALID
+exec handrail sync --harness omp
+stdout 'omp: extension already current in .*/elsewhere/agent/extensions/handrail\.js'
+
+# Invalid active profiles resolve nowhere, never silently to an override or default.
+exec sh -c 'for profile in Upper ../outside . .. trailing. con con.txt prn aux nul com0 com9.txt lpt0 lpt9.log aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; do if OMP_PROFILE="$profile" handrail sync --harness omp; then exit 1; fi; done'
+! stdout 'omp: wrote extension'
+stderr 'omp not found'
+exec sh -c 'unset OMP_PROFILE; if PI_PROFILE=INVALID handrail sync --harness omp; then exit 1; fi'
+stderr 'omp not found'
+
+# HOME is required only when the profile/config root is needed.
+exec sh -c 'if HOME= OMP_PROFILE= PI_PROFILE= PI_CODING_AGENT_DIR= handrail sync --harness omp; then exit 1; fi'
+stderr 'omp not found'
+exec sh -c 'HOME= OMP_PROFILE= PI_PROFILE= PI_CODING_AGENT_DIR="$WORK/elsewhere/agent" handrail sync --harness omp'
+stdout 'omp: extension already current in .*/elsewhere/agent/extensions/handrail\.js'
+
+# Ordinary I/O failures are surfaced, and existing settings remain untouched.
+env OMP_PROFILE=
+env PI_PROFILE=
+env PI_CONFIG_DIR=
+env PI_CODING_AGENT_DIR=
+[!root] rm home/.omp/agent/extensions/handrail.js
+[!root] chmod 0500 home/.omp/agent/extensions
+[!root] ! exec handrail sync --harness omp
+[!root] stderr 'permission denied'
+[!root] chmod 0700 home/.omp/agent/extensions
+exec handrail sync --harness omp
+cmp home/.omp/agent/config.yml user-config.yml
+
+-- user-config.yml --
+disabledExtensions:
+  - an-unrelated-extension
+customSetting: keep exactly as written
+-- foreign.js --
+export default function myExtension(pi) {}
+-- invalid-metadata.js --
+// handrail-managed: omp-v1
+const handrailBinary = 42;
+-- old-module.js --
+// handrail-managed: omp-v1
+const handrailBinary = "/old/handrail";
+// An older owned implementation is replaceable on sync.

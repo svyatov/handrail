@@ -93,6 +93,49 @@ func (p *Payload) SetRename(from, to string) {
 	}
 }
 
+// SetModels records each requested selector as its own candidate. Adapters
+// whose model input is scalar continue to use SetField.
+func (p *Payload) SetModels(models []string) {
+	p.Unset("model")
+
+	for _, model := range models {
+		if model == "" {
+			continue
+		}
+
+		if p.fields == nil {
+			p.fields = make(map[string][]candidate)
+		}
+
+		p.fields["model"] = append(p.fields["model"], spelled(model))
+	}
+}
+
+// SetPathSpellings records ambiguous spellings of one target, not separate
+// operations. Each spelling is cleaned just as a scalar path is.
+func (p *Payload) SetPathSpellings(paths []string) {
+	p.Unset(fieldPath)
+
+	var spellings []string
+
+	for _, value := range paths {
+		if value != "" {
+			value = path.Clean(value)
+			if !slices.Contains(spellings, value) {
+				spellings = append(spellings, value)
+			}
+		}
+	}
+
+	if len(spellings) > 0 {
+		if p.fields == nil {
+			p.fields = make(map[string][]candidate)
+		}
+
+		p.fields[fieldPath] = []candidate{{spellings: spellings, whole: false}}
+	}
+}
+
 // Unset drops a field and the unreadable entry for it, and a url's domain
 // with them, so the next SetField replaces what it held rather than adding to
 // it. A command's files need no dropping: setting a command replaces them.
