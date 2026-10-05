@@ -116,9 +116,7 @@ func ompExtension(bin string) []byte {
 	)
 
 	literal, _ := json.Marshal(bin) //nolint:errchkjson // A string always has a JSON representation.
-	out := make([]byte, 0, len(prefix)+len(literal)+len(suffix)+len(ompExtensionSource))
-	out = append(out, prefix...)
-	out = append(out, literal...)
+	out := append([]byte(prefix), literal...)
 	out = append(out, suffix...)
 
 	return append(out, ompExtensionSource...)
