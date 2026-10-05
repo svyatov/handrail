@@ -12,6 +12,7 @@
 [tools]
 # The pre-commit secret scan.
 betterleaks = "1.8.1"
+bun = "1.4.2"
 golangci-lint = "2.13.2"
 goreleaser = "2.18.2"
 lefthook = "2.1.14"

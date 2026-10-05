@@ -11,6 +11,12 @@ stdout '"permissionDecision": "ask"'
 stdout '"additionalContext": "handrail ask: pre-ask'
 ! stdout systemMessage
 
+# The installed native handler must turn the real Go decision into a denial.
+mkdir home/.omp/agent
+exec handrail sync --harness omp
+exec bun --no-env-file test bridge.test.js
+! stderr 'failed open'
+
 # An unwritable denial retains the exit-2 transport fallback.
 stdin bash.json
 exec sh -c 'handrail hook omp PreToolUse 1</dev/null; echo code=$?'
@@ -250,3 +256,55 @@ conditions:
     contains: TRIAL
 ---
 Trial this policy without a denial.
+-- bridge.test.js --
+import { expect, test } from "bun:test";
+import install from "./home/.omp/agent/extensions/handrail.js";
+
+const handlers = new Map();
+install({ on: (name, handler) => handlers.set(name, handler) });
+
+test("native tool handler denies a blocked command", async () => {
+  const notices = [];
+  const ctx = {
+    cwd: process.cwd(),
+    mode: "tui",
+    sessionManager: { getSessionId: () => "bridge-test" },
+    ui: { notify: text => notices.push(text) },
+  };
+  const result = await handlers.get("tool_call")({
+    toolName: "bash", input: { command: "echo BLOCK" },
+  }, ctx);
+  expect(result).toEqual({
+    block: true,
+    reason: "handrail block: pre-block (global)\nDo not execute this command.",
+  });
+  expect(notices).toEqual([result.reason]);
+});
+
+const askReason = "handrail ask: pre-ask (global)\nApprove this write explicitly.";
+const denied = { block: true, reason: askReason + "\nApproval was not granted." };
+
+test.each([
+  ["approval", true, () => true, { additionalContext: askReason }],
+  ["rejection", true, () => false, denied],
+  ["missing UI", false, () => true, denied],
+  ["dialog failure", true, () => { throw new Error("dialog closed"); }, denied],
+])("native ask handles %s", async (_, hasUI, confirm, expected) => {
+  const ctx = {
+    cwd: process.cwd(),
+    mode: "tui",
+    hasUI,
+    sessionManager: { getSessionId: () => "bridge-approval" },
+    ui: {
+      confirm: (title, reason) => {
+        expect(title).toBe("handrail approval");
+        expect(reason).toBe(askReason);
+        return confirm();
+      },
+    },
+  };
+  const result = await handlers.get("tool_call")({
+    toolName: "write", input: { path: "approval.txt", content: "hello" },
+  }, ctx);
+  expect(result).toEqual(expected);
+});
