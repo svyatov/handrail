@@ -190,12 +190,16 @@ func (s *fileScan) add(state reading) {
 // excludedGitPath recognizes only the verified long exclusion magic after --
 // in git diff. Flags naming files, unknown grammars, expansions and modes
 // that treat operands as literal paths retain their existing file payloads.
+// Normalized command Spellings include assignments split by shell quoting.
 func (s *fileScan) excludedGitPath(file File, pos, afterDashes int) bool {
 	return s.g == programs["git diff"] && s.r.depth == 0 && afterDashes > 0 && pos >= afterDashes &&
 		!file.Unreadable && strings.HasPrefix(file.Path, ":(exclude)") &&
 		!slices.Contains(s.c.words, "--no-index") &&
-		!strings.Contains(s.r.text, "--literal-pathspecs") &&
-		!strings.Contains(s.r.text, "GIT_LITERAL_PATHSPECS")
+		!slices.Contains(s.c.words, "--literal-pathspecs") &&
+		!strings.Contains(s.r.text, "GIT_LITERAL_PATHSPECS") &&
+		!slices.ContainsFunc(s.r.cands, func(spellings []string) bool {
+			return strings.Contains(spellings[len(spellings)-1], "GIT_LITERAL_PATHSPECS")
+		})
 }
 
 // long reads the long flag at word pos and returns the word after it.

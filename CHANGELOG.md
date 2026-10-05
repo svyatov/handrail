@@ -20,7 +20,7 @@ its replacement and the earliest version that removes it. The removal of
 
 ### Fixed
 
-- Direct `git diff` calls no longer report literal `:(exclude)` operands after `--` as file reads. File-valued flags, redirects, explicit reads, unknown syntax, no-index mode, literal-pathspec overrides, and nested shells retain their existing checks.
+- Direct `git diff` calls no longer report literal `:(exclude)` operands after `--` as file reads. File-valued flags, redirects, explicit reads, unknown syntax, no-index mode, literal-pathspec overrides, and nested shells retain their existing checks. Literal-pathspec flags and environment assignments remain guarded when shell quotes, escapes, or line continuations split their spelling.
 
 ## [0.5.0] - 2026-10-01
 

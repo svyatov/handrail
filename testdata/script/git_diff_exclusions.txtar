@@ -17,11 +17,20 @@ stdout 'block  env-files'
 # Literal paths, no-index comparisons, and unreadable syntax stay guarded.
 ! exec handrail test PreToolUse --kind shell --field 'command=git --literal-pathspecs diff -- ":(exclude)**/.env"'
 stdout 'block  env-files'
+! exec handrail test PreToolUse --kind shell --field 'command=git --literal-""pathspecs diff --cached -- ":(exclude)/../.env"'
+stdout 'block  env-files'
+! exec handrail test PreToolUse --kind shell --field 'command=git --literal-\pathspecs diff --cached -- ":(exclude)/../.env"'
+stdout 'block  env-files'
 ! exec handrail test PreToolUse --kind shell --field 'command=git diff --no-index -- ":(exclude)**/.env" public.txt'
 stdout 'block  env-files'
 ! exec handrail test PreToolUse --kind shell --field 'command=env GIT_LITERAL_PATHSPECS=1 git diff -- ":(exclude)**/.env"'
 stdout 'block  env-files'
+! exec handrail test PreToolUse --kind shell --field 'command=env GIT_LITERAL_""PATHSPECS=1 git diff --cached -- ":(exclude)/../.env"'
+stdout 'block  env-files'
 ! exec handrail test PreToolUse --kind shell --field 'command=GIT_LITERAL_PATHSPECS=1 git diff -- ":(exclude)**/.env"'
+stdout 'block  env-files'
+stdin continued-assignment.json
+! exec handrail test PreToolUse --harness omp --stdin
 stdout 'block  env-files'
 ! exec handrail test PreToolUse --kind shell --field 'command=env GIT_LITERAL_PATHSPECS=1 sh -c "git diff -- \":(exclude)**/.env\""'
 stdout 'block  env-files'
@@ -35,6 +44,8 @@ stdout 'block  env-files'
 ! exec handrail test PreToolUse --kind shell --field 'command=git diff -- .env.local'
 stdout 'block  env-files'
 
+-- continued-assignment.json --
+{"tool_name":"bash","tool_input":{"command":"GIT_LITERAL_\\\nPATHSPECS=1 git diff --cached -- \":(exclude)/../.env\""}}
 -- home/.config/handrail/env-files.md --
 ---
 event: PreToolUse
