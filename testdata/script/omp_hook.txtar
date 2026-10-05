@@ -1,0 +1,896 @@
+# Native omp normalization through the compiled hook, not Claude aliases.
+# Shell-derived files still participate, without apply-patch interpretation.
+stdin bash-read.json
+exec handrail hook omp PreToolUse
+stdout read-protected
+
+# Missing required batch members and bad scalar fields declare their gaps.
+stdin task-empty-item.json
+exec handrail hook omp PreToolUse
+stdout unread-agent
+stdin edit-empty-item.json
+exec handrail hook omp PreToolUse
+stdout unread-content
+stdout unread-path
+stdin wrong-fields.json
+exec handrail hook omp PreToolUse
+stdout unread-command
+stdout unread-content
+stdout unread-model
+stdout unread-url
+stdout unread-removed
+stdin wrong-tool.json
+exec handrail hook omp PreToolUse
+stdout unread-tool
+
+# Selector spellings retain the original literal as well as the backing target.
+stdin selector-0.json
+exec handrail hook omp PreToolUse
+stdout literal-selector
+
+stdin bash-block.json
+exec handrail hook omp PreToolUse
+stdout 'shell-block'
+stdout '"permissionDecision": "deny"'
+
+stdin bash-allow.json
+exec handrail hook omp PreToolUse
+! stdout '.'
+
+stdin bash-native-grants.json
+exec handrail hook omp PreToolUse
+! stdout 'invented-sandbox'
+
+stdin bash-not-codex.json
+exec handrail hook omp PreToolUse
+! stdout 'write-protected'
+
+stdin read.json
+exec handrail hook omp PreToolUse
+stdout 'read-protected'
+
+stdin read-wrapper.json
+exec handrail hook omp PreToolUse
+stdout 'read-protected'
+! stdout 'unread-path'
+
+stdin write.json
+exec handrail hook omp PreToolUse
+stdout 'write-protected'
+! stdout 'empty-write'
+
+stdin write-empty.json
+exec handrail hook omp PreToolUse
+stdout 'empty-write'
+
+stdin write-absent.json
+exec handrail hook omp PreToolUse
+! stdout 'empty-write'
+! stdout 'unread-content'
+
+stdin write-null.json
+exec handrail hook omp PreToolUse
+stdout 'unread-content'
+! stdout 'empty-write'
+
+stdin write-number.json
+exec handrail hook omp PreToolUse
+stdout 'unread-content'
+! stdout 'empty-write'
+
+stdin write-object.json
+exec handrail hook omp PreToolUse
+stdout 'unread-content'
+! stdout 'empty-write'
+
+stdin replace.json
+exec handrail hook omp PreToolUse
+stdout 'replace-text'
+stdout 'removed-text'
+
+stdin replace-alias.json
+exec handrail hook omp PreToolUse
+stdout 'write-protected'
+
+stdin replace-empty.json
+exec handrail hook omp PreToolUse
+stdout 'empty-write'
+
+stdin replace-wrong.json
+exec handrail hook omp PreToolUse
+stdout 'unread-path'
+stdout 'unread-content'
+! stdout 'empty-write'
+
+stdin cursor-batch.json
+exec handrail hook omp PreToolUse
+stdout 'correlated'
+! stdout 'replace-text'
+
+stdin patch-entries.json
+exec handrail hook omp PreToolUse
+stdout 'replace-text'
+stdout 'correlated'
+
+stdin patch-context.json
+exec handrail hook omp PreToolUse
+! stdout 'correlated'
+
+stdin patch-rename.json
+exec handrail hook omp PreToolUse
+stdout 'write-protected'
+! stdout 'empty-write'
+
+stdin patch-delete.json
+exec handrail hook omp PreToolUse
+stdout 'deleted'
+! stdout 'empty-write'
+
+stdin patch-create-empty.json
+exec handrail hook omp PreToolUse
+stdout 'empty-write'
+
+stdin hashline-correlation.json
+exec handrail hook omp PreToolUse
+! stdout 'correlated'
+! stdout 'write-protected'
+
+stdin hashline-match.json
+exec handrail hook omp PreToolUse
+stdout 'correlated'
+
+stdin hashline-rename.json
+exec handrail hook omp PreToolUse
+stdout 'write-protected'
+! stdout 'empty-write'
+
+stdin hashline-remove.json
+exec handrail hook omp PreToolUse
+stdout 'deleted'
+! stdout 'empty-write'
+
+stdin hashline-register.json
+exec handrail hook omp PreToolUse
+stdout 'unread-content'
+stdout 'correlated'
+! stdout 'empty-write'
+
+stdin hashline-empty.json
+exec handrail hook omp PreToolUse
+stdout 'empty-write'
+! stdout 'removed-text'
+
+stdin hashline-cut.json
+exec handrail hook omp PreToolUse
+! stdout 'removed-text'
+! stdout 'empty-write'
+
+stdin hashline-legacy.json
+exec handrail hook omp PreToolUse
+stdout 'write-protected'
+
+stdin hashline-quoted.json
+exec handrail hook omp PreToolUse
+stdout 'write-protected'
+stdout 'deleted'
+
+stdin apply-patch.json
+exec handrail hook omp PreToolUse
+stdout 'replace-text'
+stdout 'correlated'
+! stdout 'write-protected'
+
+stdin apply-rename.json
+exec handrail hook omp PreToolUse
+stdout 'write-protected'
+
+stdin sloppy-edit.json
+exec handrail hook omp PreToolUse
+stdout 'write-protected'
+stdout 'unread-path'
+stdout 'unread-content'
+
+stdin unknown-edit.json
+exec handrail hook omp PreToolUse
+stdout 'unread-path'
+stdout 'unread-content'
+
+stdin empty-edits.json
+exec handrail hook omp PreToolUse
+stdout 'write-protected'
+stdout 'unread-path'
+stdout 'unread-content'
+
+stdin task-flat.json
+exec handrail hook omp PreToolUse
+stdout 'task-correlated'
+stdout 'model-first'
+! stdout 'model-second'
+! stdout 'unread-model'
+
+stdin task-batch.json
+exec handrail hook omp PreToolUse
+stdout 'task-shared'
+stdout 'model-first'
+stdout 'model-second'
+stdout 'model-not-first'
+! stdout 'task-correlated'
+! stdout 'unread-model'
+
+stdin task-match.json
+exec handrail hook omp PreToolUse
+stdout 'task-correlated'
+
+stdin task-model-invalid.json
+exec handrail hook omp PreToolUse
+stdout 'model-first'
+stdout 'unread-model'
+
+stdin task-empty.json
+exec handrail hook omp PreToolUse
+stdout 'unread-agent'
+stdout 'unread-model'
+
+stdin task-wrong.json
+exec handrail hook omp PreToolUse
+stdout 'unread-agent'
+stdout 'unread-model'
+
+stdin task-invalid.json
+exec handrail hook omp PreToolUse
+stdout 'unread-agent'
+stdout 'unread-model'
+
+stdin unknown-fields.json
+exec handrail hook omp PreToolUse
+stdout 'unknown-fields'
+! stdout 'read-protected'
+! stdout 'write-protected'
+
+stdin mcp.json
+exec handrail hook omp PreToolUse
+stdout 'unread-server'
+! stdout 'invented-server'
+! stdout 'invented-tool'
+
+stdin read-web.json
+exec handrail hook omp PreToolUse
+stdout 'network-url'
+! stdout 'read-protected'
+! stdout 'unread-path'
+
+stdin search.json
+exec handrail hook omp PreToolUse
+stdout 'network-search'
+! stdout 'network-url'
+
+stdin read-device.json
+exec handrail hook omp PreToolUse
+stdout 'unread-path'
+! stdout 'empty-write'
+! stdout 'write-protected'
+! stdout 'read-protected'
+
+stdin write-device.json
+exec handrail hook omp PreToolUse
+stdout 'unread-path'
+! stdout 'empty-write'
+! stdout 'write-protected'
+! stdout 'read-protected'
+
+stdin read-archive.json
+exec handrail hook omp PreToolUse
+stdout 'unread-path'
+! stdout 'empty-write'
+! stdout 'write-protected'
+! stdout 'read-protected'
+
+stdin read-sqlite.json
+exec handrail hook omp PreToolUse
+stdout 'unread-path'
+! stdout 'empty-write'
+! stdout 'write-protected'
+! stdout 'read-protected'
+
+stdin read-video.json
+exec handrail hook omp PreToolUse
+stdout 'unread-path'
+! stdout 'empty-write'
+! stdout 'write-protected'
+! stdout 'read-protected'
+
+stdin read-list.json
+exec handrail hook omp PreToolUse
+stdout 'unread-path'
+! stdout 'empty-write'
+! stdout 'write-protected'
+! stdout 'read-protected'
+
+stdin selector-0.json
+exec handrail hook omp PreToolUse
+stdout 'read-protected'
+stdout 'unread-path'
+
+stdin selector-1.json
+exec handrail hook omp PreToolUse
+stdout 'read-protected'
+stdout 'unread-path'
+
+stdin selector-2.json
+exec handrail hook omp PreToolUse
+stdout 'read-protected'
+stdout 'unread-path'
+
+stdin selector-3.json
+exec handrail hook omp PreToolUse
+stdout 'read-protected'
+stdout 'unread-path'
+
+stdin selector-4.json
+exec handrail hook omp PreToolUse
+stdout 'read-protected'
+stdout 'unread-path'
+
+stdin selector-5.json
+exec handrail hook omp PreToolUse
+stdout 'read-protected'
+stdout 'unread-path'
+
+stdin selector-6.json
+exec handrail hook omp PreToolUse
+stdout 'read-protected'
+stdout 'unread-path'
+
+stdin selector-7.json
+exec handrail hook omp PreToolUse
+stdout 'read-protected'
+stdout 'unread-path'
+
+stdin selector-8.json
+exec handrail hook omp PreToolUse
+stdout 'read-protected'
+stdout 'unread-path'
+
+stdin selector-9.json
+exec handrail hook omp PreToolUse
+stdout 'read-protected'
+stdout 'unread-path'
+
+stdin selector-10.json
+exec handrail hook omp PreToolUse
+stdout 'read-protected'
+stdout 'unread-path'
+
+stdin selector-wrapper.json
+exec handrail hook omp PreToolUse
+stdout 'read-protected'
+stdout 'unread-path'
+
+stdin path-wrong.json
+exec handrail hook omp PreToolUse
+stdout 'unread-path'
+
+stdin bad-json.json
+exec handrail hook omp PreToolUse
+stdout 'could not parse'
+
+stdin bad-envelope.json
+exec handrail hook omp PreToolUse
+stdout 'could not parse'
+
+stdin bad-input.json
+exec handrail hook omp PreToolUse
+stdout 'could not parse'
+
+stdin bad-cwd.json
+exec handrail hook omp PreToolUse
+stdout 'could not parse'
+
+# Native header whitespace cannot hide a protected path.
+stdin hashline-spaced.json
+exec handrail hook omp PreToolUse
+stdout write-protected
+stdin hashline-spaced-quoted.json
+exec handrail hook omp PreToolUse
+stdout write-protected
+
+# End and abort markers terminate the executable hashline sections.
+stdin hashline-end.json
+exec handrail hook omp PreToolUse
+! stdout write-protected
+! stdout correlated
+stdin hashline-abort.json
+exec handrail hook omp PreToolUse
+! stdout write-protected
+! stdout correlated
+stdin hashline-end-apply.json
+exec handrail hook omp PreToolUse
+! stdout write-protected
+
+# Create diffs strip a uniform plus prefix, but mixed literal text keeps it.
+stdin create-plus.json
+exec handrail hook omp PreToolUse
+stdout create-prefix
+stdin create-plus-space.json
+exec handrail hook omp PreToolUse
+stdout create-prefix
+stdin create-plus-empty.json
+exec handrail hook omp PreToolUse
+stdout empty-write
+stdin create-mixed.json
+exec handrail hook omp PreToolUse
+! stdout create-prefix
+
+-- home/.config/handrail/shell-block.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    contains: "DANGER"
+---
+shell-block guidance.
+-- home/.config/handrail/read-protected.md --
+---
+event: PreToolUse
+kind: file_read
+action: block
+conditions:
+  - field: path
+    equals: "protected.txt"
+---
+read-protected guidance.
+-- home/.config/handrail/write-protected.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: path
+    equals: "protected.txt"
+---
+write-protected guidance.
+-- home/.config/handrail/empty-write.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: writes_empty
+    equals: "true"
+---
+empty-write guidance.
+-- home/.config/handrail/unread-content.md --
+---
+event: PreToolUse
+action: warn
+conditions:
+  - field: unreadable
+    equals: "content"
+---
+unread-content guidance.
+-- home/.config/handrail/unread-path.md --
+---
+event: PreToolUse
+action: warn
+conditions:
+  - field: unreadable
+    equals: "path"
+---
+unread-path guidance.
+-- home/.config/handrail/replace-text.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: removed_content
+    contains: "OLD"
+  - field: content
+    contains: "NEW"
+---
+replace-text guidance.
+-- home/.config/handrail/correlated.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: path
+    equals: "b.txt"
+  - field: content
+    contains: "FORBIDDEN"
+---
+correlated guidance.
+-- home/.config/handrail/removed-text.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: removed_content
+    contains: "OLD"
+---
+removed-text guidance.
+-- home/.config/handrail/deleted.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: deletes
+    equals: "true"
+---
+deleted guidance.
+-- home/.config/handrail/task-correlated.md --
+---
+event: PreToolUse
+kind: agent
+action: block
+conditions:
+  - field: agent_type
+    equals: "reviewer"
+  - field: agent_prompt
+    contains: "FORBIDDEN"
+---
+task-correlated guidance.
+-- home/.config/handrail/task-shared.md --
+---
+event: PreToolUse
+kind: agent
+action: warn
+conditions:
+  - field: agent_prompt
+    contains: "SHARED"
+---
+task-shared guidance.
+-- home/.config/handrail/model-first.md --
+---
+event: PreToolUse
+kind: agent
+action: warn
+conditions:
+  - field: model
+    equals: "provider/first"
+---
+model-first guidance.
+-- home/.config/handrail/model-second.md --
+---
+event: PreToolUse
+kind: agent
+action: warn
+conditions:
+  - field: model
+    equals: "provider/second"
+---
+model-second guidance.
+-- home/.config/handrail/model-not-first.md --
+---
+event: PreToolUse
+kind: agent
+action: warn
+conditions:
+  - field: model
+    not_equals: "provider/first"
+---
+model-not-first guidance.
+-- home/.config/handrail/unread-model.md --
+---
+event: PreToolUse
+action: warn
+conditions:
+  - field: unreadable
+    equals: "model"
+---
+unread-model guidance.
+-- home/.config/handrail/unread-agent.md --
+---
+event: PreToolUse
+action: warn
+conditions:
+  - field: unreadable
+    equals: "agent_prompt"
+---
+unread-agent guidance.
+-- home/.config/handrail/unknown-fields.md --
+---
+event: PreToolUse
+kind: other
+action: block
+conditions:
+  - field: tool
+    equals: "eval"
+  - field: command
+    contains: "echo GENERIC"
+  - field: content
+    contains: "TEXT"
+  - field: removed_content
+    contains: "BEFORE"
+  - field: model
+    equals: "model-x"
+  - field: url
+    equals: "https://example.com"
+---
+unknown-fields guidance.
+-- home/.config/handrail/network-url.md --
+---
+event: PreToolUse
+kind: network
+action: block
+conditions:
+  - field: url
+    equals: "https://example.com"
+---
+network-url guidance.
+-- home/.config/handrail/network-search.md --
+---
+event: PreToolUse
+kind: network
+action: warn
+conditions:
+  - field: tool
+    equals: "web_search"
+---
+network-search guidance.
+-- home/.config/handrail/unread-server.md --
+---
+event: PreToolUse
+kind: mcp
+action: warn
+conditions:
+  - field: unreadable
+    equals: "server"
+---
+unread-server guidance.
+-- home/.config/handrail/invented-server.md --
+---
+event: PreToolUse
+action: block
+conditions:
+  - field: server
+    equals: "server"
+---
+invented-server guidance.
+-- home/.config/handrail/invented-tool.md --
+---
+event: PreToolUse
+action: block
+conditions:
+  - field: tool
+    equals: "bash_tool"
+---
+invented-tool guidance.
+-- home/.config/handrail/invented-sandbox.md --
+---
+event: PreToolUse
+action: block
+conditions:
+  - field: unsandboxed
+    equals: "true"
+---
+invented-sandbox guidance.
+-- bash-block.json --
+{"tool_name": "bash", "tool_input": {"command": "echo DANGER"}}
+-- bash-allow.json --
+{"tool_name": "bash", "tool_input": {"command": "echo harmless"}}
+-- bash-native-grants.json --
+{"tool_name": "bash", "tool_input": {"command": "echo harmless", "dangerouslyDisableSandbox": true}}
+-- bash-not-codex.json --
+{"tool_name": "bash", "tool_input": {"command": "apply_patch <<'EOF'\n*** Begin Patch\n*** Add File: protected.txt\n+safe\n*** End Patch\nEOF"}}
+-- read.json --
+{"tool_name": "read", "tool_input": {"path": "protected.txt"}}
+-- read-wrapper.json --
+{"tool_name": "read", "tool_input": {"path": "[\"protected.txt\"#AB12]"}}
+-- write.json --
+{"tool_name": "write", "tool_input": {"path": "protected.txt", "content": "safe"}}
+-- write-empty.json --
+{"tool_name": "write", "tool_input": {"path": "empty.txt", "content": ""}}
+-- write-absent.json --
+{"tool_name": "write", "tool_input": {"path": "empty.txt"}}
+-- write-null.json --
+{"tool_name": "write", "tool_input": {"path": "empty.txt", "content": null}}
+-- write-number.json --
+{"tool_name": "write", "tool_input": {"path": "empty.txt", "content": 5}}
+-- write-object.json --
+{"tool_name": "write", "tool_input": {"path": "empty.txt", "content": {}}}
+-- replace.json --
+{"tool_name": "edit", "tool_input": {"path": "a.txt", "old_string": "OLD", "new_string": "NEW"}}
+-- replace-alias.json --
+{"tool_name": "edit", "tool_input": {"_path": "protected.txt", "old_string": "old", "new_string": "new"}}
+-- replace-empty.json --
+{"tool_name": "edit", "tool_input": {"path": "a.txt", "old_string": "OLD", "new_string": ""}}
+-- replace-wrong.json --
+{"tool_name": "edit", "tool_input": {"path": 7, "old_string": null, "new_string": null}}
+-- cursor-batch.json --
+{"tool_name": "edit", "tool_input": {"path": "b.txt", "edits": [{"old_string": "OLD", "new_string": "safe"}, {"old_string": "other", "new_string": "FORBIDDEN"}]}}
+-- patch-entries.json --
+{"tool_name": "edit", "tool_input": {"path": "b.txt", "edits": [{"diff": "@@ -1 +1 @@\n-OLD\n+NEW\n context"}, {"op": "create", "diff": "FORBIDDEN"}]}}
+-- patch-context.json --
+{"tool_name": "edit", "tool_input": {"path": "b.txt", "edits": [{"diff": "@@ -1 +1 @@\n FORBIDDEN\n+safe"}]}}
+-- patch-rename.json --
+{"tool_name": "edit", "tool_input": {"path": "a.txt", "edits": [{"rename": "protected.txt"}]}}
+-- patch-delete.json --
+{"tool_name": "edit", "tool_input": {"path": "a.txt", "edits": [{"op": "delete"}]}}
+-- patch-create-empty.json --
+{"tool_name": "edit", "tool_input": {"path": "a.txt", "edits": [{"op": "create", "diff": ""}]}}
+-- hashline-correlation.json --
+{"tool_name": "edit", "tool_input": {"input": "*** Begin Patch\n[a.txt#A1B2]\nPUT >1:\n+FORBIDDEN\n[b.txt#B2C3]\nPUT >1:\n+safe\n*** End Patch", "paths": ["protected.txt"]}}
+-- hashline-match.json --
+{"tool_name": "edit", "tool_input": {"input": "[b.txt#A1B2]\nPUT >1:\n+FORBIDDEN"}}
+-- hashline-rename.json --
+{"tool_name": "edit", "tool_input": {"input": "[source#name.txt#A1B2]\nMV \"protected.txt\""}}
+-- hashline-remove.json --
+{"tool_name": "edit", "tool_input": {"input": "[a.txt#A1B2]\nREM"}}
+-- hashline-register.json --
+{"tool_name": "edit", "tool_input": {"input": "[b.txt#A1B2]\nPUT >1 @saved\nPUT >2:\n+FORBIDDEN"}}
+-- hashline-empty.json --
+{"tool_name": "edit", "tool_input": {"input": "[a.txt#A1B2]\nPUT 1.=2:\n+\n+"}}
+-- hashline-cut.json --
+{"tool_name": "edit", "tool_input": {"input": "[a.txt#A1B2]\nCUT 1.=2 @saved"}}
+-- hashline-legacy.json --
+{"tool_name": "edit", "tool_input": {"_input": "\ufeff\u00b6\"protected.txt\"#A1B2\r\nPUT >1:\r\n+safe\r\n"}}
+-- hashline-quoted.json --
+{"tool_name": "edit", "tool_input": {"input": "['protected.txt'#A1B2]\nREM"}}
+-- apply-patch.json --
+{"tool_name": "edit", "tool_input": {"input": "*** Begin Patch\n*** Update File: a.txt\n@@\n-OLD\n+NEW\n*** Add File: b.txt\n+FORBIDDEN\n*** End Patch", "path": "protected.txt"}}
+-- apply-rename.json --
+{"tool_name": "edit", "tool_input": {"_input": "*** Begin Patch\n*** Update File: a.txt\n*** Move to: protected.txt\n*** End Patch"}}
+-- sloppy-edit.json --
+{"tool_name": "edit", "tool_input": {"input": "unknown edit language", "paths": ["protected.txt", "other.txt"]}}
+-- unknown-edit.json --
+{"tool_name": "edit", "tool_input": {"input": null}}
+-- empty-edits.json --
+{"tool_name": "edit", "tool_input": {"path": "protected.txt", "edits": []}}
+-- task-flat.json --
+{"tool_name": "task", "tool_input": {"agent": "reviewer", "task": "FORBIDDEN", "model": "provider/first"}}
+-- task-batch.json --
+{"tool_name": "task", "tool_input": {"context": "SHARED", "tasks": [{"agent": "worker", "task": "FORBIDDEN", "model": ["provider/first", "provider/second"]}, {"agent": "reviewer", "task": "safe", "model": "provider/first"}]}}
+-- task-match.json --
+{"tool_name": "task", "tool_input": {"tasks": [{"agent": "reviewer", "task": "FORBIDDEN"}]}}
+-- task-model-invalid.json --
+{"tool_name": "task", "tool_input": {"task": "safe", "model": ["provider/first", null]}}
+-- task-empty.json --
+{"tool_name": "task", "tool_input": {"tasks": []}}
+-- task-wrong.json --
+{"tool_name": "task", "tool_input": {"tasks": {}}}
+-- task-invalid.json --
+{"tool_name": "task", "tool_input": {"tasks": [null]}}
+-- unknown-fields.json --
+{"tool_name": "eval", "tool_input": {"command": "echo GENERIC", "content": "TEXT", "old_string": "BEFORE", "url": "https://example.com", "model": "model-x", "path": "protected.txt"}}
+-- mcp.json --
+{"tool_name": "mcp__server_bash_tool", "tool_input": {}}
+-- read-web.json --
+{"tool_name": "read", "tool_input": {"path": "https://example.com"}}
+-- search.json --
+{"tool_name": "web_search", "tool_input": {"query": "https://example.com"}}
+-- read-device.json --
+{"tool_name": "read", "tool_input": {"path": "xd://device", "content": ""}}
+-- write-device.json --
+{"tool_name": "write", "tool_input": {"path": "xd://device", "content": ""}}
+-- read-archive.json --
+{"tool_name": "read", "tool_input": {"path": "archive.zip:protected.txt", "content": ""}}
+-- read-sqlite.json --
+{"tool_name": "read", "tool_input": {"path": "db.sqlite:table", "content": ""}}
+-- read-video.json --
+{"tool_name": "read", "tool_input": {"path": "clip.mp4:01:23", "content": ""}}
+-- read-list.json --
+{"tool_name": "read", "tool_input": {"path": "protected.txt;other.txt", "content": ""}}
+-- selector-0.json --
+{"tool_name": "read", "tool_input": {"path": "protected.txt:1"}}
+-- selector-1.json --
+{"tool_name": "read", "tool_input": {"path": "protected.txt:1-2"}}
+-- selector-2.json --
+{"tool_name": "read", "tool_input": {"path": "protected.txt:1+2"}}
+-- selector-3.json --
+{"tool_name": "read", "tool_input": {"path": "protected.txt:1-"}}
+-- selector-4.json --
+{"tool_name": "read", "tool_input": {"path": "protected.txt:-2"}}
+-- selector-5.json --
+{"tool_name": "read", "tool_input": {"path": "protected.txt:1,3-4"}}
+-- selector-6.json --
+{"tool_name": "read", "tool_input": {"path": "protected.txt:raw"}}
+-- selector-7.json --
+{"tool_name": "read", "tool_input": {"path": "protected.txt:img"}}
+-- selector-8.json --
+{"tool_name": "read", "tool_input": {"path": "protected.txt:conflicts"}}
+-- selector-9.json --
+{"tool_name": "read", "tool_input": {"path": "protected.txt:1-2:raw"}}
+-- selector-10.json --
+{"tool_name": "read", "tool_input": {"path": "protected.txt:raw:1-2"}}
+-- selector-wrapper.json --
+{"tool_name": "read", "tool_input": {"path": "[\"protected.txt\"#A1B2]:1-2:raw"}}
+-- path-wrong.json --
+{"tool_name": "read", "tool_input": {"path": null}}
+-- bad-json.json --
+{broken
+-- bad-envelope.json --
+[]
+-- bad-input.json --
+{"tool_name":"write","tool_input":null}
+-- bad-cwd.json --
+{"cwd":7}
+-- bash-read.json --
+{"tool_name":"bash","tool_input":{"command":"cat protected.txt"}}
+-- task-empty-item.json --
+{"tool_name":"task","tool_input":{"tasks":[{}]}}
+-- edit-empty-item.json --
+{"tool_name":"edit","tool_input":{"path":"a.txt","edits":[{}]}}
+-- wrong-fields.json --
+{"tool_name":"eval","tool_input":{"command":null,"content":7,"model":{},"url":[],"old_string":false}}
+-- wrong-tool.json --
+{"tool_name":42,"tool_input":{}}
+-- home/.config/handrail/unread-command.md --
+---
+event: PreToolUse
+action: warn
+conditions:
+  - field: unreadable
+    equals: command
+---
+Unreadable command.
+-- home/.config/handrail/unread-url.md --
+---
+event: PreToolUse
+action: warn
+conditions:
+  - field: unreadable
+    equals: url
+---
+Unreadable URL.
+-- home/.config/handrail/unread-removed.md --
+---
+event: PreToolUse
+action: warn
+conditions:
+  - field: unreadable
+    equals: removed_content
+---
+Unreadable removed text.
+-- home/.config/handrail/unread-tool.md --
+---
+event: PreToolUse
+action: warn
+conditions:
+  - field: unreadable
+    equals: tool
+---
+Unreadable tool.
+-- home/.config/handrail/literal-selector.md --
+---
+event: PreToolUse
+kind: file_read
+action: warn
+conditions:
+  - field: path
+    equals: protected.txt:1
+---
+The literal selector spelling is retained.
+-- hashline-spaced.json --
+{"tool_name":"edit","tool_input":{"input":"[ protected.txt #ABCD]\nREM"}}
+-- hashline-spaced-quoted.json --
+{"tool_name":"edit","tool_input":{"input":"[ \"protected.txt\" #ABCD]\nREM"}}
+-- hashline-end.json --
+{"tool_name":"edit","tool_input":{"input":"[b.txt#ABCD]\nPUT >1:\n+safe\n*** End Patch\n+FORBIDDEN\n[protected.txt#ABCD]\nREM"}}
+-- hashline-abort.json --
+{"tool_name":"edit","tool_input":{"input":"[b.txt#ABCD]\nPUT >1:\n+safe\n*** Abort\n[protected.txt#ABCD]\nREM"}}
+-- create-plus.json --
+{"tool_name":"edit","tool_input":{"path":"a.txt","edits":[{"op":"create","diff":"+SECRET"}]}}
+-- create-plus-space.json --
+{"tool_name":"edit","tool_input":{"path":"a.txt","edits":[{"op":"create","diff":"+ SECRET\n+ second\n"}]}}
+-- create-plus-empty.json --
+{"tool_name":"edit","tool_input":{"path":"a.txt","edits":[{"op":"create","diff":"+"}]}}
+-- create-mixed.json --
+{"tool_name":"edit","tool_input":{"path":"a.txt","edits":[{"op":"create","diff":"+SECRET\nliteral"}]}}
+-- home/.config/handrail/create-prefix.md --
+---
+event: PreToolUse
+kind: file_edit
+action: block
+conditions:
+  - field: content
+    starts_with: SECRET
+---
+Do not create secret text.
+-- hashline-end-apply.json --
+{"tool_name":"edit","tool_input":{"input":"[b.txt#ABCD]\nPUT >1:\n+safe\n*** End Patch\n*** Delete File: protected.txt"}}

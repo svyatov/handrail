@@ -74,6 +74,11 @@ const (
 
 // The event, tool and kind names the code branches on, beyond the tables.
 const (
+	nameOMP               = "omp"
+	eventPreToolUse       = "PreToolUse"
+	eventPostToolUse      = "PostToolUse"
+	eventSessionStart     = "SessionStart"
+	failOpenQuirk         = "hook errors and timeouts fail open, so a broken guardrail never stops the session"
 	eventUserPromptSubmit = "UserPromptSubmit"
 	eventSessionEnd       = "SessionEnd"
 	eventSubagentStart    = "SubagentStart"
@@ -91,17 +96,14 @@ var (
 	errInputNotAnObject = errors.New("tool_input is not an object")
 )
 
-// Both harnesses read the same Claude-shaped hook config and speak the same
-// payload and decision protocol: Codex's hooks engine is Claude-compatible by
-// design, down to the tool names on the wire (developers.openai.com/codex/hooks).
-// The differences are the file it lives in and where blocking stops.
+// Claude and Codex share a Claude-shaped hook config and decision protocol;
+// omp uses a native extension transport with its own input normalization.
 //
 // Events that run after the fact or outside a decision point have no denial to
 // give, and Codex cannot fail closed on a prompt before the model request.
-// SessionEnd injects nothing on either: the session is over and the JSON is
-// discarded, so a warning there reaches the user or nobody. On Stop and
-// SubagentStop any message to the agent makes it continue, so there only a
-// block reaches it.
+// SessionEnd injects nothing: the session is over. On Stop any message to the
+// agent makes it continue, so there only a block reaches it. Child-stop
+// capabilities depend on whether the harness exposes a decision point.
 var adapters = []Adapter{
 	{
 		Name: "claude", title: "Claude Code", dir: ".claude", homeEnv: "CLAUDE_CONFIG_DIR", file: "settings.json",
@@ -142,6 +144,30 @@ var adapters = []Adapter{
 			"non-managed hooks need a one-time trust review, " +
 				"and --dangerously-bypass-hook-trust skips that review rather than the hooks",
 			"an enterprise allow_managed_hooks_only requirement ignores user-level hooks, handrail's included",
+		},
+	},
+	{
+		Name: nameOMP, title: "oh-my-pi", dir: ".omp/agent", homeEnv: "PI_CODING_AGENT_DIR",
+		file: "extensions/handrail.js", sessionEnv: "HANDRAIL_OMP_SESSION", bypass: ompBypass,
+		aliases: nil, agentTypeKey: "", agentPromptKey: "", patchInShell: false, conditions: false,
+		events: []eventCaps{
+			{name: eventPreToolUse, deny: permissionDeny, inject: true, ask: true},
+			{name: eventPostToolUse, inject: true},
+			{name: eventSessionStart, inject: true},
+			{name: eventSessionEnd},
+			{name: eventStop, deny: continueOnce},
+			{name: eventSubagentStart, inject: true},
+			{name: eventSubagentStop},
+		},
+		quirks: []string{
+			failOpenQuirk,
+			"only intercepted registry calls are evaluated; interactive shell/python escapes, " +
+				"eval internals and direct browser/computer bridges are not separately mediated",
+			"pre-tool context is discarded on failed or denied calls; native approval may deny before handrail runs",
+			"other extensions can rewrite input after handrail inspected it",
+			"child-start guidance is not reinjected after child compaction",
+			"extension integrity is checked; effective omp discovery and enablement are not verified",
+			"--no-extensions, --trusted-extension, disabledExtensions and live source suspension can prevent enforcement",
 		},
 	},
 }
@@ -204,6 +230,10 @@ func (a Adapter) Normalize(event string, data []byte) (Call, error) {
 
 	if err != nil {
 		return Call{Cwd: "", Session: session, Payloads: nil}, err
+	}
+
+	if a.Name == nameOMP {
+		return Call{Cwd: decoded.cwd, Session: session, Payloads: ompPayloads(event, decoded)}, nil
 	}
 
 	return Call{Cwd: decoded.cwd, Session: session, Payloads: payloads(a, event, decoded)}, nil
@@ -673,6 +703,10 @@ func (a Adapter) Delivery(rs *rule.Ruleset, payloads []rule.Payload) Delivery {
 	delivery := Delivery{Payloads: rs.Yield(payloads), Matches: make([]Delivered, 0, len(matched)), Outcome: rule.Allow}
 
 	for _, match := range matched {
+		if a.caps(match.Event).name == "" {
+			continue
+		}
+
 		found := Delivered{Match: match, As: match.Action}
 		if !match.Trial {
 			found.As = a.degrade(match.Event, match.Action)
@@ -730,16 +764,14 @@ const stderrExit = 2
 // UserPromptSubmit block is a decision the human reads, a block on Stop or
 // SubagentStop is a decision whose reason is the agent's next instruction, and
 // anything else proceeds. Where the harness injects, the agent reads message
-// as context. Both harnesses document the same channels, so one
-// implementation serves. human is what the user sees on systemMessage, and
-// delivery's Outcome is the one delivered, already this harness's.
+// as context. Claude/Codex use these channels directly; omp's native extension
+// translates them to its runtime. human is what the user sees on systemMessage,
+// and delivery's Outcome is the one delivered, already this harness's.
 func (a Adapter) Deliver(event, message, human string, delivery Delivery, stdout, stderr io.Writer) int {
 	if message == "" && human == "" {
 		return 0
 	}
-	// SessionEnd has no decision control and both harnesses discard its JSON,
-	// so stderr on exit 2, which Claude Code shows the user, is the one
-	// channel left.
+	// SessionEnd has no decision control; stderr on exit 2 is the human channel.
 	if event == eventSessionEnd {
 		_, _ = io.WriteString(stderr, human+"\n")
 
@@ -816,6 +848,10 @@ func (a Adapter) shellEdits(event string, tools []string, input map[string]any) 
 // harness uses, because tool is the harness's own vocabulary and kind the
 // portable one.
 func (a Adapter) toolNames(tool string) []string {
+	if a.Name == nameOMP {
+		return []string{tool}
+	}
+
 	if rest, ok := strings.CutPrefix(tool, "mcp__"); ok {
 		if _, bare, ok := strings.Cut(rest, "__"); ok {
 			return []string{tool, bare}

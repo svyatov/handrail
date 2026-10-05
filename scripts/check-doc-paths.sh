@@ -30,17 +30,16 @@ for skill in skills/add/SKILL.md skills/analyze/SKILL.md skills/survey/SKILL.md;
 		mismatch "$skill does not spell the install directory as bootstrap.sh does: $bindir"
 done
 
-# Each harness's user-level directory and the variable that relocates it. The
-# analyze skill reads transcripts out of both, so a harness added to the adapter
-# table without a line there is a harness analyze cannot see.
+# The two full plugin packages share the analyze skill, which reads their
+# transcripts. Omp is a binary-managed extension, not an analyze-skill package,
+# and its profile-aware directory cannot be expressed by this shell fallback.
 adapters=internal/harness/harness.go
-pairs=$(sed -n 's/.*dir: "\([^"]*\)", homeEnv: "\([^"]*\)".*/\1 \2/p' "$adapters")
-names=$(sed -n 's/.*Name: "\([a-z]*\)",.*/\1/p' "$adapters" | grep -c .)
+pairs=$(sed -nE '/Name: "(claude|codex)",/s/.*dir: "([^"]*)", homeEnv: "([^"]*)".*/\1 \2/p' "$adapters")
+names=$(sed -nE 's/.*Name: "(claude|codex)",.*/\1/p' "$adapters" | grep -c .)
 found=$(echo "$pairs" | grep -c .)
-# A reformat that splits an adapter's fields across lines would leave this
-# reading fewer pairs than there are adapters, and pass by finding nothing.
-[ "$found" -eq "$names" ] || {
-	echo "$adapters has $names adapters but $found dir/homeEnv pairs on one line: fix this script's sed" >&2
+# A reformat must not silently drop a plugin adapter from this check.
+[ "$names" -eq 2 ] && [ "$found" -eq "$names" ] || {
+	echo "$adapters has $names plugin adapters and $found dir/homeEnv pairs; expected 2: fix this script's sed" >&2
 	exit 1
 }
 # Collected rather than reported inline, because a pipeline's loop body runs in

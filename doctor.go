@@ -166,7 +166,11 @@ func (r *report) checkEntries(adapter harness.Adapter, bin string) {
 	}
 
 	if current == len(entries) {
-		r.okf("%s: %d hook entries current", adapter.Name, current)
+		if adapter.Name == "omp" {
+			r.okf("%s: extension current (%d event mappings)", adapter.Name, current)
+		} else {
+			r.okf("%s: %d hook entries current", adapter.Name, current)
+		}
 	}
 }
 

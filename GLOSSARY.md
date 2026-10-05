@@ -5,11 +5,11 @@ A cross-harness guardrail manager: users declare rules once, and handrail enforc
 ## Language
 
 **Harness**:
-An agentic coding tool that exposes lifecycle hooks. handrail supports two: Claude Code and Codex CLI.
+An agentic coding tool that exposes lifecycle hooks. handrail supports Claude Code, Codex CLI, and oh-my-pi.
 _Avoid_: agent, IDE, editor, platform
 
 **Hook**:
-A harness-native mechanism that runs an external command on a lifecycle event. handrail's one enforcement path, never the rule itself.
+A harness-native mechanism that delegates a lifecycle event to an external command, directly or through a native extension. handrail's one enforcement path, never the rule itself.
 _Avoid_: using "hook" to mean a handrail rule
 
 **Rule**:

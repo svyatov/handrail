@@ -110,7 +110,7 @@ func syncTargets(only string, stderr io.Writer) []harness.Adapter {
 	}
 
 	if len(targets) == 0 {
-		found := "no harness found; install Claude Code or Codex CLI and run it once"
+		found := "no harness found; install Claude Code, Codex CLI or oh-my-pi and run it once"
 		if only != "" {
 			found = only + " not found; install it and run it once"
 		}
@@ -139,9 +139,16 @@ func installHooks(targets []harness.Adapter, bin string, effective []*rule.Rule,
 			continue
 		}
 
-		if done.Changed {
+		switch {
+		case adapter.Name == "omp":
+			if done.Changed {
+				fmt.Fprintf(stdout, "%s: wrote extension to %s\n", adapter.Name, adapter.ConfigPath())
+			} else {
+				fmt.Fprintf(stdout, "%s: extension already current in %s\n", adapter.Name, adapter.ConfigPath())
+			}
+		case done.Changed:
 			fmt.Fprintf(stdout, "%s: wrote %d hook entries to %s\n", adapter.Name, done.Entries, adapter.ConfigPath())
-		} else {
+		default:
 			fmt.Fprintf(stdout, "%s: %d hook entries already current in %s\n", adapter.Name, done.Entries, adapter.ConfigPath())
 		}
 

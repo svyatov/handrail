@@ -72,6 +72,8 @@ type reading struct {
 	// ends is the word of a flag after which no operand names a file, or 0,
 	// which is never a flag's word: the program's name comes first.
 	ends int
+	// afterDashes is the first operand after an explicit --, or zero.
+	afterDashes int
 }
 
 // fork copies a reading for a second way of reading the same flag.
@@ -94,6 +96,12 @@ func (rd reading) files(g *grammar) []int {
 	}
 
 	return ops
+}
+
+// writesOperand reports whether this reading writes the numbered operand.
+func (rd reading) writesOperand(g *grammar, n, count int) bool {
+	return g.writes && (len(g.writeMode) == 0 || rd.write) &&
+		(!g.last || !rd.targeted && n == count-1)
 }
 
 // flagged adds to a reading the file a flag's argument names, if any, as
@@ -128,6 +136,7 @@ func (s *fileScan) from(pos int, state reading) {
 		word := s.c.words[pos]
 		switch {
 		case word == "--":
+			state.afterDashes = pos + 1
 			for pos++; pos < s.j; pos++ {
 				state.operands = append(state.operands, pos)
 			}
@@ -159,10 +168,13 @@ func (s *fileScan) keep(state reading) {
 func (s *fileScan) add(state reading) {
 	ops := state.files(s.g)
 
-	write := s.g.writes && (len(s.g.writeMode) == 0 || state.write)
-	for n, pos := range ops {
+	for index, pos := range ops {
 		file := s.r.named(s.c.args[pos])
-		file.Write = write && (!s.g.last || !state.targeted && n == len(ops)-1)
+		if s.excludedGitPath(file, pos, state.afterDashes) {
+			continue
+		}
+
+		file.Write = state.writesOperand(s.g, index, len(ops))
 		// A lone - is standard input to a program reading it, and a file
 		// named - to one writing it, as rm -- - and cp x - are.
 		if file.Write || s.c.words[pos] != "-" {
@@ -173,6 +185,17 @@ func (s *fileScan) add(state reading) {
 	for _, file := range state.flagged {
 		s.r.file(file)
 	}
+}
+
+// excludedGitPath recognizes only the verified long exclusion magic after --
+// in git diff. Flags naming files, unknown grammars, expansions and modes
+// that treat operands as literal paths retain their existing file payloads.
+func (s *fileScan) excludedGitPath(file File, pos, afterDashes int) bool {
+	return s.g == programs["git diff"] && s.r.depth == 0 && afterDashes > 0 && pos >= afterDashes &&
+		!file.Unreadable && strings.HasPrefix(file.Path, ":(exclude)") &&
+		!slices.Contains(s.c.words, "--no-index") &&
+		!strings.Contains(s.r.text, "--literal-pathspecs") &&
+		!strings.Contains(s.r.text, "GIT_LITERAL_PATHSPECS")
 }
 
 // long reads the long flag at word pos and returns the word after it.

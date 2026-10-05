@@ -80,6 +80,13 @@ func sandboxHome(t *testing.T) string {
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
 	t.Setenv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+
+	for _, key := range []string{
+		"OMP_PROFILE", "PI_PROFILE", "PI_CONFIG_DIR", "PI_CODING_AGENT_DIR", "HANDRAIL_OMP_SESSION",
+	} {
+		t.Setenv(key, "")
+	}
+
 	t.Chdir(repo)
 
 	return repo

@@ -1,0 +1,49 @@
+# These are synthetic payloads. No named file is opened or command executed.
+exec handrail test PreToolUse --kind shell --field 'command=git diff HEAD --stat -- . ":(exclude).env" ":(exclude).env.*" ":(exclude)**/.env" ":(exclude)**/.env.*"'
+! stdout 'block  env-files'
+
+# An excluded operand does not hide another read or a redirect.
+! exec handrail test PreToolUse --kind shell --field 'command=git diff HEAD -- .env ":(exclude)**/.env"'
+stdout 'block  env-files'
+! exec handrail test PreToolUse --kind shell --field 'command=git diff HEAD -- . ":(exclude)**/.env"; cat .env'
+stdout 'block  env-files'
+! exec handrail test PreToolUse --kind shell --field 'command=git diff HEAD -- . ":(exclude)**/.env" > .env'
+stdout 'block  env-files'
+! exec handrail test PreToolUse --kind shell --field 'command=git diff --output=.env -- . ":(exclude)**/.env"'
+stdout 'block  env-files'
+! exec handrail test PreToolUse --kind shell --field 'command=git diff -O ":(exclude)**/.env" -- .'
+stdout 'block  env-files'
+
+# Literal paths, no-index comparisons, and unreadable syntax stay guarded.
+! exec handrail test PreToolUse --kind shell --field 'command=git --literal-pathspecs diff -- ":(exclude)**/.env"'
+stdout 'block  env-files'
+! exec handrail test PreToolUse --kind shell --field 'command=git diff --no-index -- ":(exclude)**/.env" public.txt'
+stdout 'block  env-files'
+! exec handrail test PreToolUse --kind shell --field 'command=env GIT_LITERAL_PATHSPECS=1 git diff -- ":(exclude)**/.env"'
+stdout 'block  env-files'
+! exec handrail test PreToolUse --kind shell --field 'command=GIT_LITERAL_PATHSPECS=1 git diff -- ":(exclude)**/.env"'
+stdout 'block  env-files'
+! exec handrail test PreToolUse --kind shell --field 'command=env GIT_LITERAL_PATHSPECS=1 sh -c "git diff -- \":(exclude)**/.env\""'
+stdout 'block  env-files'
+! exec handrail test PreToolUse --kind shell --field 'command=git diff --frobnicate -- ":(exclude)**/.env"'
+stdout 'block  env-files'
+exec handrail test PreToolUse --kind shell --field 'command=git diff -- ":(exclude)$TARGET/.env"'
+stdout 'unreadable: path'
+stdout 'path\n    ":\(exclude\)\$TARGET/.env"'
+! exec handrail test PreToolUse --kind shell --field 'command=cat ":(exclude)**/.env"'
+stdout 'block  env-files'
+! exec handrail test PreToolUse --kind shell --field 'command=git diff -- .env.local'
+stdout 'block  env-files'
+
+-- home/.config/handrail/env-files.md --
+---
+event: PreToolUse
+action: block
+conditions:
+  - any:
+      - field: path
+        glob: "**/.env"
+      - field: path
+        glob: "**/.env.*"
+---
+Environment file access remains blocked.
