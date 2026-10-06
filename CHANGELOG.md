@@ -14,6 +14,8 @@ its replacement and the earliest version that removes it. The removal of
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-06
+
 ### Added
 
 - Native oh-my-pi CLI adapter: `sync --harness omp` installs an owned, profile-aware extension that delegates tool and lifecycle decisions to the existing Go engine. Includes native denial and approval, once-only main-session Stop, correlated hashline/patch/task normalization, and offline extension integrity diagnostics. Child-stop denial and prompt submission are explicitly unsupported; Claude/Codex plugin behavior is unchanged.
@@ -241,7 +243,8 @@ Prerelease that proved the release pipeline end to end: the GoReleaser build,
 the checksum manifest, and the tap cask. The Claude Code and Codex CLI plugins
 landed after it, in 0.1.0.
 
-[unreleased]: https://github.com/svyatov/handrail/compare/v0.5.0...HEAD
+[unreleased]: https://github.com/svyatov/handrail/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/svyatov/handrail/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/svyatov/handrail/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/svyatov/handrail/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/svyatov/handrail/compare/v0.4.0...v0.4.1
