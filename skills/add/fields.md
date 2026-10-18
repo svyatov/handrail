@@ -60,6 +60,12 @@ conditions:
 with the message "Run the tests before you finish." A block here continues the
 agent once, so it is a nudge, never a gate.
 
+## `trigger`
+
+Codex's `PreCompact` trigger, `manual` or `auto`. It is available only on that
+event. A block stops compaction before it changes history; a warning tells only
+the human. `SessionStart` already delivers standing context after compaction.
+
 ## `url` and `domain`
 
 `url` is the destination a call names; `domain` is its host, parsed strictly.
@@ -107,7 +113,9 @@ You asked for network or filesystem access beyond the sandbox. Say which host or
 path you need and why before I approve it.
 ```
 
-It fires only on Claude Code: Codex never shows a hook its escalation. A user who
+It fires only on Claude Code: Codex omits these sandbox fields from hook inputs.
+Use a Codex `PermissionRequest` rule to inspect a pending approval instead;
+that event does not imply that the command will run unsandboxed. A user who
 wants disable-sandbox refused outright can set Claude Code's own
 `allowUnsandboxedCommands: false`. For "ask unless every requested host is in my
 list", see "Many values" below.

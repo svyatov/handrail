@@ -112,7 +112,7 @@ The filename without `.md` is the rule's name. The body is the message, static m
 
 | Key | Values |
 |---|---|
-| `event` | Required: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `SessionEnd`, `Stop`, `SubagentStart`, or `SubagentStop`. |
+| `event` | Required: `PreToolUse`, `PermissionRequest`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `SessionEnd`, `Stop`, `SubagentStart`, `SubagentStop`, `PreCompact`, or `Interrupt`. |
 | `kind` | Tool events only: `shell`, `file_edit`, `file_read`, `mcp`, `agent`, `network`, or `other`. Omit it to match every kind. |
 | `action` | `warn`, the default, gives the agent the message and you one line. `ask` puts the call to you, on `PreToolUse` only. `block` refuses the call, and on `Stop` sends the agent back to work once. |
 | `conditions` | A list that must all hold. Each entry names one field and one operator. An `any:` entry holds a list where one must hold. |
@@ -159,6 +159,15 @@ A rule in a higher tier replaces a lower one of the same filename outright; ther
 One pair is excluded: a Project-shared rule never replaces a Global one. A repo can add rules but not relax yours, so a shared file named like a Global rule is dropped, and `check` names both files. To relax a Global rule in one repo, copy it into `.handrail/local/` and add the exception there. `check` tests that copy against the original's `match:` Examples, so a copy that has drifted from a changed original is reported. If your exception covers one of those calls, add the call to the copy as a `no_match:` Example, which declares the exception.
 
 ## Codex CLI
+
+The compatibility baseline is Codex CLI 0.163.0. After updating handrail, run
+`handrail sync --harness codex`, restart Codex, and review new or changed entries
+in `/hooks`. Installing a plugin does not automatically trust its hooks.
+
+Tool rules cover intercepted local calls, including calls nested in code mode.
+Hosted tools, specialized paths that skip hooks, and later input sent through
+`write_stdin` are outside that coverage. Keep enforcement hooks synchronous;
+`handrail doctor` reports entries changed to run in the background.
 
 The same plugin, from the same marketplace:
 

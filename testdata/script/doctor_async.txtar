@@ -1,0 +1,19 @@
+# A background hook cannot enforce a denial. Doctor must not call it current.
+exec handrail sync --harness codex
+exec sh -c 'sed "s/\"type\": \"command\"/\"type\": \"command\", \"async\": true/" home/.codex/hooks.json > async.json'
+cp async.json home/.codex/hooks.json
+! exec handrail doctor
+stdout 'codex: the PreToolUse entry runs asynchronously, so it cannot enforce decisions; run handrail sync'
+stdout 'codex: the PermissionRequest entry runs asynchronously'
+stdout 'codex: the PreCompact entry runs asynchronously'
+! stdout 'codex: the SessionEnd entry runs asynchronously'
+
+# Sync restores synchronous entries, including stable entries on a second run.
+exec handrail sync --harness codex
+! grep '"async"' home/.codex/hooks.json
+exec handrail doctor
+stdout 'codex: 11 hook entries current'
+exec handrail sync --harness codex
+stdout 'codex: 11 hook entries already current'
+
+-- home/.codex/config.toml --

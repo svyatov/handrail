@@ -79,13 +79,24 @@ examples:
 Never force-push. Rewrite history locally and open a pull request instead.
 ```
 
-**Events**: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`,
-`SessionEnd`, `Stop`, `SubagentStart`, `SubagentStop`. `event:` is required.
+**Events**: `PreToolUse`, `PermissionRequest`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`,
+`SessionEnd`, `Stop`, `SubagentStart`, `SubagentStop`, `PreCompact`, `Interrupt`.
+`event:` is required.
 
 - `block` holds on `PreToolUse` and `UserPromptSubmit`. On `PostToolUse`,
-  `SessionStart`, `SessionEnd` and `SubagentStart` it is a validation error: use
-  `warn`. Codex degrades a `UserPromptSubmit` block to a warn, and `sync` and
-  `doctor` report it.
+  `SessionEnd`, `SubagentStart` and `Interrupt` it is a validation error: use
+  `warn`.
+- `PermissionRequest` applies to Codex approval requests. `block` denies the
+  request; `warn` tells only the human. An unmatched request follows Codex's
+  normal approval flow. It does not force approval for calls that need none,
+  and `ask` is invalid here. Other harnesses skip this event.
+- Codex `SessionStart` and `PreCompact` blocks stop processing before the next
+  model request or before compaction. Other harnesses warn on a `SessionStart`
+  block and skip `PreCompact`. A `PreCompact` rule may select `trigger: manual`
+  or `trigger: auto` using a condition on `trigger`.
+- `Interrupt` warns the human after cancellation on Codex. It cannot restart
+  the turn. Warnings on `PermissionRequest`, `PreCompact` and `Interrupt` have
+  no model context, so `agent_only` is invalid.
 - On `Stop` and `SubagentStop` a `block` means "not done": the agent continues
   once, with the message as its next instruction. A `warn` there tells only the
   human. Narrow these rules with `response` (see [fields.md](fields.md)), or they

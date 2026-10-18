@@ -3,11 +3,12 @@
 exec handrail trust
 exec handrail sync
 stdout 'claude: wrote 8 hook entries'
-stdout 'codex: wrote 8 hook entries to .*/home/.codex/hooks.json'
+stdout 'codex: wrote 11 hook entries to .*/home/.codex/hooks.json'
 
 # Codex reads a Claude-shaped hooks file, so the entry shape is the same one:
 # one per canonical event, naming the binary by absolute path.
 grep '"command": "/[^"]* hook codex PreToolUse"' home/.codex/hooks.json
+grep '"command": "/[^"]* hook codex PermissionRequest"' home/.codex/hooks.json
 grep '"command": "/[^"]* hook codex PostToolUse"' home/.codex/hooks.json
 grep '"command": "/[^"]* hook codex UserPromptSubmit"' home/.codex/hooks.json
 grep '"command": "/[^"]* hook codex SessionStart"' home/.codex/hooks.json
@@ -15,6 +16,8 @@ grep '"command": "/[^"]* hook codex SessionEnd"' home/.codex/hooks.json
 grep '"command": "/[^"]* hook codex Stop"' home/.codex/hooks.json
 grep '"command": "/[^"]* hook codex SubagentStart"' home/.codex/hooks.json
 grep '"command": "/[^"]* hook codex SubagentStop"' home/.codex/hooks.json
+grep '"command": "/[^"]* hook codex PreCompact"' home/.codex/hooks.json
+grep '"command": "/[^"]* hook codex Interrupt"' home/.codex/hooks.json
 
 # The file's other keys and the user's own hooks survive.
 grep '"description": "my own hooks"' home/.codex/hooks.json
@@ -24,9 +27,8 @@ grep 'my-own.sh' home/.codex/hooks.json
 ! exists .codex
 ! exists .claude
 
-# The Codex caveats are reported where the degradations are: a prompt block
-# cannot fail closed there, so it degrades rather than pretending to have held.
-stdout 'codex: block degraded to warn for no-yolo: Codex CLI cannot fail closed on UserPromptSubmit before the model request \(upstream #33630\)'
+# Codex enforces prompt blocks, so sync reports no degradation for this rule.
+! stdout 'codex: block degraded to warn for no-yolo'
 stdout 'codex: non-managed hooks need a one-time trust review, and --dangerously-bypass-hook-trust skips that review rather than the hooks'
 stdout 'codex: an enterprise allow_managed_hooks_only requirement ignores user-level hooks'
 stdout 'codex: hook errors and timeouts fail open'
@@ -57,7 +59,7 @@ stdout 'codex: SessionEnd cannot tell the human: Codex CLI shows the user no hoo
 env CODEX_HOME=$WORK/elsewhere/codex
 mkdir $WORK/elsewhere/codex
 exec handrail sync --harness codex
-stdout 'codex: wrote 8 hook entries to .*/elsewhere/codex/hooks.json'
+stdout 'codex: wrote 11 hook entries to .*/elsewhere/codex/hooks.json'
 exists elsewhere/codex/hooks.json
 env CODEX_HOME=
 
@@ -65,13 +67,13 @@ env CODEX_HOME=
 # trust prompt fires once and never again.
 cp home/.codex/hooks.json first.json
 exec handrail sync
-stdout 'codex: 8 hook entries already current'
+stdout 'codex: 11 hook entries already current'
 cmp home/.codex/hooks.json first.json
 grep -count=1 'hook codex PreToolUse' home/.codex/hooks.json
 
 # --harness scopes to either one.
 exec handrail sync --harness codex
-stdout 'codex: 8 hook entries already current'
+stdout 'codex: 11 hook entries already current'
 ! stdout 'claude:'
 exec handrail sync --harness claude
 stdout 'claude: 8 hook entries already current'

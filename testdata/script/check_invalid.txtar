@@ -34,7 +34,6 @@ stderr 'trailing-content\.md: line 3: unexpected content'
 
 # A block no harness can deliver is a mislabelled warn, so it is refused.
 stderr 'block-after\.md: line 3: block is refused on PostToolUse, where no harness can deny'
-stderr 'block-start\.md: line 3: block is refused on SessionStart, where no harness can deny'
 stderr 'block-end\.md: line 3: block is refused on SessionEnd, where no harness can deny'
 stderr 'block-spawn\.md: line 3: block is refused on SubagentStart, where no harness can deny'
 
@@ -181,12 +180,6 @@ event: PostToolUse
 action: block
 ---
 Too late.
--- .handrail/block-start.md --
----
-event: SessionStart
-action: block
----
-No decision here.
 -- .handrail/block-end.md --
 ---
 event: SessionEnd

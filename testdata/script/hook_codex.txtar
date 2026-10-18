@@ -1,6 +1,6 @@
 # The Codex hook path end to end. The payloads are Claude-shaped by design, so
-# what this proves is the places where Codex is not: apply_patch, and the prompt
-# event that cannot fail closed.
+# what this proves is the places where Codex is not: apply_patch and its
+# native block delivery.
 exec handrail trust
 
 # A blocking shell rule: the same JSON deny as Claude Code, on exit 0.
@@ -10,7 +10,7 @@ stdout '^code=0$'
 ! stderr .
 stdout '"permissionDecision": "deny"'
 stdout '"permissionDecisionReason": "handrail block: dangerous-rm \(project-shared\)\\nNever delete recursively from the filesystem root'
-stdout '"systemMessage": "handrail block: dangerous-rm \(project-shared\)'
+! stdout '"systemMessage"'
 
 # apply_patch is Codex's one file-editing tool, and it arrives shell-shaped:
 # the whole edit is a patch envelope under command. The path it names and the
@@ -20,6 +20,7 @@ exec handrail hook codex PreToolUse
 stdout '"permissionDecision": "deny"'
 stdout 'handrail block: no-secrets \(project-shared\)'
 stdout 'handrail warn: no-env-edits \(project-shared\)'
+! stdout '"systemMessage"'
 
 # A shell rule does not reach it: apply_patch is a file edit, whatever it rides in.
 ! stdout 'no-heredocs'
@@ -34,12 +35,12 @@ stdout '"permissionDecision": "deny"'
 stdout 'handrail block: no-secrets'
 stdout 'handrail warn: no-env-edits'
 
-# Codex cannot fail closed on UserPromptSubmit before the model request, so a
-# block there degrades to the strongest thing left: the message, injected.
+# A prompt block stops processing before the model request.
 stdin prompt.json
 exec sh -c 'handrail hook codex UserPromptSubmit; echo code=$?'
 stdout '^code=0$'
-stdout '"hookEventName": "UserPromptSubmit"'
+stdout '"decision": "block"'
+! stdout '"hookSpecificOutput"'
 stdout 'handrail block: no-yolo \(project-shared\)'
 ! stderr .
 
@@ -47,6 +48,7 @@ stdout 'handrail block: no-yolo \(project-shared\)'
 stdin bash-curl.json
 exec handrail hook codex PreToolUse
 stdout 'handrail warn: prefer-fetch \(global\)'
+stdout '"systemMessage": "handrail warn: prefer-fetch \(global\)"'
 
 # An mcp call is classified by its tool name on either harness.
 stdin mcp.json

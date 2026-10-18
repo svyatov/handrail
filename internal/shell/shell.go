@@ -11,7 +11,9 @@ import (
 )
 
 // Read parses line and returns its Candidates, each as its Spellings: the
-// source text, then the unquoted form where that differs. A command statement
+// source text, then a normalized spelling where that differs. Normalization
+// keeps quoting when removing it would change argument boundaries or syntax.
+// A command statement
 // is one Candidate, once more without its leading assignments, and once more
 // for each Wrapper removed; code a listed shell runs adds its own. A redirect
 // to a file is one. It also returns each file the line names, once. The bool
@@ -272,7 +274,8 @@ func (r *reader) command(stmt *syntax.Stmt, cmd *syntax.CallExpr, start, end syn
 		words = append(words, r.word(w))
 	}
 
-	r.add(r.src(start, end), strings.Join(words, " "))
+	spellings := append(slices.Clone(words[:len(cmd.Assigns)]), r.spelledWords(cmd.Args)...)
+	r.add(r.src(start, end), strings.Join(spellings, " "))
 
 	if len(cmd.Args) == 0 {
 		return
@@ -280,7 +283,7 @@ func (r *reader) command(stmt *syntax.Stmt, cmd *syntax.CallExpr, start, end syn
 	// Each leading assignment prefix is its own level, so a rule reads the
 	// command with it and without it.
 	if len(cmd.Assigns) > 0 {
-		r.add(r.src(cmd.Args[0], end), strings.Join(words[len(cmd.Assigns):], " "))
+		r.add(r.src(cmd.Args[0], end), strings.Join(spellings[len(cmd.Assigns):], " "))
 	}
 
 	invocation := &call{
@@ -292,6 +295,20 @@ func (r *reader) command(stmt *syntax.Stmt, cmd *syntax.CallExpr, start, end syn
 		detached: false,
 	}
 	r.follow(invocation, 0, len(invocation.args))
+}
+
+// spelledWords removes harmless quoting but preserves argument boundaries
+// and shell operators inside an argument. Wrapper parsing still uses word.
+func (r *reader) spelledWords(args []*syntax.Word) []string {
+	words := make([]string, len(args))
+	for i, arg := range args {
+		words[i] = r.word(arg)
+		if strings.ContainsAny(words[i], " \t\r\n;&|(){}<>\"'\\") {
+			words[i] = r.src(arg, arg)
+		}
+	}
+
+	return words
 }
 
 // redirect adds a redirect whose target is a file. fd duplication, heredocs,

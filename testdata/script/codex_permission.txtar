@@ -1,0 +1,128 @@
+# Approval requests have their own decision protocol. A block denies the
+# request; an unmatched rule leaves Codex's normal approval flow in control.
+exec handrail check
+stdin denied.json
+exec handrail hook codex PermissionRequest
+stdout '"hookEventName": "PermissionRequest"'
+stdout '"behavior": "deny"'
+stdout 'Approval denied by the repository rule'
+stdout 'handrail warn: explain-approval \(global\)'
+! stdout '"permissionDecision"'
+! stdout '"systemMessage"'
+! stderr .
+
+stdin allowed.json
+exec handrail hook codex PermissionRequest
+! stdout .
+
+# A load failure is still reported when the same event has a denial.
+cp broken.md home/.config/handrail/broken.md
+stdin denied.json
+exec handrail hook codex PermissionRequest
+stdout 'broken\.md'
+stdout '"behavior": "deny"'
+rm home/.config/handrail/broken.md
+! stderr .
+
+# Patches retain their file payloads at the approval boundary.
+stdin patch.json
+exec handrail hook codex PermissionRequest
+stdout '"behavior": "deny"'
+stdout 'Keep credentials out of tracked files'
+
+# A warning does not approve or deny the request, and is human-visible only.
+stdin warning.json
+exec handrail hook codex PermissionRequest
+stdout '"systemMessage": "handrail warn: explain-approval'
+! stdout '"hookSpecificOutput"'
+! stdout '"decision"'
+
+# Trial rules never decide the approval.
+stdin trial.json
+exec handrail hook codex PermissionRequest
+! stdout .
+
+! exec handrail test PermissionRequest --harness codex --kind shell --field command=forbidden --json
+stdout '"outcome": "block"'
+stdout '"degraded_from": null'
+
+# A rule cannot synthesize a request for approval at an approval event.
+cp ask.md home/.config/handrail/ask.md
+! exec handrail check
+stderr 'ask applies only to PreToolUse'
+rm home/.config/handrail/ask.md
+
+# No model context is available at this event, so agent_only would be silent.
+cp agent-only.md home/.config/handrail/agent-only.md
+! exec handrail check
+stderr 'agent_only is refused on PermissionRequest'
+
+-- denied.json --
+{"tool_name":"Bash","tool_input":{"command":"forbidden","description":"Needs approval"}}
+-- allowed.json --
+{"tool_name":"Bash","tool_input":{"command":"echo allowed"}}
+-- patch.json --
+{"tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Add File: secrets.txt\n+secret\n*** End Patch"}}
+-- warning.json --
+{"tool_name":"Bash","tool_input":{"command":"explain"}}
+-- trial.json --
+{"tool_name":"Bash","tool_input":{"command":"trial"}}
+-- home/.config/handrail/deny-command.md --
+---
+event: PermissionRequest
+kind: shell
+action: block
+conditions:
+  - field: command
+    equals: forbidden
+examples:
+  match:
+    - command: forbidden
+  no_match:
+    - command: echo allowed
+---
+Approval denied by the repository rule.
+-- home/.config/handrail/deny-patch.md --
+---
+event: PermissionRequest
+kind: file_edit
+action: block
+conditions:
+  - field: path
+    equals: secrets.txt
+---
+Keep credentials out of tracked files.
+-- home/.config/handrail/explain-approval.md --
+---
+event: PermissionRequest
+kind: shell
+conditions:
+  - field: command
+    matches: ^(explain|forbidden)$
+---
+Review why this command needs approval.
+-- home/.config/handrail/observe-approval.md --
+---
+event: PermissionRequest
+kind: shell
+action: block
+trial: true
+conditions:
+  - field: command
+    equals: trial
+---
+Watch this approval without changing it.
+-- ask.md --
+---
+event: PermissionRequest
+action: ask
+---
+Ask again.
+-- agent-only.md --
+---
+event: PermissionRequest
+agent_only: true
+---
+This event has no model context.
+-- broken.md --
+This file has no rule frontmatter.

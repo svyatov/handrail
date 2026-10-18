@@ -152,6 +152,9 @@ func (r *report) checkEntries(adapter harness.Adapter, bin string) {
 		case entry.Narrowed:
 			r.badf("%s: the %s entry is narrowed by its if or its group's matcher, so it misses calls; run handrail sync",
 				adapter.Name, entry.Event)
+		case entry.Async:
+			r.badf("%s: the %s entry runs asynchronously, so it cannot enforce decisions; run handrail sync",
+				adapter.Name, entry.Event)
 		case !runnable(entry.Binary):
 			// An install that loses the exec bit leaves every entry in place and
 			// every rule unenforced, which is the failure that looks like none.
@@ -166,11 +169,15 @@ func (r *report) checkEntries(adapter harness.Adapter, bin string) {
 	}
 
 	if current == len(entries) {
-		if adapter.Name == "omp" {
-			r.okf("%s: extension current (%d event mappings)", adapter.Name, current)
-		} else {
-			r.okf("%s: %d hook entries current", adapter.Name, current)
-		}
+		r.currentEntries(adapter.Name, current)
+	}
+}
+
+func (r *report) currentEntries(name string, count int) {
+	if name == "omp" {
+		r.okf("%s: extension current (%d event mappings)", name, count)
+	} else {
+		r.okf("%s: %d hook entries current", name, count)
 	}
 }
 

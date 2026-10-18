@@ -70,23 +70,29 @@ const (
 	permissionDeny        // exit 0 with permissionDecision: "deny" and the reason
 	decisionBlock         // exit 0 with decision: "block" and the reason, the human's text
 	continueOnce          // exit 0 with decision: "block" and the reason, the agent's next instruction
+	requestDeny           // exit 0 with a PermissionRequest decision denying approval
+	stopProcessing        // exit 0 with continue: false and stopReason
 )
 
 // The event, tool and kind names the code branches on, beyond the tables.
 const (
-	nameOMP               = "omp"
-	eventPreToolUse       = "PreToolUse"
-	eventPostToolUse      = "PostToolUse"
-	eventSessionStart     = "SessionStart"
-	failOpenQuirk         = "hook errors and timeouts fail open, so a broken guardrail never stops the session"
-	eventUserPromptSubmit = "UserPromptSubmit"
-	eventSessionEnd       = "SessionEnd"
-	eventSubagentStart    = "SubagentStart"
-	eventSubagentStop     = "SubagentStop"
-	eventStop             = "Stop"
-	toolAgent             = "Agent"
-	kindShell             = "shell"
-	kindFileEdit          = "file_edit"
+	nameOMP                = "omp"
+	nameCodex              = "codex"
+	eventPreToolUse        = "PreToolUse"
+	eventPermissionRequest = "PermissionRequest"
+	eventPostToolUse       = "PostToolUse"
+	eventSessionStart      = "SessionStart"
+	failOpenQuirk          = "hook errors and timeouts fail open, so a broken guardrail never stops the session"
+	eventUserPromptSubmit  = "UserPromptSubmit"
+	eventSessionEnd        = "SessionEnd"
+	eventSubagentStart     = "SubagentStart"
+	eventSubagentStop      = "SubagentStop"
+	eventStop              = "Stop"
+	eventPreCompact        = "PreCompact"
+	eventInterrupt         = "Interrupt"
+	toolAgent              = "Agent"
+	kindShell              = "shell"
+	kindFileEdit           = "file_edit"
 )
 
 // Errors a payload handrail cannot read at all fails with.
@@ -100,7 +106,7 @@ var (
 // omp uses a native extension transport with its own input normalization.
 //
 // Events that run after the fact or outside a decision point have no denial to
-// give, and Codex cannot fail closed on a prompt before the model request.
+// give.
 // SessionEnd injects nothing: the session is over. On Stop any message to the
 // agent makes it continue, so there only a block reaches it. Child-stop
 // capabilities depend on whether the harness exposes a decision point.
@@ -125,19 +131,22 @@ var adapters = []Adapter{
 		},
 	},
 	{
-		Name: "codex", title: "Codex CLI", dir: ".codex", homeEnv: "CODEX_HOME", file: "hooks.json", patchInShell: true,
+		Name: nameCodex, title: "Codex CLI", dir: ".codex", homeEnv: "CODEX_HOME", file: "hooks.json", patchInShell: true,
 		bypass: codexBypass, conditions: false,
 		aliases:      [][]string{{"apply_patch", "Edit", "Write"}, {"spawn_agent", toolAgent}},
 		agentTypeKey: "agent_type", agentPromptKey: "message", sessionEnv: "CODEX_THREAD_ID",
 		events: []eventCaps{
 			{name: "PreToolUse", deny: permissionDeny, inject: true},
+			{name: eventPermissionRequest, deny: requestDeny},
 			{name: "PostToolUse", inject: true},
-			{name: "UserPromptSubmit", inject: true},
-			{name: "SessionStart", inject: true},
+			{name: "UserPromptSubmit", deny: decisionBlock, inject: true},
+			{name: "SessionStart", deny: stopProcessing, inject: true},
 			{name: "SessionEnd", silent: true},
 			{name: "Stop", deny: continueOnce},
 			{name: "SubagentStart", inject: true},
 			{name: "SubagentStop", deny: continueOnce},
+			{name: eventPreCompact, deny: stopProcessing},
+			{name: eventInterrupt},
 		},
 		quirks: []string{
 			"hook errors and timeouts fail open, so a broken guardrail never stops the session",
@@ -299,6 +308,11 @@ func payloads(adapter Adapter, event string, decoded envelope) []rule.Payload {
 	}
 
 	set(&payload, "prompt", env, "prompt")
+
+	if event == eventPreCompact {
+		set(&payload, "trigger", env, "trigger")
+	}
+
 	setStop(&payload, event, env)
 
 	if !setSubagent(&payload, event, env) {
@@ -658,6 +672,8 @@ func set(payload *rule.Payload, name string, input map[string]any, keys ...strin
 }
 
 type hookOutput struct {
+	Continue           *bool         `json:"continue,omitempty"`
+	StopReason         string        `json:"stopReason,omitempty"`
 	Decision           string        `json:"decision,omitempty"`
 	Reason             string        `json:"reason,omitempty"`
 	SystemMessage      string        `json:"systemMessage,omitempty"`
@@ -668,9 +684,15 @@ type hookSpecific struct {
 	HookEventName string `json:"hookEventName"`
 	// A deny's reason reaches the agent; an ask's is the approval prompt the
 	// human reads, and the agent reads the rule as context.
-	PermissionDecision       string `json:"permissionDecision,omitempty"`
-	PermissionDecisionReason string `json:"permissionDecisionReason,omitempty"`
-	AdditionalContext        string `json:"additionalContext,omitempty"`
+	PermissionDecision       string           `json:"permissionDecision,omitempty"`
+	PermissionDecisionReason string           `json:"permissionDecisionReason,omitempty"`
+	AdditionalContext        string           `json:"additionalContext,omitempty"`
+	Decision                 *requestDecision `json:"decision,omitempty"`
+}
+
+type requestDecision struct {
+	Behavior string `json:"behavior"`
+	Message  string `json:"message"`
 }
 
 // Delivery is one evaluated event as this harness delivers it, the one answer
@@ -773,6 +795,10 @@ func (a Adapter) Deliver(event, message, human string, delivery Delivery, stdout
 	}
 	// SessionEnd has no decision control; stderr on exit 2 is the human channel.
 	if event == eventSessionEnd {
+		if a.Name == nameCodex {
+			return 0
+		}
+
 		_, _ = io.WriteString(stderr, human+"\n")
 
 		return stderrExit
@@ -799,10 +825,13 @@ func (a Adapter) Deliver(event, message, human string, delivery Delivery, stdout
 
 // output is the hook output Deliver writes on stdout.
 func (a Adapter) output(event, message, human string, delivered rule.Outcome) hookOutput {
-	out := hookOutput{Decision: "", Reason: "", SystemMessage: human, HookSpecificOutput: nil}
+	out := hookOutput{
+		Continue: nil, StopReason: "", Decision: "", Reason: "", SystemMessage: human, HookSpecificOutput: nil,
+	}
 	if a.Injects(event) {
 		out.HookSpecificOutput = &hookSpecific{
-			HookEventName: event, PermissionDecision: "", PermissionDecisionReason: "", AdditionalContext: message,
+			HookEventName: event, PermissionDecision: "", PermissionDecisionReason: "",
+			AdditionalContext: message, Decision: nil,
 		}
 	}
 
@@ -812,15 +841,33 @@ func (a Adapter) output(event, message, human string, delivered rule.Outcome) ho
 		out.SystemMessage = ""
 		out.HookSpecificOutput.PermissionDecision = "ask"
 		out.HookSpecificOutput.PermissionDecisionReason = human
-	case delivered == rule.Block && a.caps(event).deny == decisionBlock:
+	case delivered != rule.Block:
+		// A warning keeps only the context and human message set above.
+	case a.caps(event).deny == stopProcessing:
+		out.Continue, out.StopReason = new(false), human
+		out.SystemMessage, out.HookSpecificOutput = "", nil
+	case a.caps(event).deny == requestDeny:
+		out.SystemMessage = ""
+		out.HookSpecificOutput = &hookSpecific{
+			HookEventName: event, PermissionDecision: "", PermissionDecisionReason: "", AdditionalContext: "",
+			Decision: &requestDecision{Behavior: "deny", Message: human},
+		}
+	case a.caps(event).deny == decisionBlock:
 		// The harness shows the reason to the human and erases the prompt, so
 		// no agent is left to hear the rest.
 		out.Decision, out.Reason, out.HookSpecificOutput = "block", human, nil
-	case delivered == rule.Block && a.caps(event).deny == continueOnce:
+	case a.caps(event).deny == continueOnce:
 		out.Decision, out.Reason = "block", message
-	case delivered == rule.Block:
+	default:
+		// Codex displays the denial reason itself. Sending it as a separate
+		// system message repeats the block in the UI.
+		if a.Name == nameCodex {
+			out.SystemMessage = ""
+		}
+
 		out.HookSpecificOutput = &hookSpecific{
-			HookEventName: event, PermissionDecision: "deny", PermissionDecisionReason: message, AdditionalContext: "",
+			HookEventName: event, PermissionDecision: "deny", PermissionDecisionReason: message,
+			AdditionalContext: "", Decision: nil,
 		}
 	}
 
@@ -909,8 +956,6 @@ func (a Adapter) reason(event string, from, to rule.Outcome) string {
 		return a.title + " has no " + event + " event"
 	case from == rule.Ask:
 		return a.title + " cannot ask for approval, so the call proceeds with a warning"
-	case event == eventUserPromptSubmit:
-		return a.title + " cannot fail closed on UserPromptSubmit before the model request (upstream #33630)"
 	}
 
 	return a.title + " has no denial to give on " + event

@@ -49,7 +49,7 @@ One thing a call does, as a canonical field sees it: a command the program runs 
 _Avoid_: value, when one of several readings of the same thing is meant
 
 **Spelling**:
-One way of writing a Candidate: a command's source text or its unquoted form, or one of the names a tool answers to. A Candidate meets a Term when any of its Spellings does.
+One way of writing a Candidate: a command's source text or its normalized form, or one of the names a tool answers to. Command normalization preserves quoting that protects argument boundaries or shell operators. A Candidate meets a Term when any of its Spellings does.
 
 **Wrapper**:
 A program that runs, on this machine, a command named in its own arguments, such as `sudo`, `setsid` or `find -exec`. A rule reads the command through it. A nested shell is a Wrapper whose command is a script.

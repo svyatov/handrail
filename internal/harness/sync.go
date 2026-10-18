@@ -104,7 +104,7 @@ func (a Adapter) Install(bin string) (Installation, error) {
 		event := c.name
 		groups := a.prune(hooks[event], event)
 		// No matcher: the matcher field is optional on every event that has one,
-		// and handrail classifies the tool itself, so one shape fits all eight.
+		// and handrail classifies the tool itself, so one shape fits every event.
 		hooks[event] = append(groups, map[string]any{
 			"hooks": []any{map[string]any{
 				"type":     "command",
@@ -215,7 +215,7 @@ func (a Adapter) Entries() ([]Entry, error) {
 	out := make([]Entry, 0, len(a.events))
 	for _, c := range a.events {
 		event := c.name
-		entry := Entry{Event: event, Binary: "", Narrowed: false}
+		entry := Entry{Event: event, Binary: "", Narrowed: false, Async: false}
 
 		groups, _ := hooks[event].([]any)
 		for _, g := range groups {
@@ -230,6 +230,7 @@ func (a Adapter) Entries() ([]Entry, error) {
 					_, conditional := hook["if"]
 					entry.Binary = bin
 					entry.Narrowed = (a.conditions && conditional) || (matches(event) && narrows(group["matcher"]))
+					entry.Async = a.background(event, hook)
 				}
 			}
 		}
@@ -240,6 +241,14 @@ func (a Adapter) Entries() ([]Entry, error) {
 	return out, nil
 }
 
+// background reports whether Codex will run the hook without control effects.
+// SessionEnd always runs synchronously, even when its handler sets async.
+func (a Adapter) background(event string, hook map[string]any) bool {
+	async, _ := hook["async"].(bool)
+
+	return a.Name == nameCodex && event != eventSessionEnd && async
+}
+
 // Entry is one event's installed hook entry, as doctor found it.
 type Entry struct {
 	Event  string
@@ -247,12 +256,14 @@ type Entry struct {
 	// Narrowed is an entry an if condition or its group's matcher lets fire
 	// on only some calls.
 	Narrowed bool
+	// Async is a Codex background hook, whose output cannot control the event.
+	Async bool
 }
 
 // matches reports whether a group's matcher filters event. Both harnesses
-// ignore one on UserPromptSubmit and Stop.
+// ignore one on UserPromptSubmit and Stop; Codex also ignores it on Interrupt.
 func matches(event string) bool {
-	return event != eventUserPromptSubmit && event != eventStop
+	return event != eventUserPromptSubmit && event != eventStop && event != eventInterrupt
 }
 
 // narrows reports whether a group's matcher lets it fire on only some calls.

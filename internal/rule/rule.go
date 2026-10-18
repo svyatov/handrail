@@ -45,14 +45,17 @@ var (
 // The vocabulary the package spells more than once: the events, kinds, fields
 // and operators a rule names, and the frontmatter keys read in several places.
 const (
-	eventPreToolUse       = "PreToolUse"
-	eventPostToolUse      = "PostToolUse"
-	eventUserPromptSubmit = "UserPromptSubmit"
-	eventSessionStart     = "SessionStart"
-	eventSessionEnd       = "SessionEnd"
-	eventStop             = "Stop"
-	eventSubagentStart    = "SubagentStart"
-	eventSubagentStop     = "SubagentStop"
+	eventPreToolUse        = "PreToolUse"
+	eventPermissionRequest = "PermissionRequest"
+	eventPostToolUse       = "PostToolUse"
+	eventUserPromptSubmit  = "UserPromptSubmit"
+	eventSessionStart      = "SessionStart"
+	eventSessionEnd        = "SessionEnd"
+	eventStop              = "Stop"
+	eventSubagentStart     = "SubagentStart"
+	eventSubagentStop      = "SubagentStop"
+	eventPreCompact        = "PreCompact"
+	eventInterrupt         = "Interrupt"
 
 	kindShell    = "shell"
 	kindFileEdit = "file_edit"
@@ -64,6 +67,7 @@ const (
 	fieldTool         = "tool"
 	fieldPrompt       = "prompt"
 	fieldResponse     = "response"
+	fieldTrigger      = "trigger"
 	fieldAgentType    = "agent_type"
 	fieldURL          = "url"
 	fieldNetworkGrant = "network_grant"
@@ -167,13 +171,13 @@ type Term struct {
 // hook path pays for every byte of startup work, and code the linker lays out
 // has no init to run before main.
 
-// IsEvent reports whether name is one of the eight core events. Which of them a
+// IsEvent reports whether name is a core event. Which of them a
 // harness has, and what a hook can do on each, is its Adapter's Capability
 // matrix.
 func IsEvent(name string) bool {
 	switch name {
-	case eventPreToolUse, eventPostToolUse, eventUserPromptSubmit, eventSessionStart, eventSessionEnd,
-		eventStop, eventSubagentStart, eventSubagentStop:
+	case eventPreToolUse, eventPermissionRequest, eventPostToolUse, eventUserPromptSubmit,
+		eventSessionStart, eventSessionEnd, eventStop, eventSubagentStart, eventSubagentStop, eventPreCompact, eventInterrupt:
 		return true
 	}
 
@@ -196,7 +200,7 @@ func IsField(name string) bool {
 	switch name {
 	case fieldCommand, fieldPath, fieldContent, "removed_content", "writes_empty", "deletes",
 		"server", fieldTool, fieldPrompt, fieldResponse, fieldAgentType, "agent_prompt", "model",
-		fieldURL, "domain", fieldNetworkGrant, "unsandboxed", fieldUnreadable:
+		fieldURL, "domain", fieldNetworkGrant, "unsandboxed", fieldUnreadable, fieldTrigger:
 		return true
 	}
 
@@ -395,12 +399,18 @@ func (r *Rule) checkAgentOnly() error {
 	switch {
 	case r.AgentOnly && r.Action != Warn:
 		return fmt.Errorf("line %d: %w", r.agentOnlyLine, errAgentOnlyNotWarn)
-	case r.AgentOnly && (StopEvent(r.Event) || r.Event == eventSessionEnd):
+	case r.AgentOnly && humanOnly(r.Event):
 		return fmt.Errorf("line %d: %w on %s, where a warn tells only the human",
 			r.agentOnlyLine, errAgentOnlyRefused, r.Event)
 	}
 
 	return nil
+}
+
+// humanOnly reports events where warnings cannot add model context.
+func humanOnly(event string) bool {
+	return StopEvent(event) || event == eventSessionEnd || event == eventPermissionRequest ||
+		event == eventPreCompact || event == eventInterrupt
 }
 
 // StopEvent reports whether event ends a turn, where any message to the agent
@@ -428,7 +438,7 @@ func (r *Rule) checkEvent(kindLine, actionLine int) error {
 	// A block no harness honours is a mislabelled warn. A block one harness
 	// lacks degrades there instead.
 	switch r.Event {
-	case eventPostToolUse, eventSessionStart, eventSessionEnd, eventSubagentStart:
+	case eventPostToolUse, eventSessionEnd, eventSubagentStart, eventInterrupt:
 		if r.Action == Block {
 			return fmt.Errorf("line %d: %w on %s, where no harness can deny", actionLine, errBlockRefused, r.Event)
 		}
@@ -476,13 +486,17 @@ func (r *Rule) checkExamples() error {
 
 // ToolEvent reports whether event is about a tool call, the only events that
 // carry a kind.
-func ToolEvent(event string) bool { return event == eventPreToolUse || event == eventPostToolUse }
+func ToolEvent(event string) bool {
+	return event == eventPreToolUse || event == eventPermissionRequest || event == eventPostToolUse
+}
 
 // carries is the per-event field table: whether a payload of event can hold
 // field on either harness. unreadable is on every event, since any read can
 // fail.
 func carries(event, field string) bool {
 	switch {
+	case field == fieldTrigger:
+		return event == eventPreCompact
 	case field == fieldUnreadable:
 		return true
 	case event == eventUserPromptSubmit:
