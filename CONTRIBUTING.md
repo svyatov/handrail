@@ -48,7 +48,19 @@ mise run test    # go test -race -shuffle=on ./...
 mise run cover   # the same run with coverage, fails under 95%
 mise run lint    # go.mod tidy and verified, go fix -diff, golangci-lint run, then the formatter, doc-path, flag-source and dash checks
 mise run vuln    # govulncheck, fetched by go run at a pinned version
-mise run fuzz    # 30s on each parser fuzz target
+```
+
+PR tests replay all fuzz seeds and committed regression inputs. The Fuzz workflow
+explores new inputs on PRs and pushes to `main` that change a parser package,
+script fixture, Go dependency or toolchain version, or fuzz configuration. It
+also runs every Monday at 06:23 UTC and supports manual dispatch. `mise run fuzz`
+runs all six targets locally for 30 seconds each.
+
+Before merging a parser change, confirm that its Fuzz workflow passes. To run an
+affected target locally, use its command from `mise.toml`, for example:
+
+```bash
+go test -run='^$' -fuzz='^FuzzParse$' -fuzztime=30s ./internal/rule
 ```
 
 A fuzz target that finds a crash writes the input under the package's

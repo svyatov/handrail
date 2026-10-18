@@ -1,6 +1,6 @@
 <!--
 CI already reports the build, the race and shuffle test run, the 95% coverage
-gate, go.mod tidiness, govulncheck, the parser fuzzing, golangci-lint, the formatter, the doc-path check, the dash check, the
+gate, go.mod tidiness, govulncheck, golangci-lint, the formatter, the doc-path check, the dash check, the
 GoReleaser config, and the version pin. Nothing below asks about any of that.
 
 Delete any heading you have nothing to put under. An empty section reads as an
@@ -33,6 +33,11 @@ neither applies.
 Which testdata/script/*.txtar case fails without this change. A new _test.go
 under internal/ instead needs a sentence saying what a process boundary cannot
 produce here. See docs/adr/0009-testing-strategy.md.
+
+If this changes a parser, confirm that the Fuzz workflow passed. If you also ran
+an affected target locally, report its command and result. Active fuzzing runs
+on parser, seed, dependency, toolchain, or fuzz configuration changes, weekly, or
+manually.
 -->
 
 ## Harness surface
