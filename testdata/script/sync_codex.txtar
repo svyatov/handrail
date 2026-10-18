@@ -3,11 +3,12 @@
 exec handrail trust
 exec handrail sync
 stdout 'claude: wrote 8 hook entries'
-stdout 'codex: wrote 8 hook entries to .*/home/.codex/hooks.json'
+stdout 'codex: wrote 9 hook entries to .*/home/.codex/hooks.json'
 
 # Codex reads a Claude-shaped hooks file, so the entry shape is the same one:
 # one per canonical event, naming the binary by absolute path.
 grep '"command": "/[^"]* hook codex PreToolUse"' home/.codex/hooks.json
+grep '"command": "/[^"]* hook codex PermissionRequest"' home/.codex/hooks.json
 grep '"command": "/[^"]* hook codex PostToolUse"' home/.codex/hooks.json
 grep '"command": "/[^"]* hook codex UserPromptSubmit"' home/.codex/hooks.json
 grep '"command": "/[^"]* hook codex SessionStart"' home/.codex/hooks.json
@@ -56,7 +57,7 @@ stdout 'codex: SessionEnd cannot tell the human: Codex CLI shows the user no hoo
 env CODEX_HOME=$WORK/elsewhere/codex
 mkdir $WORK/elsewhere/codex
 exec handrail sync --harness codex
-stdout 'codex: wrote 8 hook entries to .*/elsewhere/codex/hooks.json'
+stdout 'codex: wrote 9 hook entries to .*/elsewhere/codex/hooks.json'
 exists elsewhere/codex/hooks.json
 env CODEX_HOME=
 
@@ -64,13 +65,13 @@ env CODEX_HOME=
 # trust prompt fires once and never again.
 cp home/.codex/hooks.json first.json
 exec handrail sync
-stdout 'codex: 8 hook entries already current'
+stdout 'codex: 9 hook entries already current'
 cmp home/.codex/hooks.json first.json
 grep -count=1 'hook codex PreToolUse' home/.codex/hooks.json
 
 # --harness scopes to either one.
 exec handrail sync --harness codex
-stdout 'codex: 8 hook entries already current'
+stdout 'codex: 9 hook entries already current'
 ! stdout 'claude:'
 exec handrail sync --harness claude
 stdout 'claude: 8 hook entries already current'

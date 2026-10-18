@@ -70,23 +70,25 @@ const (
 	permissionDeny        // exit 0 with permissionDecision: "deny" and the reason
 	decisionBlock         // exit 0 with decision: "block" and the reason, the human's text
 	continueOnce          // exit 0 with decision: "block" and the reason, the agent's next instruction
+	requestDeny           // exit 0 with a PermissionRequest decision denying approval
 )
 
 // The event, tool and kind names the code branches on, beyond the tables.
 const (
-	nameOMP               = "omp"
-	eventPreToolUse       = "PreToolUse"
-	eventPostToolUse      = "PostToolUse"
-	eventSessionStart     = "SessionStart"
-	failOpenQuirk         = "hook errors and timeouts fail open, so a broken guardrail never stops the session"
-	eventUserPromptSubmit = "UserPromptSubmit"
-	eventSessionEnd       = "SessionEnd"
-	eventSubagentStart    = "SubagentStart"
-	eventSubagentStop     = "SubagentStop"
-	eventStop             = "Stop"
-	toolAgent             = "Agent"
-	kindShell             = "shell"
-	kindFileEdit          = "file_edit"
+	nameOMP                = "omp"
+	eventPreToolUse        = "PreToolUse"
+	eventPermissionRequest = "PermissionRequest"
+	eventPostToolUse       = "PostToolUse"
+	eventSessionStart      = "SessionStart"
+	failOpenQuirk          = "hook errors and timeouts fail open, so a broken guardrail never stops the session"
+	eventUserPromptSubmit  = "UserPromptSubmit"
+	eventSessionEnd        = "SessionEnd"
+	eventSubagentStart     = "SubagentStart"
+	eventSubagentStop      = "SubagentStop"
+	eventStop              = "Stop"
+	toolAgent              = "Agent"
+	kindShell              = "shell"
+	kindFileEdit           = "file_edit"
 )
 
 // Errors a payload handrail cannot read at all fails with.
@@ -131,6 +133,7 @@ var adapters = []Adapter{
 		agentTypeKey: "agent_type", agentPromptKey: "message", sessionEnv: "CODEX_THREAD_ID",
 		events: []eventCaps{
 			{name: "PreToolUse", deny: permissionDeny, inject: true},
+			{name: eventPermissionRequest, deny: requestDeny},
 			{name: "PostToolUse", inject: true},
 			{name: "UserPromptSubmit", deny: decisionBlock, inject: true},
 			{name: "SessionStart", inject: true},
@@ -668,9 +671,15 @@ type hookSpecific struct {
 	HookEventName string `json:"hookEventName"`
 	// A deny's reason reaches the agent; an ask's is the approval prompt the
 	// human reads, and the agent reads the rule as context.
-	PermissionDecision       string `json:"permissionDecision,omitempty"`
-	PermissionDecisionReason string `json:"permissionDecisionReason,omitempty"`
-	AdditionalContext        string `json:"additionalContext,omitempty"`
+	PermissionDecision       string           `json:"permissionDecision,omitempty"`
+	PermissionDecisionReason string           `json:"permissionDecisionReason,omitempty"`
+	AdditionalContext        string           `json:"additionalContext,omitempty"`
+	Decision                 *requestDecision `json:"decision,omitempty"`
+}
+
+type requestDecision struct {
+	Behavior string `json:"behavior"`
+	Message  string `json:"message"`
 }
 
 // Delivery is one evaluated event as this harness delivers it, the one answer
@@ -802,7 +811,8 @@ func (a Adapter) output(event, message, human string, delivered rule.Outcome) ho
 	out := hookOutput{Decision: "", Reason: "", SystemMessage: human, HookSpecificOutput: nil}
 	if a.Injects(event) {
 		out.HookSpecificOutput = &hookSpecific{
-			HookEventName: event, PermissionDecision: "", PermissionDecisionReason: "", AdditionalContext: message,
+			HookEventName: event, PermissionDecision: "", PermissionDecisionReason: "",
+			AdditionalContext: message, Decision: nil,
 		}
 	}
 
@@ -812,15 +822,24 @@ func (a Adapter) output(event, message, human string, delivered rule.Outcome) ho
 		out.SystemMessage = ""
 		out.HookSpecificOutput.PermissionDecision = "ask"
 		out.HookSpecificOutput.PermissionDecisionReason = human
-	case delivered == rule.Block && a.caps(event).deny == decisionBlock:
+	case delivered != rule.Block:
+		// A warning keeps only the context and human message set above.
+	case a.caps(event).deny == requestDeny:
+		out.SystemMessage = ""
+		out.HookSpecificOutput = &hookSpecific{
+			HookEventName: event, PermissionDecision: "", PermissionDecisionReason: "", AdditionalContext: "",
+			Decision: &requestDecision{Behavior: "deny", Message: message},
+		}
+	case a.caps(event).deny == decisionBlock:
 		// The harness shows the reason to the human and erases the prompt, so
 		// no agent is left to hear the rest.
 		out.Decision, out.Reason, out.HookSpecificOutput = "block", human, nil
-	case delivered == rule.Block && a.caps(event).deny == continueOnce:
+	case a.caps(event).deny == continueOnce:
 		out.Decision, out.Reason = "block", message
-	case delivered == rule.Block:
+	default:
 		out.HookSpecificOutput = &hookSpecific{
-			HookEventName: event, PermissionDecision: "deny", PermissionDecisionReason: message, AdditionalContext: "",
+			HookEventName: event, PermissionDecision: "deny", PermissionDecisionReason: message,
+			AdditionalContext: "", Decision: nil,
 		}
 	}
 

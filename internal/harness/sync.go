@@ -104,7 +104,7 @@ func (a Adapter) Install(bin string) (Installation, error) {
 		event := c.name
 		groups := a.prune(hooks[event], event)
 		// No matcher: the matcher field is optional on every event that has one,
-		// and handrail classifies the tool itself, so one shape fits all eight.
+		// and handrail classifies the tool itself, so one shape fits every event.
 		hooks[event] = append(groups, map[string]any{
 			"hooks": []any{map[string]any{
 				"type":     "command",

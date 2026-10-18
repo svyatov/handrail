@@ -107,7 +107,9 @@ You asked for network or filesystem access beyond the sandbox. Say which host or
 path you need and why before I approve it.
 ```
 
-It fires only on Claude Code: Codex never shows a hook its escalation. A user who
+It fires only on Claude Code: Codex omits these sandbox fields from hook inputs.
+Use a Codex `PermissionRequest` rule to inspect a pending approval instead;
+that event does not imply that the command will run unsandboxed. A user who
 wants disable-sandbox refused outright can set Claude Code's own
 `allowUnsandboxedCommands: false`. For "ask unless every requested host is in my
 list", see "Many values" below.

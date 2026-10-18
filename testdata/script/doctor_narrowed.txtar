@@ -21,7 +21,7 @@ exec handrail sync
 exec handrail doctor
 ! stdout 'entry is narrowed'
 stdout '^ok +claude: 8 hook entries current$'
-stdout '^ok +codex: 8 hook entries current$'
+stdout '^ok +codex: 9 hook entries current$'
 exec cat home/.claude/settings.json
 stdout 'my-own\.sh'
 

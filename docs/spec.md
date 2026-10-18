@@ -15,6 +15,7 @@ Canonical event names are Claude Code's, verbatim. An event is in the model when
 | Event | Fires |
 |---|---|
 | `PreToolUse` | Before a tool call. Can block or ask. |
+| `PermissionRequest` | Before Codex asks for approval. Can deny the request or warn the human; an unmatched request follows normal approval. Other Adapters skip it. See ADR [0026](adr/0026-codex-approval-requests.md). |
 | `PostToolUse` | After a tool call succeeds. Warn only. |
 | `UserPromptSubmit` | When the user submits a prompt. |
 | `SessionStart` | Session begins, resumes, or is compacted. Warn only. |
@@ -181,9 +182,10 @@ Hardcoded in Go per Adapter, next to its translation knowledge. Per-event: exist
 
 | Capability | Claude Code (`claude`) | Codex CLI (`codex`) |
 |---|---|---|
-| Model events | All eight | All eight |
+| Model events | Eight modeled events | All nine |
 | Block on PreToolUse | Yes: exit 0 with `permissionDecision: "deny"`, the reason in `permissionDecisionReason`, the human text in `systemMessage`; where that JSON cannot be written, exit 2 with the reason on stderr | Yes: the same JSON deny |
-| Ask on PreToolUse | Yes (`permissionDecision: "ask"`). Prompts in every permission mode, `bypassPermissions` and `dontAsk` included; a settings `deny` rule still wins. Headless `-p` with no prompt tool resolves it as a deny, with the reason to the model; the SDK and `--permission-prompt-tool` hand it to the host. Another PermissionRequest hook may answer it | No. Codex rejects `ask` as unsupported and fails open, running the call and dropping `additionalContext`, so the Adapter never emits it and an `ask` rule degrades to `warn` (section 4, Degradation). No hook can reach Codex's approval flow |
+| Ask on PreToolUse | Yes (`permissionDecision: "ask"`). Prompts in every permission mode, `bypassPermissions` and `dontAsk` included; a settings `deny` rule still wins. Headless `-p` with no prompt tool resolves it as a deny, with the reason to the model; the SDK and `--permission-prompt-tool` hand it to the host. Another PermissionRequest hook may answer it | No. Codex rejects `ask` as unsupported and fails open, running the call and dropping `additionalContext`, so the Adapter never emits it and an `ask` rule degrades to `warn` (section 4, Degradation). `PermissionRequest` can deny an existing approval request, but cannot create one |
+| Block on PermissionRequest | Not adapted; rules skip | Yes: `hookSpecificOutput.decision` with `behavior: "deny"` and `message`; warnings use only `systemMessage`. Handrail never returns `allow`. |
 | Block on UserPromptSubmit | Yes: exit 0 with `decision: "block"`, `reason` and `systemMessage`; where that JSON cannot be written, exit 2 with the reason on stderr | Yes: the same JSON block stops processing before the model request; exit 2 with a non-empty reason on stderr also blocks. Verified against Codex 0.163.0 and the [hooks reference](https://learn.chatgpt.com/docs/hooks#userpromptsubmit) |
 | Block on PostToolUse, SessionStart, SessionEnd | No: the tool has already run, or the event has no decision control | No |
 | Continue on Stop and SubagentStop | Yes, exit 0 with `decision: "block"` and the reason. Caps at 8 consecutive blocks (`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`) | Yes, `block` with the reason as a new user prompt. No cap |
@@ -192,7 +194,7 @@ Hardcoded in Go per Adapter, next to its translation knowledge. Per-event: exist
 | Transcript access | Yes (`transcript_path`, written asynchronously, tail may lag) | Yes (`transcript_path`) |
 | Fail-open on hook error | Yes (documented) | Yes |
 | Hooks fire on network tools | Yes (`WebFetch`, `WebSearch`; `Monitor` with `ws`) | Hosted `web_search`: no. `web.run`: yes, as `webrun`, on by default for responses-lite models |
-| Hooks see the agent ask for more sandbox | Yes (`allowed_domains`, `dangerouslyDisableSandbox`) | No: `sandbox_permissions` is not in `exec_command`'s `PreToolUse` input |
+| Hooks see the agent ask for more sandbox | Yes (`allowed_domains`, `dangerouslyDisableSandbox`) | `PermissionRequest` exposes a pending approval and its command, but `sandbox_permissions` and requested grant details are absent; no `unsandboxed` or `network_grant` is synthesized |
 | Tool names on the wire | `Bash`, `PowerShell`, `Edit`, `Write`, `Read`, `NotebookEdit`, `Agent` (formerly `Task`), `WebFetch`, `WebSearch`, `Monitor`, `mcp__<server>__<tool>`. `PowerShell` is a `shell` kind carrying its command in `tool_input.command` like `Bash`; it is opt-in on Linux and macOS via `CLAUDE_CODE_USE_POWERSHELL_TOOL`. `NotebookEdit` carries `tool_input.notebook_path` and `tool_input.new_source` rather than `file_path` and `content`, and the Adapter's key fallthrough covers it. `Monitor` takes either `command` or `ws: {url}`. `MultiEdit` is no longer a registered tool | `Bash` for shell (`exec_command`, and `write_stdin` on PostToolUse); `apply_patch` for every file edit, whose whole edit rides in `tool_input.command`, also matched as `Edit` and `Write`; `spawn_agent` under multi-agent v1, also matched as `Agent`, and `<namespace>spawn_agent` under v2, `collaborationspawn_agent` by default, with no alias, so `classify` matches the `spawn_agent` suffix; `webrun`; `mcp__<server>__<tool>`. v2 is on for any model whose catalog entry selects it, whatever the feature flag says |
 | Config sync writes | `~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR/settings.json` where that is set | `~/.codex/hooks.json`, or `$CODEX_HOME/hooks.json` where that is set |
 | Known bypasses | `disableAllHooks` (which any project's committed settings file can set, beating a user-level `false`), `--bare`, `--safe-mode`, `allowManagedHooksOnly`, cloud sessions, any PermissionRequest hook, which can answer an ask | `[features] hooks = false`, an enterprise `allow_managed_hooks_only` requirement, cloud sessions. `--dangerously-bypass-hook-trust` skips the trust review rather than the hooks |

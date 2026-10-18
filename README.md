@@ -112,7 +112,7 @@ The filename without `.md` is the rule's name. The body is the message, static m
 
 | Key | Values |
 |---|---|
-| `event` | Required: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `SessionEnd`, `Stop`, `SubagentStart`, or `SubagentStop`. |
+| `event` | Required: `PreToolUse`, `PermissionRequest`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `SessionEnd`, `Stop`, `SubagentStart`, or `SubagentStop`. |
 | `kind` | Tool events only: `shell`, `file_edit`, `file_read`, `mcp`, `agent`, `network`, or `other`. Omit it to match every kind. |
 | `action` | `warn`, the default, gives the agent the message and you one line. `ask` puts the call to you, on `PreToolUse` only. `block` refuses the call, and on `Stop` sends the agent back to work once. |
 | `conditions` | A list that must all hold. Each entry names one field and one operator. An `any:` entry holds a list where one must hold. |
