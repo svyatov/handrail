@@ -19,6 +19,10 @@ lefthook = "2.2.2"
 # GoReleaser shells out to syft for the SBOM beside each archive.
 syft = "1.54.1"
 
+[tasks.setup]
+description = "Install the repository's Git hooks"
+run = "mise x -- lefthook install"
+
 [tasks.build]
 description = "The release build, so a broken one fails here rather than on a tag"
 env = { CGO_ENABLED = "0" }

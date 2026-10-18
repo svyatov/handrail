@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://json.schemastore.org/lefthook.json
 # What CI runs, before it leaves the machine. Install once with
-# `lefthook install`; `mise install` puts lefthook on the PATH.
+# `mise run setup`; `mise install` puts lefthook on the PATH.
 
 pre-commit:
   # In order, so lint sees the files fmt just fixed.
@@ -29,7 +29,7 @@ commit-msg:
       run: |
         head -1 {1} | grep -qE '^(feat|fix|docs|chore|refactor|test|ci|build)(\(.+\))?!?: .+' || { echo "Use Conventional Commits: type(scope): description"; exit 1; }
 
-# The suite takes half a minute, too long to wait on at every commit. -short skips
+# The coverage suite runs before each push. -short skips
 # the cold-start test, whose 20ms median a machine busy with other work cannot
 # hold; the ubuntu CI job enforces it.
 pre-push:
@@ -39,5 +39,7 @@ pre-push:
     - name: vuln
       glob: "go.{mod,sum}"
       run: mise run vuln
-    - name: test
-      run: SHORT=-short mise run test
+    - name: build
+      run: mise run build
+    - name: cover
+      run: SHORT=-short mise run cover
