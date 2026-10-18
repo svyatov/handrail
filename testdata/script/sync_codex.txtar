@@ -24,9 +24,8 @@ grep 'my-own.sh' home/.codex/hooks.json
 ! exists .codex
 ! exists .claude
 
-# The Codex caveats are reported where the degradations are: a prompt block
-# cannot fail closed there, so it degrades rather than pretending to have held.
-stdout 'codex: block degraded to warn for no-yolo: Codex CLI cannot fail closed on UserPromptSubmit before the model request \(upstream #33630\)'
+# Codex enforces prompt blocks, so sync reports no degradation for this rule.
+! stdout 'codex: block degraded to warn for no-yolo'
 stdout 'codex: non-managed hooks need a one-time trust review, and --dangerously-bypass-hook-trust skips that review rather than the hooks'
 stdout 'codex: an enterprise allow_managed_hooks_only requirement ignores user-level hooks'
 stdout 'codex: hook errors and timeouts fail open'

@@ -100,7 +100,7 @@ var (
 // omp uses a native extension transport with its own input normalization.
 //
 // Events that run after the fact or outside a decision point have no denial to
-// give, and Codex cannot fail closed on a prompt before the model request.
+// give.
 // SessionEnd injects nothing: the session is over. On Stop any message to the
 // agent makes it continue, so there only a block reaches it. Child-stop
 // capabilities depend on whether the harness exposes a decision point.
@@ -132,7 +132,7 @@ var adapters = []Adapter{
 		events: []eventCaps{
 			{name: "PreToolUse", deny: permissionDeny, inject: true},
 			{name: "PostToolUse", inject: true},
-			{name: "UserPromptSubmit", inject: true},
+			{name: "UserPromptSubmit", deny: decisionBlock, inject: true},
 			{name: "SessionStart", inject: true},
 			{name: "SessionEnd", silent: true},
 			{name: "Stop", deny: continueOnce},
@@ -909,8 +909,6 @@ func (a Adapter) reason(event string, from, to rule.Outcome) string {
 		return a.title + " has no " + event + " event"
 	case from == rule.Ask:
 		return a.title + " cannot ask for approval, so the call proceeds with a warning"
-	case event == eventUserPromptSubmit:
-		return a.title + " cannot fail closed on UserPromptSubmit before the model request (upstream #33630)"
 	}
 
 	return a.title + " has no denial to give on " + event
