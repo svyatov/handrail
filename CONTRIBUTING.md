@@ -23,7 +23,7 @@ flag against its source.
 
 ## Setup
 
-You need [Go](https://go.dev/dl/) at the version in `go.mod`, currently 1.27.1,
+You need [Go](https://go.dev/dl/) at the version in `go.mod`, currently 1.27.2,
 and [mise](https://mise.jdx.dev/getting-started.html). Then:
 
 ```bash
