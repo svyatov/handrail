@@ -13,7 +13,7 @@ stdout '^ok +handrail dev at /'
 stdout '^ok +claude: config at .*/home/\.claude/settings\.json$'
 stdout '^ok +claude: 8 hook entries current$'
 stdout '^ok +codex: config at .*/home/\.codex/hooks\.json$'
-stdout '^ok +codex: 9 hook entries current$'
+stdout '^ok +codex: 11 hook entries current$'
 
 # Degradations and fail-open quirks are reprintable here, not only at sync time.
 ! stdout 'codex: block degraded to warn for late'
@@ -60,7 +60,7 @@ mv $WORK/home/.codex $WORK/home/.codex-gone
 exec handrail doctor
 stdout '^note +codex: not installed$'
 ! stdout 'problem'
-! stdout 'codex: 9 hook entries'
+! stdout 'codex: 11 hook entries'
 
 # Outside a git working tree there is nothing to exclude, so nothing is wrong.
 cd $WORK

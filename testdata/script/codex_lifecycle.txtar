@@ -1,0 +1,120 @@
+# Compaction can be stopped before history changes. It cannot inject context.
+exec handrail check
+stdin compact.json
+exec handrail hook codex PreCompact
+stdout '"continue": false'
+stdout '"stopReason": "handrail block: preserve-context'
+! stdout '"hookSpecificOutput"'
+! stdout '"decision"'
+! stderr .
+
+stdin automatic.json
+exec handrail hook codex PreCompact
+stdout '"systemMessage": "handrail warn: automatic-compaction'
+! stdout '"continue"'
+! stdout '"hookSpecificOutput"'
+
+! exec handrail test PreCompact --harness codex --field trigger=manual --json
+stdout '"outcome": "block"'
+stdout '"trigger": \['
+stdout '"manual"'
+exec handrail test PreCompact --harness claude --field trigger=manual --json
+stdout '"outcome": "allow"'
+
+# A malformed trigger is declared unreadable rather than invented.
+stdin malformed.json
+exec handrail test PreCompact --harness codex --stdin --json
+stdout '"unreadable": \['
+stdout '"trigger"'
+
+# SessionStart can halt the initial or post-compaction model request.
+stdin start.json
+exec handrail hook codex SessionStart
+stdout '"continue": false'
+stdout '"stopReason": "handrail block: hold-session'
+! stdout '"hookSpecificOutput"'
+
+# Interrupt warnings reach the human and never restart the stopped turn.
+stdin interrupt.json
+exec handrail hook codex Interrupt
+stdout '"systemMessage": "handrail warn: incomplete-work'
+! stdout '"continue"'
+! stdout '"decision"'
+! stdout '"hookSpecificOutput"'
+
+# Codex discards SessionEnd output; a warning is not a hook failure.
+stdin end.json
+exec handrail hook codex SessionEnd
+! stdout .
+! stderr .
+
+# An interrupt cannot be blocked and neither new event has model context.
+cp block-interrupt.md home/.config/handrail/invalid.md
+! exec handrail check
+stderr 'block is refused on Interrupt'
+cp agent-only.md home/.config/handrail/invalid.md
+! exec handrail check
+stderr 'agent_only is refused on PreCompact'
+
+-- compact.json --
+{"trigger":"manual"}
+-- automatic.json --
+{"trigger":"auto"}
+-- malformed.json --
+{"trigger":3}
+-- start.json --
+{"source":"compact"}
+-- interrupt.json --
+{"hook_event_name":"Interrupt"}
+-- end.json --
+{"reason":"other"}
+-- home/.config/handrail/preserve-context.md --
+---
+event: PreCompact
+action: block
+conditions:
+  - field: trigger
+    equals: manual
+examples:
+  match:
+    - trigger: manual
+  no_match:
+    - trigger: auto
+---
+Save the work before compacting.
+-- home/.config/handrail/automatic-compaction.md --
+---
+event: PreCompact
+conditions:
+  - field: trigger
+    equals: auto
+---
+History is about to be compacted automatically.
+-- home/.config/handrail/hold-session.md --
+---
+event: SessionStart
+action: block
+---
+Finish the repository setup before starting a model turn.
+-- home/.config/handrail/incomplete-work.md --
+---
+event: Interrupt
+---
+Interrupted work may be incomplete.
+-- home/.config/handrail/session-ended.md --
+---
+event: SessionEnd
+---
+The session ended.
+-- block-interrupt.md --
+---
+event: Interrupt
+action: block
+---
+This cannot prevent an interruption.
+-- agent-only.md --
+---
+event: PreCompact
+agent_only: true
+---
+This event has no model context.

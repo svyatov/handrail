@@ -54,6 +54,8 @@ const (
 	eventStop              = "Stop"
 	eventSubagentStart     = "SubagentStart"
 	eventSubagentStop      = "SubagentStop"
+	eventPreCompact        = "PreCompact"
+	eventInterrupt         = "Interrupt"
 
 	kindShell    = "shell"
 	kindFileEdit = "file_edit"
@@ -65,6 +67,7 @@ const (
 	fieldTool         = "tool"
 	fieldPrompt       = "prompt"
 	fieldResponse     = "response"
+	fieldTrigger      = "trigger"
 	fieldAgentType    = "agent_type"
 	fieldURL          = "url"
 	fieldNetworkGrant = "network_grant"
@@ -174,7 +177,7 @@ type Term struct {
 func IsEvent(name string) bool {
 	switch name {
 	case eventPreToolUse, eventPermissionRequest, eventPostToolUse, eventUserPromptSubmit,
-		eventSessionStart, eventSessionEnd, eventStop, eventSubagentStart, eventSubagentStop:
+		eventSessionStart, eventSessionEnd, eventStop, eventSubagentStart, eventSubagentStop, eventPreCompact, eventInterrupt:
 		return true
 	}
 
@@ -197,7 +200,7 @@ func IsField(name string) bool {
 	switch name {
 	case fieldCommand, fieldPath, fieldContent, "removed_content", "writes_empty", "deletes",
 		"server", fieldTool, fieldPrompt, fieldResponse, fieldAgentType, "agent_prompt", "model",
-		fieldURL, "domain", fieldNetworkGrant, "unsandboxed", fieldUnreadable:
+		fieldURL, "domain", fieldNetworkGrant, "unsandboxed", fieldUnreadable, fieldTrigger:
 		return true
 	}
 
@@ -396,12 +399,18 @@ func (r *Rule) checkAgentOnly() error {
 	switch {
 	case r.AgentOnly && r.Action != Warn:
 		return fmt.Errorf("line %d: %w", r.agentOnlyLine, errAgentOnlyNotWarn)
-	case r.AgentOnly && (StopEvent(r.Event) || r.Event == eventSessionEnd || r.Event == eventPermissionRequest):
+	case r.AgentOnly && humanOnly(r.Event):
 		return fmt.Errorf("line %d: %w on %s, where a warn tells only the human",
 			r.agentOnlyLine, errAgentOnlyRefused, r.Event)
 	}
 
 	return nil
+}
+
+// humanOnly reports events where warnings cannot add model context.
+func humanOnly(event string) bool {
+	return StopEvent(event) || event == eventSessionEnd || event == eventPermissionRequest ||
+		event == eventPreCompact || event == eventInterrupt
 }
 
 // StopEvent reports whether event ends a turn, where any message to the agent
@@ -429,7 +438,7 @@ func (r *Rule) checkEvent(kindLine, actionLine int) error {
 	// A block no harness honours is a mislabelled warn. A block one harness
 	// lacks degrades there instead.
 	switch r.Event {
-	case eventPostToolUse, eventSessionStart, eventSessionEnd, eventSubagentStart:
+	case eventPostToolUse, eventSessionEnd, eventSubagentStart, eventInterrupt:
 		if r.Action == Block {
 			return fmt.Errorf("line %d: %w on %s, where no harness can deny", actionLine, errBlockRefused, r.Event)
 		}
@@ -486,6 +495,8 @@ func ToolEvent(event string) bool {
 // fail.
 func carries(event, field string) bool {
 	switch {
+	case field == fieldTrigger:
+		return event == eventPreCompact
 	case field == fieldUnreadable:
 		return true
 	case event == eventUserPromptSubmit:

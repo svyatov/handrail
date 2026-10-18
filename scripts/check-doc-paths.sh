@@ -34,8 +34,8 @@ done
 # transcripts. Omp is a binary-managed extension, not an analyze-skill package,
 # and its profile-aware directory cannot be expressed by this shell fallback.
 adapters=internal/harness/harness.go
-pairs=$(sed -nE '/Name: "(claude|codex)",/s/.*dir: "([^"]*)", homeEnv: "([^"]*)".*/\1 \2/p' "$adapters")
-names=$(sed -nE 's/.*Name: "(claude|codex)",.*/\1/p' "$adapters" | grep -c .)
+pairs=$(sed -nE '/Name: ("(claude|codex)"|nameCodex),/s/.*dir: "([^"]*)", homeEnv: "([^"]*)".*/\1 \2/p' "$adapters")
+names=$(sed -nE '/Name: ("(claude|codex)"|nameCodex),/p' "$adapters" | grep -c .)
 found=$(echo "$pairs" | grep -c .)
 # A reformat must not silently drop a plugin adapter from this check.
 [ "$names" -eq 2 ] && [ "$found" -eq "$names" ] || {

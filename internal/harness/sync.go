@@ -250,9 +250,9 @@ type Entry struct {
 }
 
 // matches reports whether a group's matcher filters event. Both harnesses
-// ignore one on UserPromptSubmit and Stop.
+// ignore one on UserPromptSubmit and Stop; Codex also ignores it on Interrupt.
 func matches(event string) bool {
-	return event != eventUserPromptSubmit && event != eventStop
+	return event != eventUserPromptSubmit && event != eventStop && event != eventInterrupt
 }
 
 // narrows reports whether a group's matcher lets it fire on only some calls.

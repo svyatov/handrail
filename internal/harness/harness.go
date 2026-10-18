@@ -71,11 +71,13 @@ const (
 	decisionBlock         // exit 0 with decision: "block" and the reason, the human's text
 	continueOnce          // exit 0 with decision: "block" and the reason, the agent's next instruction
 	requestDeny           // exit 0 with a PermissionRequest decision denying approval
+	stopProcessing        // exit 0 with continue: false and stopReason
 )
 
 // The event, tool and kind names the code branches on, beyond the tables.
 const (
 	nameOMP                = "omp"
+	nameCodex              = "codex"
 	eventPreToolUse        = "PreToolUse"
 	eventPermissionRequest = "PermissionRequest"
 	eventPostToolUse       = "PostToolUse"
@@ -86,6 +88,8 @@ const (
 	eventSubagentStart     = "SubagentStart"
 	eventSubagentStop      = "SubagentStop"
 	eventStop              = "Stop"
+	eventPreCompact        = "PreCompact"
+	eventInterrupt         = "Interrupt"
 	toolAgent              = "Agent"
 	kindShell              = "shell"
 	kindFileEdit           = "file_edit"
@@ -127,7 +131,7 @@ var adapters = []Adapter{
 		},
 	},
 	{
-		Name: "codex", title: "Codex CLI", dir: ".codex", homeEnv: "CODEX_HOME", file: "hooks.json", patchInShell: true,
+		Name: nameCodex, title: "Codex CLI", dir: ".codex", homeEnv: "CODEX_HOME", file: "hooks.json", patchInShell: true,
 		bypass: codexBypass, conditions: false,
 		aliases:      [][]string{{"apply_patch", "Edit", "Write"}, {"spawn_agent", toolAgent}},
 		agentTypeKey: "agent_type", agentPromptKey: "message", sessionEnv: "CODEX_THREAD_ID",
@@ -136,11 +140,13 @@ var adapters = []Adapter{
 			{name: eventPermissionRequest, deny: requestDeny},
 			{name: "PostToolUse", inject: true},
 			{name: "UserPromptSubmit", deny: decisionBlock, inject: true},
-			{name: "SessionStart", inject: true},
+			{name: "SessionStart", deny: stopProcessing, inject: true},
 			{name: "SessionEnd", silent: true},
 			{name: "Stop", deny: continueOnce},
 			{name: "SubagentStart", inject: true},
 			{name: "SubagentStop", deny: continueOnce},
+			{name: eventPreCompact, deny: stopProcessing},
+			{name: eventInterrupt},
 		},
 		quirks: []string{
 			"hook errors and timeouts fail open, so a broken guardrail never stops the session",
@@ -302,6 +308,11 @@ func payloads(adapter Adapter, event string, decoded envelope) []rule.Payload {
 	}
 
 	set(&payload, "prompt", env, "prompt")
+
+	if event == eventPreCompact {
+		set(&payload, "trigger", env, "trigger")
+	}
+
 	setStop(&payload, event, env)
 
 	if !setSubagent(&payload, event, env) {
@@ -661,6 +672,8 @@ func set(payload *rule.Payload, name string, input map[string]any, keys ...strin
 }
 
 type hookOutput struct {
+	Continue           *bool         `json:"continue,omitempty"`
+	StopReason         string        `json:"stopReason,omitempty"`
 	Decision           string        `json:"decision,omitempty"`
 	Reason             string        `json:"reason,omitempty"`
 	SystemMessage      string        `json:"systemMessage,omitempty"`
@@ -782,6 +795,10 @@ func (a Adapter) Deliver(event, message, human string, delivery Delivery, stdout
 	}
 	// SessionEnd has no decision control; stderr on exit 2 is the human channel.
 	if event == eventSessionEnd {
+		if a.Name == nameCodex {
+			return 0
+		}
+
 		_, _ = io.WriteString(stderr, human+"\n")
 
 		return stderrExit
@@ -808,7 +825,9 @@ func (a Adapter) Deliver(event, message, human string, delivery Delivery, stdout
 
 // output is the hook output Deliver writes on stdout.
 func (a Adapter) output(event, message, human string, delivered rule.Outcome) hookOutput {
-	out := hookOutput{Decision: "", Reason: "", SystemMessage: human, HookSpecificOutput: nil}
+	out := hookOutput{
+		Continue: nil, StopReason: "", Decision: "", Reason: "", SystemMessage: human, HookSpecificOutput: nil,
+	}
 	if a.Injects(event) {
 		out.HookSpecificOutput = &hookSpecific{
 			HookEventName: event, PermissionDecision: "", PermissionDecisionReason: "",
@@ -824,6 +843,9 @@ func (a Adapter) output(event, message, human string, delivered rule.Outcome) ho
 		out.HookSpecificOutput.PermissionDecisionReason = human
 	case delivered != rule.Block:
 		// A warning keeps only the context and human message set above.
+	case a.caps(event).deny == stopProcessing:
+		out.Continue, out.StopReason = new(false), human
+		out.SystemMessage, out.HookSpecificOutput = "", nil
 	case a.caps(event).deny == requestDeny:
 		out.SystemMessage = ""
 		out.HookSpecificOutput = &hookSpecific{

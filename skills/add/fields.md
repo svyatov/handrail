@@ -60,6 +60,12 @@ conditions:
 with the message "Run the tests before you finish." A block here continues the
 agent once, so it is a nudge, never a gate.
 
+## `trigger`
+
+Codex's `PreCompact` trigger, `manual` or `auto`. It is available only on that
+event. A block stops compaction before it changes history; a warning tells only
+the human. `SessionStart` already delivers standing context after compaction.
+
 ## `url` and `domain`
 
 `url` is the destination a call names; `domain` is its host, parsed strictly.
