@@ -164,6 +164,11 @@ The compatibility baseline is Codex CLI 0.163.0. After updating handrail, run
 `handrail sync --harness codex`, restart Codex, and review new or changed entries
 in `/hooks`. Installing a plugin does not automatically trust its hooks.
 
+Tool rules cover intercepted local calls, including calls nested in code mode.
+Hosted tools, specialized paths that skip hooks, and later input sent through
+`write_stdin` are outside that coverage. Keep enforcement hooks synchronous;
+`handrail doctor` reports entries changed to run in the background.
+
 The same plugin, from the same marketplace:
 
 ```bash

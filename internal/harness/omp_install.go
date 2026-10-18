@@ -212,7 +212,7 @@ func (a Adapter) ompEntries() ([]Entry, error) {
 
 	out := make([]Entry, 0, len(a.events))
 	for _, event := range a.events {
-		out = append(out, Entry{Event: event.name, Binary: bin, Narrowed: false})
+		out = append(out, Entry{Event: event.name, Binary: bin, Narrowed: false, Async: false})
 	}
 
 	return out, nil
