@@ -14,6 +14,26 @@ its replacement and the earliest version that removes it. The removal of
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-18
+
+### Added
+
+- Codex `PermissionRequest` rules can deny an approval request or warn the human without approving the request. Unmatched requests follow Codex's normal approval flow.
+- Codex lifecycle controls: `PreCompact` can block manual or automatic compaction using the new `trigger` field, `SessionStart` can block the next model request, and `Interrupt` can warn after a turn is interrupted. Other harnesses skip the new events and degrade `SessionStart` blocks to warnings.
+- `handrail doctor` detects Codex hooks configured to run asynchronously, where they cannot enforce decisions.
+
+### Changed
+
+- **Breaking:** Codex `UserPromptSubmit` block rules now stop the prompt before a model request instead of degrading to warnings. `handrail test` reports a block with exit code 2. The Codex integration targets CLI 0.163.0; after updating, run `handrail sync --harness codex`, restart Codex, and review the new or changed entries in `/hooks`.
+- Active fuzzing runs on parser, seed, dependency, toolchain, or fuzz configuration changes, weekly, and on manual request. Unrelated pull requests still replay existing seeds without waiting for active fuzzing.
+- Development builds use Go 1.27.2 and updated dependencies and tools. `mise run setup` installs Git hooks that check the build and 95% coverage gate before pushing.
+
+### Fixed
+
+- Shell command normalization preserves quoted argument boundaries and shell operators inside arguments, including after wrappers are removed. Quoted commit messages and filenames no longer appear to introduce pipelines or extra options.
+- Codex approval denials retain accompanying warnings and load errors, and tool blocks no longer display the same denial message twice.
+- Codex `SessionEnd` matches return success without output, as required by its hook protocol, while remaining recorded in the Decision log.
+
 ## [0.5.1] - 2026-10-06
 
 ### Added
@@ -243,7 +263,8 @@ Prerelease that proved the release pipeline end to end: the GoReleaser build,
 the checksum manifest, and the tap cask. The Claude Code and Codex CLI plugins
 landed after it, in 0.1.0.
 
-[unreleased]: https://github.com/svyatov/handrail/compare/v0.5.1...HEAD
+[unreleased]: https://github.com/svyatov/handrail/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/svyatov/handrail/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/svyatov/handrail/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/svyatov/handrail/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/svyatov/handrail/compare/v0.4.1...v0.4.2
