@@ -10,7 +10,7 @@ stdout '^code=0$'
 ! stderr .
 stdout '"permissionDecision": "deny"'
 stdout '"permissionDecisionReason": "handrail block: dangerous-rm \(project-shared\)\\nNever delete recursively from the filesystem root'
-stdout '"systemMessage": "handrail block: dangerous-rm \(project-shared\)'
+! stdout '"systemMessage"'
 
 # apply_patch is Codex's one file-editing tool, and it arrives shell-shaped:
 # the whole edit is a patch envelope under command. The path it names and the
@@ -20,6 +20,7 @@ exec handrail hook codex PreToolUse
 stdout '"permissionDecision": "deny"'
 stdout 'handrail block: no-secrets \(project-shared\)'
 stdout 'handrail warn: no-env-edits \(project-shared\)'
+! stdout '"systemMessage"'
 
 # A shell rule does not reach it: apply_patch is a file edit, whatever it rides in.
 ! stdout 'no-heredocs'
@@ -47,6 +48,7 @@ stdout 'handrail block: no-yolo \(project-shared\)'
 stdin bash-curl.json
 exec handrail hook codex PreToolUse
 stdout 'handrail warn: prefer-fetch \(global\)'
+stdout '"systemMessage": "handrail warn: prefer-fetch \(global\)"'
 
 # An mcp call is classified by its tool name on either harness.
 stdin mcp.json

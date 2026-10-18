@@ -65,7 +65,8 @@ cp block-push.md home/.config/handrail/block-push.md
 stdin push.json
 exec handrail hook codex PreToolUse
 stdout '"permissionDecision": "deny"'
-stdout '"systemMessage": "handrail warn: ask-push \(global\)\\nhandrail block: block-push \(global\)\\nDo not push from this session\."'
+stdout '"permissionDecisionReason":.*handrail warn: ask-push \(global\).*handrail block: block-push \(global\)'
+! stdout '"systemMessage"'
 ! exec handrail test PreToolUse --kind shell --field 'command=git push' --harness codex --json
 stdout '"outcome": "block"'
 

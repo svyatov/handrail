@@ -859,6 +859,12 @@ func (a Adapter) output(event, message, human string, delivered rule.Outcome) ho
 	case a.caps(event).deny == continueOnce:
 		out.Decision, out.Reason = "block", message
 	default:
+		// Codex displays the denial reason itself. Sending it as a separate
+		// system message repeats the block in the UI.
+		if a.Name == nameCodex {
+			out.SystemMessage = ""
+		}
+
 		out.HookSpecificOutput = &hookSpecific{
 			HookEventName: event, PermissionDecision: "deny", PermissionDecisionReason: message,
 			AdditionalContext: "", Decision: nil,
