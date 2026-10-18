@@ -35,7 +35,7 @@ func (r *reader) level(cmd *call, start, end int) {
 		to = cmd.args[end-1]
 	}
 
-	r.add(r.src(cmd.args[start], to), strings.Join(cmd.words[start:end], " "))
+	r.add(r.src(cmd.args[start], to), strings.Join(r.spelledWords(cmd.args[start:end]), " "))
 	r.follow(cmd, start, end)
 }
 

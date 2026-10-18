@@ -1,0 +1,37 @@
+# Quoted argument data must not acquire shell operators or extra arguments
+# when the shell reader produces its alternate command spelling.
+exec handrail test PreToolUse --kind shell --field 'command=git commit -m "docs: go test | tail"'
+! stdout 'piped-check'
+exec handrail test PreToolUse --kind shell --field 'command=env git commit -m "docs: go test | tail"'
+! stdout 'piped-check'
+exec handrail test PreToolUse --kind shell --field 'command=git add "file with -A"'
+! stdout 'broad-add'
+
+# Real operators and flags still match, including through a wrapper.
+! exec handrail test PreToolUse --kind shell --field 'command=git commit -m "docs" | tail'
+stdout 'piped-check'
+! exec handrail test PreToolUse --kind shell --field 'command=env git commit -m "docs" | tail'
+stdout 'piped-check'
+! exec handrail test PreToolUse --kind shell --field 'command=git add README.md -A'
+stdout 'broad-add'
+
+-- home/.config/handrail/piped-check.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    matches: ^(env )?git commit([^|;'"\n]|'[^']*'|"[^"]*")*\|\s*tail\b
+---
+Run checks without filtering the result.
+-- home/.config/handrail/broad-add.md --
+---
+event: PreToolUse
+kind: shell
+action: block
+conditions:
+  - field: command
+    matches: ^git add\s+([^\s"']+\s+)*-A(\s|$)
+---
+Stage explicit paths.

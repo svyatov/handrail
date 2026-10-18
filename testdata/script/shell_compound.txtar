@@ -49,7 +49,7 @@ stdout '^warn  rm-root  global$'
 # ANSI-C quoting is quoting too, and decodes as bash decodes it.
 exec handrail test PreToolUse --field 'command=r$''\155'' -$''\x72''$''\146'' $''\057'''
 stdout '^warn  rm-root  global$'
-exec handrail test PreToolUse --field 'command=echo $''a\tb\x41é\cA\e\q\''c\u00e9\x4A\18'''
+exec handrail test PreToolUse --kind shell --field 'command=cat $''a\tb\x41é\cA\e\q\''c\u00e9\x4A\18'''
 stdout '^warn  ansi-c  global$'
 
 # The source Spelling keeps what the unquoted one drops.
@@ -101,8 +101,8 @@ The assignment prefix is its own level.
 ---
 event: PreToolUse
 conditions:
-  - field: command
-    matches: "^echo a\tbAé\x01\x1b\\\\q'céJ\x018$"
+  - field: path
+    matches: "^a\tbAé\x01\x1b\\\\q'céJ\x018$"
 ---
 Every ANSI-C escape bash decodes.
 -- home/.config/handrail/export-path.md --
