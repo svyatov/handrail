@@ -11,13 +11,13 @@
 
 [tools]
 # The pre-commit secret scan.
-betterleaks = "1.8.1"
-bun = "1.4.2"
-golangci-lint = "2.13.2"
-goreleaser = "2.18.2"
-lefthook = "2.1.14"
+betterleaks = "1.9.0"
+bun = "1.4.3"
+golangci-lint = "2.15.0"
+goreleaser = "2.18.3"
+lefthook = "2.2.2"
 # GoReleaser shells out to syft for the SBOM beside each archive.
-syft = "1.52.0"
+syft = "1.54.1"
 
 [tasks.build]
 description = "The release build, so a broken one fails here rather than on a tag"
@@ -69,7 +69,7 @@ run = [
 
 [tasks.vuln]
 description = "Known vulnerabilities in the code paths handrail actually calls, in its modules and the standard library"
-run = "go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./..."
+run = "go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./..."
 
 # The release body comes from the changelog section, so a missing one is a
 # release with nothing to say. Discard the output: only the exit code matters.
