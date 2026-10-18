@@ -34,6 +34,26 @@ stdout '"continue": false'
 stdout '"stopReason": "handrail block: hold-session'
 ! stdout '"hookSpecificOutput"'
 
+# Other adapters cannot halt SessionStart, so the same rule only warns.
+stdin start.json
+exec handrail hook claude SessionStart
+stdout '"systemMessage"'
+stdout 'hold-session'
+! stdout '"continue"'
+! stdout '"decision"'
+stdin start.json
+exec handrail hook omp SessionStart
+stdout '"systemMessage"'
+stdout 'hold-session'
+! stdout '"continue"'
+! stdout '"decision"'
+exec handrail test SessionStart --harness claude --json
+stdout '"outcome": "warn"'
+stdout '"degraded_from": "block"'
+exec handrail test SessionStart --harness omp --json
+stdout '"outcome": "warn"'
+stdout '"degraded_from": "block"'
+
 # Interrupt warnings reach the human and never restart the stopped turn.
 stdin interrupt.json
 exec handrail hook codex Interrupt

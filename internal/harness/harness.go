@@ -850,7 +850,7 @@ func (a Adapter) output(event, message, human string, delivered rule.Outcome) ho
 		out.SystemMessage = ""
 		out.HookSpecificOutput = &hookSpecific{
 			HookEventName: event, PermissionDecision: "", PermissionDecisionReason: "", AdditionalContext: "",
-			Decision: &requestDecision{Behavior: "deny", Message: message},
+			Decision: &requestDecision{Behavior: "deny", Message: human},
 		}
 	case a.caps(event).deny == decisionBlock:
 		// The harness shows the reason to the human and erases the prompt, so
