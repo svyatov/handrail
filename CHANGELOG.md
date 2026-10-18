@@ -14,6 +14,8 @@ its replacement and the earliest version that removes it. The removal of
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-18
+
 ### Added
 
 - Codex `PermissionRequest` rules can deny an approval request or warn the human without approving the request. Unmatched requests follow Codex's normal approval flow.
@@ -261,7 +263,8 @@ Prerelease that proved the release pipeline end to end: the GoReleaser build,
 the checksum manifest, and the tap cask. The Claude Code and Codex CLI plugins
 landed after it, in 0.1.0.
 
-[unreleased]: https://github.com/svyatov/handrail/compare/v0.5.1...HEAD
+[unreleased]: https://github.com/svyatov/handrail/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/svyatov/handrail/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/svyatov/handrail/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/svyatov/handrail/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/svyatov/handrail/compare/v0.4.1...v0.4.2
